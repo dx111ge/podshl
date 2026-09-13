@@ -163,9 +163,8 @@ auditable.
 
     libwebkit2gtk-4.1-0, libgtk-3-0
 
-On NVIDIA + Wayland the app needs WEBKIT_DISABLE_DMABUF_RENDERER=1. That is a
-common desktop rather than an exotic one, so the launcher sets it instead of
-leaving a Wayland protocol error to the user.
+On NVIDIA + Wayland set WEBKIT_DISABLE_DMABUF_RENDERER=1 before starting it, or
+the window fails with a Wayland protocol error. The package does not set it.
 
 ## Which operator
 

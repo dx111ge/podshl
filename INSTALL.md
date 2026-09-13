@@ -8,59 +8,59 @@ reading is shown to you first; when the answer has to come from somewhere else
 — the project's operator, a vendor's own endpoint, or the model you chose — the
 client names the recipient, shows the values, and sends only after you say so.
 
-## What is actually built today
+## Download
 
-Being straight about this, because the alternative is you discovering it after
-downloading:
+**[github.com/dx111ge/podshl/releases/latest](https://github.com/dx111ge/podshl/releases/latest)**
+— built for the beta operator at **https://sdota.de**.
 
-| Platform | State |
-|---|---|
-| **Linux x86_64** | Built and tested. A `.deb` and a plain binary |
-| **Windows** | **Not built as a package.** The client builds and runs from source there — a Rust toolchain and the WebView2 runtime, which Windows 10 and 11 already carry — its whole suite passes, and the published, vendor and model paths have been walked end to end through the real window. There is no installer, and the elevated helper does not exist |
-| **macOS** | **Not built.** Planned via GitHub-hosted runners, Apple Silicon only |
+| Platform | File | State |
+|---|---|---|
+| **Windows** 10/11 x64 | `podshl-client-0.1.0-windows-x64-setup.exe` | Installed and checked against the live operator |
+| **Linux** x86_64 | `PODSHL_0.1.0_amd64.deb`, or the bare `podshl-client-0.1.0-linux-x86_64` | Built and its suite run in a container; the packaged window has not been walked on a Linux desktop |
+| **macOS** Apple Silicon | `podshl-client-0.1.0-macos-arm64.dmg` | Built on GitHub's macOS runners, **never run by us** — a report of how it went is very welcome |
 
-Tauri release builds do not cross-compile, so Windows and macOS need machines
-running those systems. macOS will be built on GitHub-hosted runners, arm64 only
-— an Intel artefact nobody has run would be coverage in name only. On Windows there is a second,
-deliberate gap: the elevated helper must be a separate binary, because an
-application able to elevate itself in-process cannot honestly claim bounded
-effect. It is not written. See [RELEASING.md](RELEASING.md).
+**None of them is signed.** A signature says who built something, and there is
+no certificate yet. `SHA256SUMS` (and `SHA256SUMS-macos`) in the release say the
+files arrived intact, not who made them.
+
+## Windows
+
+Run the setup. It installs for **your user only** — no administrator, no UAC
+prompt — under `%LOCALAPPDATA%\PODSHL`, with a Start menu entry. Windows
+SmartScreen will say "Windows protected your PC", because the file is unsigned:
+**More info → Run anyway**. WebView2, which the window needs, ships with
+Windows 11 and supported Windows 10; where it is missing, the setup downloads it.
+
+## macOS
+
+Open the `.dmg` and drag PODSHL to Applications. Because it is unsigned, macOS
+refuses it as "damaged" or from "an unidentified developer" until the download
+quarantine is removed — once, in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/PODSHL.app
+```
 
 ## Linux
-
-From `var/release/<version>/` after a build, or from a release artefact:
 
 ```bash
 sudo apt install ./PODSHL_0.1.0_amd64.deb
 podshl-client
 ```
 
-The binary is `podshl-client`; the package is named `podshl`. It declares what
-it needs rather than bundling it:
-
-    libwebkit2gtk-4.1-0, libgtk-3-0
-
-That is on purpose. Hiding 140-odd system libraries inside a hundred-megabyte
-download would cost the one property that makes a binary of under 7 MB
-auditable.
-
-Or run the binary directly, with no install:
+The package declares what it needs rather than bundling it —
+`libwebkit2gtk-4.1-0, libgtk-3-0` — because hiding 140-odd system libraries in a
+hundred-megabyte download would cost what makes a binary of under 7 MB
+auditable. Or run the bare binary with those installed:
 
 ```bash
 chmod +x podshl-client-0.1.0-linux-x86_64
 ./podshl-client-0.1.0-linux-x86_64
 ```
 
-**On NVIDIA + Wayland** set `WEBKIT_DISABLE_DMABUF_RENDERER=1` in the
-environment before starting it, or the window fails with a Wayland protocol
-error. That is a common desktop rather than an exotic one, and the packaged
-launcher does not set it for you yet — whichever way you start the client, you
-set it.
-
-**The artefacts are not signed.** A signature says who built it, and there is no
-key-management story here yet worth signing with. Run `sha256sum -c SHA256SUMS`
-in the directory you downloaded into — that tells you the files arrived intact,
-not who made them.
+**On NVIDIA + Wayland** set `WEBKIT_DISABLE_DMABUF_RENDERER=1` before starting
+it, or the window fails with a Wayland protocol error. The package does not set
+it for you yet.
 
 ### What it needs on the machine
 
@@ -71,16 +71,16 @@ need that program: `docker` for anything about a running container,
 `nvidia-smi` for the graphics card, `lspci` for the PCI list. `doctor` says
 which of these are missing here and what that leaves unreadable.
 
-### There is no public operator yet
+## Which operator it talks to
 
-The binary talks to `127.0.0.1:8725` for the operator and `127.0.0.1:8723` for
-the index unless `PODSHL_SERVER_URL` and `PODSHL_INDEX_URL` say otherwise — the
-development stack from the repository, not a service on the internet. Vendor
-keys are looked up in DNS by default (`VS_TRUST`), and verifying the index's
-signed log head needs the operator's public key in `VS_LOG_KEY`. Until an
-operator is running somewhere public, an installed client on its own finds
-nobody to ask, and says so rather than guessing.
-
+A release is built for one operator: **https://sdota.de**, with the public key of
+its transparency log compiled in, so the client refuses an index or a log head
+that key did not sign. Compare it with `curl -s https://sdota.de/log/key` and
+`release/sdota.de/log_key.json` in the repository. `PODSHL_SERVER_URL`,
+`PODSHL_INDEX_URL` and `VS_LOG_KEY` point a client somewhere else — a local
+development stack, or an operator of your own. The operator is new: until
+projects publish their files there, the client finds no published answers and
+says so rather than guessing.
 ## First, ask what it can do here
 
 ```
@@ -187,8 +187,8 @@ setting (`PODSHL_K`), not something a client or a maintainer can lower.
 
 ## Where it keeps things
 
-Under your config directory — `~/.config/podshl/` on Linux, `%APPDATA%\podshl`
-on Windows:
+Under your config directory — `%APPDATA%\podshl` on Windows,
+`~/Library/Application Support/podshl` on macOS, `~/.config/podshl/` on Linux:
 
 | | |
 |---|---|
@@ -202,10 +202,12 @@ never overwrites one that is already there.
 
 ## Uninstalling
 
-```bash
-sudo apt remove podshl
-```
+| | |
+|---|---|
+| **Windows** | *Settings → Apps → Installed apps → PODSHL → Uninstall*. Ticking "delete application data" also removes `%APPDATA%\podshl` |
+| **macOS** | Move `/Applications/PODSHL.app` to the Bin |
+| **Linux** | `sudo apt remove podshl` |
 
-That removes the program and leaves your data where it was: the files above,
-the API key in the credential store, and any `.bak` beside a file the client
-changed. Remove those yourself to leave nothing behind.
+Except where Windows' box is ticked, that leaves your data where it was: the
+files above, the API key in the credential store, and any `.bak` beside a file
+the client changed. Remove those yourself to leave nothing behind.
