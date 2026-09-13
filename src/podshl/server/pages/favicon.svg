@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="PODSHL">
+  <rect width="32" height="32" rx="6" fill="#101619"/>
+  <!-- The machine, and the one thing that leaves it: a conclusion, not the
+       readings. Drawn rather than lettered, because a letter at 16 px is a
+       smudge and a shape is still a shape. -->
+  <rect x="6" y="9" width="20" height="13" rx="2" fill="none" stroke="#5fd3a8" stroke-width="2"/>
+  <path d="M12 26h8" stroke="#5fd3a8" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="16" cy="15.5" r="2.6" fill="#5fd3a8"/>
+</svg>

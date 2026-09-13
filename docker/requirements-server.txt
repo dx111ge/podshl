@@ -1,0 +1,28 @@
+# The Linux side's actual dependencies.
+#
+# `requirements.lock.txt` is the llmtraining environment this repository grew
+# out of — torch, CUDA, transformers — and it does not contain psycopg, which
+# `server/db.py` imports on every request. Nothing that runs the server was
+# ever installable from it. These are the packages the code actually imports,
+# pinned to the lockfile's versions wherever the two overlap so the container
+# and a local `mise run sync` do not disagree.
+
+# the two ASGI applications, and the listener under them
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+
+# the store. `pool` is psycopg_pool (db.py), `binary` bundles libpq so the
+# image needs no postgresql-client-dev to build against.
+psycopg[binary,pool]==3.2.12
+
+# signing and the JWS/JCS pair
+cryptography==50.0.1
+
+# the crawler, and the anchor checks that reach out
+httpx==0.28.1
+dnspython==2.8.0
+
+# homoglyph handling reads UTS 39; the vocabularies are YAML
+idna==3.19
+PyYAML==6.0.3

@@ -1,0 +1,50 @@
+[package]
+name = "podshl-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Basic Agent — verifies a vendor, collects locally, asks, then acts"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Signature verification is the trust boundary; strict verification only.
+ed25519-dalek = "2"
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["process", "time"] }
+anyhow = "1"
+regex = "1"
+dirs = "5"
+# ANS publishes agent keys as DNS TXT records, so the production trust path
+# needs a real resolver rather than a stub that is never constructed.
+hickory-resolver = "0.24"
+sha2 = "0.10"
+hmac = "0.12"
+rand = "0.8"
+# API keys belong in the OS credential store, not in a config file. keyring
+# covers Secret Service, Windows Credential Manager and macOS Keychain.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+# Only to restore the default SIGPIPE disposition on the command-line path. The
+# Rust runtime sets SIGPIPE to SIG_IGN, which turns `demo | head` into a panic
+# and — with panic = "abort" below — a core dump.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# The suite talks to the real counterparty over HTTP, so the tests need an async
+# runtime. Test-only: the application drives its own futures from the window and
+# never starts one of these.
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+
+[profile.release]
+# A trust client should be small and quick to audit.
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

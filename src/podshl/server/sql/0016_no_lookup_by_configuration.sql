@@ -1,0 +1,12 @@
+-- `link` joined a cluster to the solutions that answer it, and nothing ever
+-- wrote a row. Its one reader was `GET /cluster/{hash}`, which therefore
+-- answered `"solutions": []` on every deployment — and which is gone (`SV104`),
+-- because the rest of its answer was a project's report counts, served without
+-- authentication to anybody who could guess a configuration.
+--
+-- Which answer covers a cluster is not a stored fact. It is a walk of the
+-- project's own trees against the cluster's facts, done where it is needed —
+-- `/diagnose` for a user, the dashboard for the maintainer — so it cannot go
+-- stale when a solution file changes. A table of links would be a copy of that
+-- walk, taken at some past moment, that nothing kept up to date.
+DROP TABLE IF EXISTS link;

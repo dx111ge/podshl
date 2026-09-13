@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — what this does, and what it cannot</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>What this does to a machine, and what reaches whom</h1>
+
+<p>For a maintainer deciding whether to publish, and for anyone deciding whether
+to install the client.</p>
+
+<h2>A publisher may only choose, never invent</h2>
+<p>The list of things that can be read, and the list of things that can be
+changed, both live <strong>on the client</strong>. What you publish names an
+operation and fills in declared parameters. A careless or compromised publisher
+can mis-parameterise a tested operation — validation and the dry-run catch that
+— but <strong>cannot introduce one</strong>. Nothing published here can ship a
+capability.</p>
+<p class="why">Extending either list is a client release that people choose to
+install, not a field anybody can set. <a href="/vocabulary/reads.json">The read
+vocabulary</a> is published, so what may be asked of a machine is checkable
+rather than promised.</p>
+
+<h2>Nothing runs without being shown first</h2>
+<ul>
+  <li>Read, transmit and change are <strong>three separate consents</strong>, in
+      plain language, with the evidence one disclosure behind.</li>
+  <li>The <strong>refusing</strong> button holds focus, so a stray Return can
+      never grant.</li>
+  <li>Whatever is withheld becomes a question rather than a dead end.</li>
+  <li>Every change is dry-run first and can be rolled back.</li>
+  <li>At most 24 readings per diagnosis.</li>
+  <li>A program may be asked its own version, and nothing else: a fixed flag,
+      five seconds, only the number kept. Not on the search path, the user is
+      asked where it is — the disk is never searched. Shells, launchers and
+      system programs are never started for it.</li>
+</ul>
+
+<h2>What travels, if the user says so</h2>
+<p>Diagnosis happens on the user's machine. Readings are compared against the
+published solution there, and only a conclusion is produced. Reporting is
+optional and comes last, after they already have their answer.</p>
+<table>
+  <tr><td class="mono">observed</td><td>Measured on the machine, already coarsened</td></tr>
+  <tr><td class="mono">stated</td><td>Supplied by the person. Never mixed with the above — a claim and a measurement must not wear the same name</td></tr>
+  <tr><td class="mono">dropped</td><td>Withheld entirely. Serial numbers and anything identifying never travel, whoever supplied them</td></tr>
+  <tr><td class="mono">description</td><td>Free text — an error, the lines of a log — and only where the user read the exact words and agreed, with the recipient named. Names, addresses, tokens and times are replaced on the user's machine before they are asked, and they are told what was replaced</td></tr>
+</table>
+<p>No timestamp and no incident identifier, so a report cannot be linked back to
+the run that produced it.</p>
+
+<h2>The pseudonym</h2>
+<p>A report carries a pseudonym so a recipient can count <em>people</em> rather
+than submissions, and rate-limit abuse. It is <strong>different for every
+project</strong> and <strong>changes every month</strong>, derived from local
+randomness that is never a hardware fingerprint. Across projects nothing links;
+across months nothing links. Resetting it is the user's call, and costs them
+their accumulated standing.</p>
+
+<h2>Nothing is shown below five distinct reporters</h2>
+<p>Not to a maintainer, not to the operator, not to anybody. Below that a
+constellation is identifying — and the threshold counts distinct pseudonyms, so
+one person reporting five times still counts once.</p>
+
+<h2>What this server holds</h2>
+<p class="why">Read from the server's own answer rather than restated here, so
+this section cannot drift from what it actually does.</p>
+<div class="panel">
+  <p class="lbl">Holds</p>
+  <ul id="holds"></ul>
+  <p class="lbl">Never holds</p>
+  <ul id="never"></ul>
+</div>
+
+<h2>Checking us rather than believing us</h2>
+<p>Attestations go into an append-only, signed transparency log. It is fetched
+<strong>whole</strong> — there is deliberately no per-domain lookup, because one
+would tell us which software everyone runs. A domain owner watching the log sees
+any attestation claiming their domain, <em>including one we should not have
+issued</em>. <a href="/log">Read the log</a>.</p>
+
+<h2>No warranty, and who wrote the advice</h2>
+<p>All of this is provided <strong>as is, without warranty of any kind</strong>.
+The bounds above are real and they are bounds on <em>effect</em> — nothing here
+promises that a suggested change fixes anything.</p>
+<p><strong>Support content is written by the projects, not by us.</strong> We
+mirror what a project publishes in its own repository. We do not author it, do
+not review it for correctness and do not endorse it — the project is named in
+every answer, so you can always see whose advice you are taking. A solution that
+is wrong is wrong at its source, which is also why the report goes back there.</p>
+<p>Back up what matters before acting on any advice, from here or anywhere. The
+full statement, including what cannot be excluded under German law, is on the
+<a href="/imprint">imprint</a>.</p>
+
+<h2>Reporting a finding</h2>
+<p id="security-contact"><a href="/imprint">See the imprint</a>.</p>
+
+<footer>
+  <p><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/notice">Notices</a></p>
+</footer>
+</div>
+
+<script>
+const li = (parent, text) => {
+  const n = document.createElement("li");
+  n.textContent = text;
+  document.getElementById(parent).appendChild(n);
+};
+
+fetch("/", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    (o.holds || []).forEach(x => li("holds", x));
+    (o.never_holds || []).forEach(x => li("never", x));
+  })
+  .catch(e => li("holds", "could not be loaded: " + e));
+
+fetch("/operator", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    if (o.configured && o.security_contact) {
+      document.getElementById("security-contact").textContent =
+        "Report it to " + o.security_contact + ".";
+    }
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+{
+ "vendor": {
+  "card_description": "Diagnose und Auskunft zu ACME-Produkten, ausgeführt auf dem Gerät des Kunden.",
+  "no_skill": "Für dieses Problem ist kein Skill hinterlegt.",
+  "missing_english": "Skill {id} liegt nur in '{lang}' vor. Englisch ist Pflicht.",
+  "no_rule": "Kein Regelpfad für diese Fähigkeit",
+  "reply_email": "Die Antwort geht an die angegebene Adresse.",
+  "reply_ticket_url": "Der Stand ist jederzeit unter der Vorgangs-Adresse abrufbar.",
+  "reply_none": "Zu diesem Vorgang erfolgt keine Rückmeldung.",
+  "reply_unknown": "Unbekannter Rückweg.",
+  "receipt_fixed": "Bekannt — {n} weitere Meldungen. Behoben in {version}. {note}",
+  "receipt_known": "Bekannt — {n} weitere Meldungen. {note}",
+  "receipt_no_pseudonym": "Aufgenommen, aber nicht gezählt: ohne Pseudonym lässt sich diese Meldung nicht von einer schon gezählten unterscheiden.",
+  "receipt_rare": "Aufgenommen. Diese Konstellation ist bisher selten, deshalb wird sie nur gezählt und nicht einzeln ausgewertet — sonst wäre sie identifizierend.",
+  "receipt_rare_again": "Dieselbe Meldung noch einmal zählt nicht doppelt.",
+  "receipt_new": "Aufgenommen — {n} unabhängige Meldende. Ab jetzt in der Auswertung.",
+  "known_bf16": "Die Empfehlung prüft jetzt Hardware-Unterstützung statt Emulation.",
+  "known_artefacts": "Untersuchung läuft; betroffen ist eine Fertigungscharge."
+ },
+ "triage": {
+  "torch.precision.consumer-gpu": [
+   "bf16",
+   "training",
+   "langsam",
+   "präzision"
+  ],
+  "warranty.rma.precheck": [
+   "garantie",
+   "rma",
+   "defekt",
+   "flacker",
+   "artefakt",
+   "absturz"
+  ],
+  "accounting.booking.guidance": [
+   "buch",
+   "konto",
+   "skr",
+   "rechnung",
+   "steuer",
+   "bilanz"
+  ]
+ },
+ "skills": {
+  "torch.precision.consumer-gpu": {
+   "title": "Trainingspräzision auf Consumer-GPUs",
+   "kb": "Aktivieren Sie bf16 für schnelleres Training. Ob Ihre Karte es unterstützt, prüfen Sie mit torch.cuda.is_bf16_supported().",
+   "probes": {
+    "gpu.name": {
+     "describes": "GPU-Modell",
+     "why": "Bestimmt die Rechenfähigkeit der Karte"
+    },
+    "gpu.compute_capability": {
+     "describes": "Compute Capability",
+     "why": "bf16 in Hardware gibt es erst ab 8.0"
+    },
+    "gpu.bf16_native": {
+     "describes": "Ob die Hardware bf16 wirklich kann",
+     "why": "Unterscheidet Emulation von Silizium"
+    }
+   },
+   "text": {
+    "unreadable": "Präzisionsfähigkeit nicht auslesbar — keine belastbare Aussage möglich",
+    "no_facts": "Fakten nicht erhebbar",
+    "emulated": "{name} (Compute Capability {cc}) hat kein bf16 in Hardware. Die Bibliothek meldet Unterstützung, zählt dabei aber Emulation mit — die Anleitung führt hier zu einer deutlich langsameren Konfiguration.",
+    "evidence_cc": "gpu.compute_capability = {cc} (bf16 in Hardware ab 8.0)",
+    "because_fp16": "fp16 nutzt die Tensor Cores dieser Karte; bf16 würde emuliert.",
+    "because_verify": "Prüft, dass der Schlüssel gesetzt ist.",
+    "native": "Diese Karte unterstützt bf16 in Hardware; die allgemeine Empfehlung gilt."
+   }
+  },
+  "warranty.rma.precheck": {
+   "title": "Garantie-Vorprüfung",
+   "kb": "Halten Sie die Seriennummer bereit; Sie finden sie in der Systemsteuerung unter Anzeigeadapter.",
+   "probes": {
+    "gpu.name": {
+     "describes": "GPU-Modell",
+     "why": "Bestimmt die Garantiebedingungen"
+    },
+    "gpu.serial": {
+     "describes": "Seriennummer laut Firmware",
+     "why": "Wird für die Garantieprüfung benötigt"
+    },
+    "gpu.driver_version": {
+     "describes": "Treiberversion",
+     "why": "Schließt bekannte Treiberfehler aus"
+    },
+    "serial.printed": {
+     "describes": "Aufgedruckte Seriennummer",
+     "why": "Ihre Karte meldet keine Seriennummer über die Firmware. Ohne sie ist keine Garantieprüfung möglich.",
+     "prompt": "Bitte lesen Sie die Seriennummer vom Aufkleber auf der Karte ab"
+    },
+    "symptom": {
+     "describes": "Beobachtetes Symptom",
+     "why": "Bildfehler und Abstürze führen zu unterschiedlichen Prüfpfaden",
+     "prompt": "Was beobachten Sie?",
+     "choices": [
+      "Bildflackern",
+      "Artefakte im Bild",
+      "Absturz unter Last",
+      "Kein Bild",
+      "Lüftergeräusch"
+     ]
+    },
+    "serial.printed.again": {
+     "describes": "Aufgedruckte Seriennummer",
+     "why": "Steht auf dem Aufkleber auf der Karte",
+     "prompt": "Bitte lesen Sie die Seriennummer vom Aufkleber ab"
+    },
+    "contact.email": {
+     "describes": "E-Mail-Adresse für die Rückmeldung",
+     "why": "Ohne Adresse erreicht Sie unsere Antwort nicht",
+     "prompt": "An welche Adresse sollen wir antworten?"
+    },
+    "contact.email.rma": {
+     "describes": "E-Mail-Adresse für die Rückmeldung",
+     "why": "Die Autorisierung kommt per Mail; ohne Adresse erreicht sie Sie nicht",
+     "prompt": "An welche Adresse sollen wir antworten?"
+    },
+    "contact.country": {
+     "describes": "Land für die Rücksendung",
+     "why": "Bestimmt die Rücksendeadresse und die Garantiebedingungen",
+     "prompt": "In welches Land soll das Rücksendeetikett?",
+     "choices": [
+      "Deutschland",
+      "Österreich",
+      "Schweiz",
+      "Anderes"
+     ]
+    }
+   },
+   "text": {
+    "need_serial": "Ohne Seriennummer ist keine Garantieprüfung möglich — Ihre Karte meldet sie nicht über die Firmware.",
+    "no_serial": "Ohne Seriennummer ist keine Garantieprüfung möglich",
+    "serial_missing": "Seriennummer fehlt",
+    "source_firmware": "Firmware",
+    "source_sticker": "Aufkleber (vom Nutzer abgelesen)",
+    "precheck": "Garantie-Vorprüfung für {gpu}, Seriennummer {serial} (Quelle: {source}), Symptom: {symptom}. Rücksendung kann autorisiert werden; die abschließende Prüfung erfolgt am eingesandten Gerät.",
+    "because_info": "Vorprüfung ist rein informativ; am Gerät wird nichts verändert.",
+    "needs_human": "Rücksendung muss durch einen Menschen autorisiert werden"
+   }
+  },
+  "accounting.booking.guidance": {
+   "title": "Buchungsfrage zur installierten Version",
+   "kb": "Öffnen Sie Buchführung > Stammdaten > Konten und wählen Sie dort das passende Konto.",
+   "probes": {
+    "app.version": {
+     "describes": "Installierte Programmversion",
+     "why": "Buchungslogik und Formulare ändern sich pro Jahresversion"
+    },
+    "app.chart_of_accounts": {
+     "describes": "Verwendeter Kontenrahmen",
+     "why": "SKR03 und SKR04 führen zu unterschiedlichen Konten"
+    },
+    "app.modules": {
+     "describes": "Installierte Zusatzmodule und ihre Versionen",
+     "why": "Ein Modul kann die Buchungslogik überschreiben"
+    },
+    "chart.confirmed": {
+     "describes": "Kontenrahmen",
+     "why": "Konnte nicht ausgelesen werden und bestimmt die Antwort",
+     "prompt": "Welchen Kontenrahmen verwenden Sie?",
+     "choices": [
+      "SKR03",
+      "SKR04",
+      "Weiß ich nicht"
+     ]
+    },
+    "chart.confirmed.again": {
+     "describes": "Kontenrahmen",
+     "why": "Ohne ihn wäre jede Kontonummer geraten",
+     "prompt": "Welchen Kontenrahmen verwenden Sie?",
+     "choices": [
+      "SKR03",
+      "SKR04",
+      "Weiß ich nicht"
+     ]
+    },
+    "question": {
+     "describes": "Ihre Frage",
+     "why": "Wird als einziger Inhalt übertragen — Ihre Mandantendaten verlassen das Gerät nicht",
+     "prompt": "Worum geht es?"
+    }
+   },
+   "text": {
+    "dont_know": "Weiß ich nicht",
+    "refuse_words": [
+     "gestaltung",
+     "steuern sparen",
+     "vermeiden",
+     "umgehen",
+     "verschleiern",
+     "schwarz"
+    ],
+    "no_question": "Es wurde keine Frage gestellt — es gibt nichts zu beantworten.",
+    "question_missing": "Frage fehlt",
+    "planning": "Das ist eine Frage der steuerlichen Gestaltung und keine Bedienfrage. Dazu gibt der Hersteller-Agent keine Auskunft — bitte an die steuerliche Beratung wenden.",
+    "planning_escalate": "Gestaltungsfrage — nicht durch den Hersteller zu beantworten",
+    "need_chart": "Die Antwort hängt am Kontenrahmen — SKR03 und SKR04 führen zu unterschiedlichen Konten.",
+    "chart_unknown": "Ohne bekannten Kontenrahmen wäre jede Kontonummer geraten.",
+    "chart_unknown_escalate": "Kontenrahmen unbekannt",
+    "answer": "Antwort für {chart}, Programmversion {version}. Der Pfad wurde gegen die installierte Version aufgelöst, nicht gegen den Handbuchstand.",
+    "evidence_question": "frage = {q}",
+    "because_info": "Auskunft; an Ihren Daten wird nichts verändert.",
+    "version_unknown": "Die installierte Programmversion konnte nicht gelesen werden, und die Antwort hängt genau daran — Buchungslogik und Formulare ändern sich pro Jahresversion. Ohne sie wäre jede Kontonummer gegen den Handbuchstand geraten statt gegen das, was bei Ihnen läuft.",
+    "version_unknown_escalate": "Programmversion nicht lesbar"
+   }
+  }
+ }
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podshl.example/spec/probe.json",
+  "title": "Probe",
+  "description": "One fact the vendor needs, why it needs it, and how to get it. `read` names an instruction from the read vocabulary; a probe with no `read` is either derived by the client or asked of a person. **A probe may carry both**: the reading is attempted first and the question is asked only if it comes back empty, so one fact is written once and can arrive either way. The report then says which happened — a value that was read travels in `observed`, one a person supplied travels in `stated`. Attaching `choices` to such a question is worth doing: a bounded answer may travel, free text never does, so an authored question is the difference between a fact the publisher receives and one they never see. `when_missing` is the older, coarser form — it gates a separate question on another probe having come back empty.",
+  "type": "object",
+  "required": [
+    "id",
+    "kind"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Not a free label. How a value is coarsened before it may travel is decided from this id, so renaming a reading silently changes what leaves the machine."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "machine",
+        "human"
+      ]
+    },
+    "describes": {
+      "type": "string",
+      "description": "Shown to the user, in their language."
+    },
+    "why": {
+      "type": "string",
+      "description": "Consent needs a reason a person can evaluate."
+    },
+    "read": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "How to read it. Attempted before any question on the same probe."
+    },
+    "derived": {
+      "type": "boolean",
+      "default": false,
+      "description": "Computed by the client from readings it performed, so a vendor cannot assert an interpretation of a value it did not observe."
+    },
+    "prompt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "What to ask. On a probe that also has a `read`, asked only when the reading came back empty."
+    },
+    "example": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pattern": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "choices": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "Bounds the answer. A bounded answer may travel; free text may not."
+    },
+    "when_missing": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "log": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "On a human free-text probe: where the text it asks for usually comes from, so the client can offer to load it instead of asking somebody to find a log they have never opened. `container` names a Docker image (see `images` in the read vocabulary) whose running container's output may be loaded; `file` is the name the log file usually has, shown as a hint — the user is asked where it is, and nothing is searched for. What is loaded is shown only on the user's machine. The part they keep is anonymised, shown again with a count of what was replaced, and travels only under the free-text consent.",
+      "properties": {
+        "container": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "required": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — who publishes</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>Who publishes</h1>
+
+<div class="panel">
+  <p><strong>Being absent from this list means never registered.</strong> It
+  says nothing about anyone — not that they are careless, not that their software
+  is worse. This is a positive list and it is only ever read as one.</p>
+  <p class="why">There are no figures here, and there never will be. One
+  project's numbers are never shown to anyone else, and there is no ranking:
+  the order below is alphabetical by host and nothing else.</p>
+</div>
+
+<div id="projects"></div>
+<p class="why" id="count"></p>
+
+<footer>
+  <p><a href="/publish">Publish your own</a> · <a href="/log">The log this is derived from</a>
+     · <a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a></p>
+</footer>
+</div>
+
+<script src="/list.js"></script>
+<script>
+const cell = (row, text, cls) => {
+  const td = document.createElement("td");
+  td.textContent = text;                    /* text, never markup */
+  if (cls) td.className = cls;
+  row.appendChild(td);
+  return td;
+};
+
+/* Sorted by host, always — A to Z or Z to A, and nothing else. Any other
+   ordering can be read as a ranking, and a ranking is the one artefact this
+   project may never publish. */
+const byHost = (a, b) => a.host.localeCompare(b.host);
+const list = PodshlList(document.getElementById("projects"), {
+  table: ["Project", "Answers", "Languages", "Control last confirmed"],
+  noun: {one: "project", many: "projects"},
+  filter: {
+    placeholder: "pip, nvidia, install…",
+    note: "Filtering happens in your browser, on the catalogue you already downloaded. " +
+          "Nothing you type is sent anywhere — a per-name query would tell us what " +
+          "everybody is looking for.",
+    text: e => [e.host, ...(e.search_tokens || []), ...(e.problem_classes || [])].join(" "),
+  },
+  sorts: [
+    {id: "az", label: "Host, A to Z", compare: byHost},
+    {id: "za", label: "Host, Z to A", compare: (a, b) => byHost(b, a)},
+  ],
+  empty: "Nobody has published yet.",
+  render: e => {
+    const tr = document.createElement("tr");
+    cell(tr, e.host, "mono");
+    cell(tr, (e.problem_classes || []).join(", "));
+    cell(tr, (e.langs || []).join(", "));
+    cell(tr, e.last_confirmed ? e.last_confirmed.slice(0, 10) : "not confirmed yet");
+    return tr;
+  },
+});
+
+fetch("/index", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(doc => list.set((doc.index.entries || []).slice().sort(byHost)))
+  .catch(e => { document.getElementById("count").textContent =
+    "the catalogue could not be loaded: " + e; });
+</script>
+</body>
+</html>

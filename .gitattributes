@@ -1,0 +1,24 @@
+# These files are executed by Linux, wherever they were checked out.
+#
+# With `core.autocrlf=true` — the Windows default — a checkout rewrites them
+# with CRLF, `#!/usr/bin/env bash` becomes `bash\r`, and the container fails
+# with "bad interpreter". Their line endings are therefore not the platform's
+# choice to make.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.yaml          text eol=lf
+Dockerfile.*    text eol=lf
+Caddyfile       text eol=lf
+*.service       text eol=lf
+# Its tasks are shell scripts run inside the container: `set -e` with a CR is
+# "Illegal option -", and the Linux release never starts.
+mise.toml       text eol=lf
+*.yml           text eol=lf
+# Copied to .env and read by Docker, which keeps a CR as part of the value — a
+# password that ends in an invisible character nobody typed.
+*.example       text eol=lf
+
+# Licence texts are verbatim by definition. A checkout that rewrites their line
+# endings changes the bytes of a document nobody is allowed to alter.
+LICENSE         text eol=lf
+LICENSE-*       text eol=lf

@@ -1,0 +1,33 @@
+{
+  "$comment": "The action vocabulary. Generated from client-rs/src/actions.rs and held to it by actions::tests::vocabulary_matches_the_spec. A vendor selects an id and fills the declared parameters; it cannot ship a capability. Patterns are anchored by the client before matching, so a pattern here is a whole-value pattern.",
+  "version": 1,
+  "actions": [
+    {
+      "id": "report_only",
+      "describes": "State a finding, change nothing",
+      "mutating": false,
+      "reversible": true,
+      "params": {}
+    },
+    {
+      "id": "restore_backup",
+      "describes": "Undo a change",
+      "mutating": true,
+      "reversible": false,
+      "params": {
+        "file": "[\\w./-]+\\.(toml|ini|cfg|conf)"
+      }
+    },
+    {
+      "id": "set_config_key",
+      "describes": "Set a key in a configuration file",
+      "mutating": true,
+      "reversible": true,
+      "params": {
+        "file": "[\\w./-]+\\.(toml|ini|cfg|conf)",
+        "key": "[A-Za-z_][\\w.]{0,64}",
+        "value": "[\\w.:/+-]{1,128}"
+      }
+    }
+  ]
+}

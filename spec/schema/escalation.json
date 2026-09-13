@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podshl.example/spec/escalation.json",
+  "title": "Escalation",
+  "description": "Where a case goes when it needs a person. `reply_via` is bounded by the client exactly as actions are, and `none` is a real option — a vendor may promise no reply, and saying so is better than silence. There is deliberately no inbound channel on the customer's machine. Fields in `require` are collected as ordinary probes, with consent, and validated locally before a case is opened.",
+  "type": "object",
+  "required": ["reason", "queue"],
+  "properties": {
+    "reason": { "type": "string" },
+    "queue": { "type": "string" },
+    "target": { "type": ["string", "null"], "description": "The vendor's own routing target; passed through untouched." },
+    "require": { "type": "array", "items": { "$ref": "probe.json" } },
+    "reply_via": { "type": "array", "items": { "type": "string", "enum": ["email", "ticket_url", "none"] } }
+  }
+}

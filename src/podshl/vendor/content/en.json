@@ -1,0 +1,213 @@
+{
+ "vendor": {
+  "card_description": "Diagnosis and answers about ACME products, run on the customer's own device.",
+  "no_skill": "No skill is on file for this problem.",
+  "missing_english": "Skill {id} exists only in '{lang}'. English is required.",
+  "no_rule": "No rule path for this capability",
+  "reply_email": "The answer goes to the address given.",
+  "reply_ticket_url": "The status can be looked up at any time at the case address.",
+  "reply_none": "There will be no reply about this case.",
+  "reply_unknown": "Unknown reply channel.",
+  "receipt_fixed": "Known — {n} other reports. Fixed in {version}. {note}",
+  "receipt_known": "Known — {n} other reports. {note}",
+  "receipt_no_pseudonym": "Received, but not counted: without a pseudonym this report cannot be told apart from one already counted.",
+  "receipt_rare": "Received. This combination is still rare, so it is only counted and not looked at on its own — otherwise it would identify somebody.",
+  "receipt_rare_again": "The same report again does not count twice.",
+  "receipt_new": "Received — {n} independent reporters. Part of the evaluation from now on.",
+  "known_bf16": "The recommendation now checks for hardware support instead of emulation.",
+  "known_artefacts": "Under investigation; one production batch is affected."
+ },
+ "triage": {
+  "torch.precision.consumer-gpu": [
+   "bf16",
+   "training",
+   "slow",
+   "precision"
+  ],
+  "warranty.rma.precheck": [
+   "warranty",
+   "rma",
+   "defect",
+   "flicker",
+   "artefact",
+   "artifact",
+   "crash"
+  ],
+  "accounting.booking.guidance": [
+   "booking",
+   "account",
+   "skr",
+   "invoice",
+   "tax",
+   "balance sheet"
+  ]
+ },
+ "skills": {
+  "torch.precision.consumer-gpu": {
+   "title": "Training precision on consumer GPUs",
+   "kb": "Enable bf16 for faster training. To check whether your card supports it, use torch.cuda.is_bf16_supported().",
+   "probes": {
+    "gpu.name": {
+     "describes": "GPU model",
+     "why": "Determines what the card can compute"
+    },
+    "gpu.compute_capability": {
+     "describes": "Compute capability",
+     "why": "bf16 exists in silicon only from 8.0"
+    },
+    "gpu.bf16_native": {
+     "describes": "Whether the hardware really does bf16",
+     "why": "Separates emulation from silicon"
+    }
+   },
+   "text": {
+    "unreadable": "The card's precision support could not be read — no reliable statement is possible",
+    "no_facts": "Facts could not be collected",
+    "emulated": "{name} (compute capability {cc}) has no bf16 in hardware. The library reports support, but it counts emulation — the instructions lead to a much slower configuration here.",
+    "evidence_cc": "gpu.compute_capability = {cc} (bf16 in hardware from 8.0)",
+    "because_fp16": "fp16 uses this card's tensor cores; bf16 would be emulated.",
+    "because_verify": "Checks that the key is set.",
+    "native": "This card supports bf16 in hardware; the general recommendation applies."
+   }
+  },
+  "warranty.rma.precheck": {
+   "title": "Warranty precheck",
+   "kb": "Have the serial number to hand; you will find it in Device Manager under Display adapters.",
+   "probes": {
+    "gpu.name": {
+     "describes": "GPU model",
+     "why": "Determines the warranty terms"
+    },
+    "gpu.serial": {
+     "describes": "Serial number as reported by the firmware",
+     "why": "Needed for the warranty check"
+    },
+    "gpu.driver_version": {
+     "describes": "Driver version",
+     "why": "Rules out known driver faults"
+    },
+    "serial.printed": {
+     "describes": "Printed serial number",
+     "why": "Your card reports no serial number over the firmware. Without one no warranty check is possible.",
+     "prompt": "Please read the serial number off the sticker on the card"
+    },
+    "symptom": {
+     "describes": "Observed symptom",
+     "why": "Picture faults and crashes lead to different checks",
+     "prompt": "What are you seeing?",
+     "choices": [
+      "Flickering picture",
+      "Artefacts in the picture",
+      "Crash under load",
+      "No picture",
+      "Fan noise"
+     ]
+    },
+    "serial.printed.again": {
+     "describes": "Printed serial number",
+     "why": "It is on the sticker on the card",
+     "prompt": "Please read the serial number off the sticker"
+    },
+    "contact.email": {
+     "describes": "Email address for the reply",
+     "why": "Without an address our answer cannot reach you",
+     "prompt": "Which address should we reply to?"
+    },
+    "contact.email.rma": {
+     "describes": "Email address for the reply",
+     "why": "The authorisation comes by email; without an address it cannot reach you",
+     "prompt": "Which address should we reply to?"
+    },
+    "contact.country": {
+     "describes": "Country for the return",
+     "why": "Determines the return address and the warranty terms",
+     "prompt": "Which country should the return label be for?",
+     "choices": [
+      "Germany",
+      "Austria",
+      "Switzerland",
+      "Other"
+     ]
+    }
+   },
+   "text": {
+    "need_serial": "Without a serial number no warranty check is possible — your card does not report one over the firmware.",
+    "no_serial": "Without a serial number no warranty check is possible",
+    "serial_missing": "Serial number missing",
+    "source_firmware": "firmware",
+    "source_sticker": "sticker (read off by the user)",
+    "precheck": "Warranty precheck for {gpu}, serial number {serial} (source: {source}), symptom: {symptom}. A return can be authorised; the final check happens on the device once it arrives.",
+    "because_info": "A precheck is informational only; nothing on the device is changed.",
+    "needs_human": "A return has to be authorised by a person"
+   }
+  },
+  "accounting.booking.guidance": {
+   "title": "Booking question about the installed version",
+   "kb": "Open Accounting > Master data > Accounts and choose the right account there.",
+   "probes": {
+    "app.version": {
+     "describes": "Installed program version",
+     "why": "Booking logic and forms change with each annual version"
+    },
+    "app.chart_of_accounts": {
+     "describes": "Chart of accounts in use",
+     "why": "SKR03 and SKR04 lead to different accounts"
+    },
+    "app.modules": {
+     "describes": "Installed add-on modules and their versions",
+     "why": "A module can override the booking logic"
+    },
+    "chart.confirmed": {
+     "describes": "Chart of accounts",
+     "why": "It could not be read and it decides the answer",
+     "prompt": "Which chart of accounts do you use?",
+     "choices": [
+      "SKR03",
+      "SKR04",
+      "I don't know"
+     ]
+    },
+    "chart.confirmed.again": {
+     "describes": "Chart of accounts",
+     "why": "Without it every account number would be a guess",
+     "prompt": "Which chart of accounts do you use?",
+     "choices": [
+      "SKR03",
+      "SKR04",
+      "I don't know"
+     ]
+    },
+    "question": {
+     "describes": "Your question",
+     "why": "It is the only content transmitted — your clients' data never leaves the device",
+     "prompt": "What is it about?"
+    }
+   },
+   "text": {
+    "dont_know": "I don't know",
+    "refuse_words": [
+     "structuring",
+     "save tax",
+     "saving tax",
+     "avoid",
+     "circumvent",
+     "conceal",
+     "off the books",
+     "cash in hand"
+    ],
+    "no_question": "No question was asked — there is nothing to answer.",
+    "question_missing": "Question missing",
+    "planning": "That is a question of tax structuring rather than of operating the program. The vendor agent gives no answer on it — please ask your tax adviser.",
+    "planning_escalate": "A structuring question — not for the vendor to answer",
+    "need_chart": "The answer depends on the chart of accounts — SKR03 and SKR04 lead to different accounts.",
+    "chart_unknown": "With the chart of accounts unknown, every account number would be a guess.",
+    "chart_unknown_escalate": "Chart of accounts unknown",
+    "answer": "Answer for {chart}, program version {version}. The path was resolved against the installed version, not against what the manual says.",
+    "evidence_question": "question = {q}",
+    "because_info": "Information only; nothing in your data is changed.",
+    "version_unknown": "The installed program version could not be read, and the answer turns on exactly that — booking logic and forms change with each annual version. Without it any account number would be a guess against the manual rather than against what you are running.",
+    "version_unknown_escalate": "Program version could not be read"
+   }
+  }
+ }
+}

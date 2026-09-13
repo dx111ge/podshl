@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podshl.example/spec/remedy.json",
+  "title": "Remedy",
+  "description": "The vendor's answer, and it is one of three things. A finding carries `findings` and a `plan`. An abstention sets `abstained` with a reason — not knowing is a valid answer, and a vendor that cannot abstain will guess. A need carries `need`: the deciding fact is acquired rather than estimated, and the client sends again with the enlarged facts. Signed, and verified against the key that proved the card.",
+  "type": "object",
+  "required": ["skill_id", "skill_version"],
+  "properties": {
+    "skill_id": { "type": "string" },
+    "skill_version": { "type": "string" },
+    "nonce": { "type": ["string", "null"], "description": "The nonce the client sent with this request, signed back. A signature proves who wrote a remedy and nothing about what for: without this, an answer to somebody else's readings verifies just as well as an answer to these, and a party on the wire can replay one." },
+    "facts_sha256": { "type": ["string", "null"], "description": "SHA-256 of the JCS-canonical facts the answer was made from, hex. The vendor recomputes it from what it used rather than echoing what was claimed, so the remedy is bound to the readings rather than to the caller's word about them." },
+    "model_id": { "type": "string", "description": "Pinned; auditability requires knowing what produced this." },
+    "findings": { "type": "array", "items": { "$ref": "finding.json" } },
+    "plan": { "type": "array", "items": { "$ref": "action-call.json" } },
+    "verify": { "type": "array", "items": { "$ref": "action-call.json" } },
+    "abstained": { "type": "boolean", "default": false },
+    "abstain_reason": { "type": ["string", "null"] },
+    "escalate": { "oneOf": [{ "$ref": "escalation.json" }, { "type": "null" }] },
+    "need": { "type": "array", "items": { "$ref": "probe.json" } },
+    "need_reason": { "type": ["string", "null"] }
+  }
+}

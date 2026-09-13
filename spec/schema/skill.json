@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podshl.example/spec/skill.json",
+  "title": "SkillDescriptor",
+  "description": "What the vendor offers for this problem, and what it needs collected. `applies_to` is checked before anything is read — but only `os` is enforceable by a client. Other keys are informational: whether a product is present is answered by the vendor's own read instructions returning a value or not, and probing for it would be the client guessing at a domain it does not own, before anyone consented to a read. `lang` states the language this descriptor's text is actually written in.",
+  "type": "object",
+  "required": ["id", "version"],
+  "properties": {
+    "id": { "type": "string" },
+    "version": { "type": "string" },
+    "title": { "type": "string" },
+    "applies_to": { "type": "object" },
+    "probes": { "type": "array", "items": { "$ref": "probe.json" } },
+    "lang": { "type": "string", "default": "en" },
+    "static_kb_url": { "type": ["string", "null"] },
+    "static_kb_says": { "type": ["string", "null"], "description": "What the vendor's own published documentation says — kept so a finding can contradict it in the user's view." }
+  }
+}

@@ -1,0 +1,8 @@
+time=2026-09-11T09:12:01.114+02:00 level=INFO source=images.go:753 msg="total blobs: 0"
+time=2026-09-11T09:12:01.115+02:00 level=INFO source=routes.go:1256 msg="Listening on 192.168.0.26:11434 (version 0.3.14)"
+time=2026-09-11T09:12:01.116+02:00 level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cpu cpu_avx cpu_avx2 cuda_v12]"
+time=2026-09-11T09:12:01.302+02:00 level=INFO source=gpu.go:221 msg="looking for compatible GPUs" models_dir=C:\Users\jdoe\.ollama\models
+time=2026-09-11T09:12:01.910+02:00 level=INFO source=types.go:107 msg="inference compute" id=GPU-3f2b1c9e-8a7d-4e6f-9b0a-1c2d3e4f5a6b library=cuda compute=7.5 name="NVIDIA GeForce RTX 2070 SUPER"
+[GIN] 2026/09/11 - 09:14:22 | 404 |     412.3µs |  192.168.0.40 | POST     "/api/chat"
+time=2026-09-11T09:14:22.518+02:00 level=ERROR source=routes.go:1420 msg="model 'gemma4:e4b' not found, try pulling it first" client=192.168.0.40 auth="Bearer sk-live-8f3a2b1c9d8e7f6a5b4c3d2e1f0a9b8c"
+[GIN] 2026/09/11 - 09:14:25 | 404 |     288.9µs |  192.168.0.40 | POST     "/api/chat"

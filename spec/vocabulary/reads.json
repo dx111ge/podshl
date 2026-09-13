@@ -1,0 +1,476 @@
+{
+ "$comment": "The read vocabulary. Two separate things live here and conflating them is a mistake the implementations have already made once. `ops` is what a vendor may ask for: a read instruction naming an op outside this list is refused. `catalogue` is the machine-independent list of named readings the client offers a local model to choose from — it is not a whitelist for vendor instructions, and on any given machine the client serves only the subset whose tools are actually present, stating the remainder rather than hiding it. A catalogue entry is pinned here by id and read instruction only: a client also carries a human label for each, but that is presentation and is translatable, and pinning it would make a translation a protocol change. Generated from client-rs/src/reads.rs and held to it by reads::tests::vocabulary_matches_the_spec. Version flags only for the language runtimes: `python3 -c` and `pip install` are the obvious things to want next and both are arbitrary execution, which is exactly what this list exists to keep out of a vendor's reach. There is deliberately no `pip list` either — a full package inventory is a fingerprint of the machine, and the report policy would let it travel verbatim.",
+ "version": 3,
+ "limits": {
+  "max_reads": 24,
+  "max_entries": 200,
+  "max_depth": 4
+ },
+ "ops": [
+  {
+   "op": "os_fact",
+   "risk": "low",
+   "describes": "A fact about the operating system itself, read without running anything",
+   "params": {
+    "name": "os | arch | version"
+   }
+  },
+  {
+   "op": "env_var",
+   "risk": "low",
+   "describes": "One environment variable, subject to the deny list",
+   "params": {
+    "name": "the variable name"
+   }
+  },
+  {
+   "op": "run_tool",
+   "risk": "medium",
+   "describes": "One tool from the allow list, with arguments matching that tool's pattern",
+   "params": {
+    "tool": "an id from `tools`",
+    "args": "array of strings"
+   }
+  },
+  {
+   "op": "read_file_key",
+   "risk": "medium",
+   "describes": "One key out of one JSON file under a named root",
+   "params": {
+    "path": "relative to a named root",
+    "key": "the key to read"
+   }
+  },
+  {
+   "op": "read_ini_key",
+   "risk": "medium",
+   "describes": "One `key = value` line from a settings file, subject to the same roots and deny list as read_file_key. `.venv/pyvenv.cfg` states an interpreter version as a plain key, so the environment a project actually uses can be read without running anything — which is why the answer to \"we need to know which Python\" is this rather than `python3 -c`. No sections, no continuations and no includes: a parser that can follow an include can be pointed elsewhere.",
+   "params": {
+    "path": "the file, which must lie inside a granted root",
+    "key": "the key whose value is returned"
+   }
+  },
+  {
+   "op": "read_registry",
+   "risk": "medium",
+   "describes": "One Windows registry value. Yields nothing on other platforms, and says so rather than failing",
+   "params": {
+    "path": "the key path",
+    "name": "the value name"
+   }
+  },
+  {
+   "op": "enumerate_read",
+   "risk": "medium",
+   "describes": "Walk a named root to a bounded depth and read named keys out of matching files",
+   "params": {
+    "root": "a name from `roots`",
+    "glob": "simple `dir/file` wildcards only",
+    "keys": "array of key names"
+   }
+  },
+  {
+   "op": "program_version",
+   "risk": "medium",
+   "describes": "Ask one program which version it is, and keep only the version number it prints. The program is found on the machine's search path and nowhere else — never by scanning the disk — and where it is not there, the user is asked where it is and that one file is run. The argument is one of `programs.flags`, chosen by the client's closed list rather than written by the publisher. Refused for anything on `programs.deny` and for any file inside the operating system's own directories. This exists because a version a person has to type is a claim, while the program itself can simply say it — and a version the person got wrong turns a solution's match into a guess.",
+   "params": {
+    "program": "a bare program name matching `programs.name` — never a path",
+    "flag": "optional, one of `programs.flags`; `--version` when absent"
+   }
+  },
+  {
+   "op": "container_image_version",
+   "risk": "low",
+   "describes": "Which version of a Docker image is running on this machine: the tag of a running container of that image, or the image's `org.opencontainers.image.version` label where the tag is not a version. Read from Docker's own listing — nothing is executed inside a container, and the publisher names an image, never a container. Yields nothing when no container of the image is running, and is refused, with that reason, where Docker is not present.",
+   "params": {
+    "image": "a repository name matching `images.name`, without a tag"
+   }
+  }
+ ],
+ "tools": [
+  {
+   "tool": "nvidia-smi",
+   "args": "--(query-gpu=[a-z_,.]+|format=csv,noheader)",
+   "$comment": "The argument pattern admits any field name because the useful ones are many. The identifying ones are few and named here: a field matching this is refused at the gate, before the user is asked about it. `serial` is deliberately not among them - a warranty precheck is the one diagnosis that genuinely turns on which unit this is, the user approves that reading on the consent panel like any other, and the client holds the value back out of any report that leaves. A rule that refused it would not protect anybody; it would move the same number off the card and onto a sticker the user reads out.",
+   "refuse_fields": "(?i)uuid|pci|vbios|gsp"
+  },
+  {
+   "tool": "lspci",
+   "args": "-[nmv]{1,3}"
+  },
+  {
+   "tool": "system_profiler",
+   "args": "SP[A-Za-z]+DataType"
+  },
+  {
+   "tool": "sw_vers",
+   "args": "-(productVersion|buildVersion)"
+  },
+  {
+   "tool": "python3",
+   "args": "(--version|-VV?)"
+  },
+  {
+   "tool": "pip",
+   "args": "--version"
+  },
+  {
+   "tool": "node",
+   "args": "(--version|-v)"
+  },
+  {
+   "tool": "uname",
+   "args": "-[rsmv]{1,4}"
+  }
+ ],
+ "roots": [
+  {
+   "root": "config",
+   "describes": "the platform's application configuration directory"
+  },
+  {
+   "root": "data",
+   "describes": "the platform's application data directory"
+  }
+ ],
+ "deny": [
+  ".ssh",
+  ".gnupg",
+  "id_rsa",
+  "id_ed25519",
+  ".aws",
+  ".kube",
+  "credentials",
+  "keychain",
+  "Login Data",
+  "cookies",
+  "wallet",
+  ".netrc",
+  "shadow",
+  ".env",
+  "token",
+  "secret",
+  "password",
+  "passwd",
+  "api_key",
+  "apikey",
+  "access_key",
+  "private_key",
+  "privatekey",
+  ".pem",
+  "authorization",
+  "bearer",
+  "_history",
+  "pass",
+  "pwd",
+  "passphrase",
+  "auth",
+  "login",
+  "logins",
+  "oauth",
+  "session",
+  "keyring",
+  "pgpass",
+  "machineguid",
+  "productid",
+  "uuid",
+  "serial",
+  "hostname",
+  "computername",
+  "username"
+ ],
+ "env": {
+  "$comment": "What `env_var` may name, and the only names it may. The environment is where every credential a person ever exported lives, under names nobody can list in advance, so the variables that are not secrets are listed instead. `XDG_SESSION_TYPE` is here although `session` is a denied word: a name on this list was judged by name.",
+  "allow": [
+   "OLLAMA_HOST",
+   "OLLAMA_MODELS",
+   "CUDA_VISIBLE_DEVICES",
+   "HF_HOME",
+   "XDG_SESSION_TYPE",
+   "WAYLAND_DISPLAY",
+   "__GLX_VENDOR_LIBRARY_NAME",
+   "DISPLAY",
+   "LANG",
+   "SHELL",
+   "TERM",
+   "VIRTUAL_ENV"
+  ]
+ },
+ "catalogue": [
+  {
+   "id": "gpu.name",
+   "read": {
+    "op": "run_tool",
+    "tool": "nvidia-smi",
+    "args": [
+     "--query-gpu=name",
+     "--format=csv,noheader"
+    ]
+   }
+  },
+  {
+   "id": "gpu.driver_version",
+   "read": {
+    "op": "run_tool",
+    "tool": "nvidia-smi",
+    "args": [
+     "--query-gpu=driver_version",
+     "--format=csv,noheader"
+    ]
+   }
+  },
+  {
+   "id": "gpu.vram_total_mib",
+   "read": {
+    "op": "run_tool",
+    "tool": "nvidia-smi",
+    "args": [
+     "--query-gpu=memory.total",
+     "--format=csv,noheader"
+    ]
+   }
+  },
+  {
+   "id": "gpu.compute_capability",
+   "read": {
+    "op": "run_tool",
+    "tool": "nvidia-smi",
+    "args": [
+     "--query-gpu=compute_cap",
+     "--format=csv,noheader"
+    ]
+   }
+  },
+  {
+   "id": "gpu.temperature",
+   "read": {
+    "op": "run_tool",
+    "tool": "nvidia-smi",
+    "args": [
+     "--query-gpu=temperature.gpu",
+     "--format=csv,noheader"
+    ]
+   }
+  },
+  {
+   "id": "gpu.power_draw",
+   "read": {
+    "op": "run_tool",
+    "tool": "nvidia-smi",
+    "args": [
+     "--query-gpu=power.draw",
+     "--format=csv,noheader"
+    ]
+   }
+  },
+  {
+   "id": "os.version",
+   "read": {
+    "op": "os_fact",
+    "name": "version"
+   }
+  },
+  {
+   "id": "os.container",
+   "read": {
+    "op": "os_fact",
+    "name": "container"
+   }
+  },
+  {
+   "id": "python.venv.version",
+   "read": {
+    "op": "read_ini_key",
+    "path": ".venv/pyvenv.cfg",
+    "key": "version"
+   }
+  },
+  {
+   "id": "python.venv.base",
+   "read": {
+    "op": "read_ini_key",
+    "path": ".venv/pyvenv.cfg",
+    "key": "home"
+   }
+  },
+  {
+   "id": "pci.devices",
+   "read": {
+    "op": "run_tool",
+    "tool": "lspci",
+    "args": [
+     "-nn"
+    ]
+   }
+  },
+  {
+   "id": "mac.displays",
+   "read": {
+    "op": "run_tool",
+    "tool": "system_profiler",
+    "args": [
+     "SPDisplaysDataType"
+    ]
+   }
+  },
+  {
+   "id": "mac.os_version",
+   "read": {
+    "op": "run_tool",
+    "tool": "sw_vers",
+    "args": [
+     "-productVersion"
+    ]
+   }
+  },
+  {
+   "id": "python.version",
+   "read": {
+    "op": "run_tool",
+    "tool": "python3",
+    "args": [
+     "--version"
+    ]
+   }
+  },
+  {
+   "id": "pip.version",
+   "read": {
+    "op": "run_tool",
+    "tool": "pip",
+    "args": [
+     "--version"
+    ]
+   }
+  },
+  {
+   "id": "node.version",
+   "read": {
+    "op": "run_tool",
+    "tool": "node",
+    "args": [
+     "--version"
+    ]
+   }
+  },
+  {
+   "id": "os.kernel",
+   "read": {
+    "op": "run_tool",
+    "tool": "uname",
+    "args": [
+     "-r"
+    ]
+   }
+  }
+ ],
+ "derived": [
+  {
+   "id": "gpu.bf16_native",
+   "from": "gpu.compute_capability",
+   "describes": "Whether bf16 exists in silicon (compute capability major >= 8) rather than being emulated. Computed on the client so a vendor cannot assert an interpretation of a reading it did not perform."
+  }
+ ],
+ "generalisation": {
+  "$comment": "How a reading is coarsened before it may travel in a report. The policy is keyed off the reading id, so an id is not a free name: renaming a reading silently changes what leaves the machine. This is a contract, not an implementation detail.",
+  "generalisers": [
+   "exact",
+   "major_minor",
+   "major",
+   "bucket",
+   "path",
+   "never"
+  ],
+  "rules": [
+   {
+    "when": "the probe is human and offers no fixed choices",
+    "policy": "never"
+   },
+   {
+    "when": "the probe is human and offers choices",
+    "policy": "exact"
+   },
+   {
+    "when": "the id contains `serial`",
+    "policy": "never"
+   },
+   {
+    "when": "the reading is a location — `python.venv.base`, an environment variable such as `VIRTUAL_ENV` or `HF_HOME`, or any value that looks like an absolute path",
+    "policy": "path — only the last path component travels, because the rest of a path is the account it lives under"
+   },
+   {
+    "when": "the probe reads a program's own version (`program_version`, `container_image_version`)",
+    "policy": "exact"
+   },
+   {
+    "when": "the id contains `version`",
+    "policy": "major_minor"
+   },
+   {
+    "when": "the id ends with `_mib`",
+    "policy": "bucket"
+   },
+   {
+    "when": "otherwise",
+    "policy": "exact"
+   }
+  ],
+  "buckets": [
+   2048,
+   4096,
+   8192,
+   12288,
+   16384,
+   24576
+  ]
+ },
+ "programs": {
+  "$comment": "What `program_version` may run. A bare name, so where the program is stays this machine's answer — the search path, or the location the user gives when asked. The flag is one of a closed list: `-v` is absent because for half the programs that exist it means verbose, and the bare word `version` is absent because to a program without subcommands it is an argument — a file, a target, a host. The deny list is the programs that do not parse their arguments at all and simply do their job — a shell or launcher runs something else, a power or session tool changes the machine's state, a disk tool destroys data, a package runner or build tool runs what the directory it is started in says, an interpreter is a shell by another name — and the operating system's own directories are refused as well, which catches the long tail of programs that ignore an unknown argument and open a window. The program is started from an empty scratch directory, bounded in time and output, and its whole process group is ended when the limit is reached. Only the version token comes back; nothing else a program prints leaves the client. Anchored by both implementations.",
+  "name": "[A-Za-z0-9][A-Za-z0-9._+-]{0,63}",
+  "flags": [
+   "--version",
+   "-V",
+   "-version"
+  ],
+  "deny": [
+   "sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "nu", "cmd", "command",
+   "powershell", "pwsh", "wsl", "env", "xargs", "nohup", "nice", "timeout", "time",
+   "watch", "chroot", "setsid", "script", "expect", "busybox",
+   "sudo", "su", "doas", "runas", "pkexec", "gsudo",
+   "shutdown", "reboot", "halt", "poweroff", "init", "telinit", "logoff", "logout",
+   "systemctl", "launchctl", "service", "sc",
+   "rm", "rmdir", "del", "erase", "dd", "mkfs", "format", "diskpart", "fdisk",
+   "parted", "wipefs", "shred", "kill", "killall", "pkill", "taskkill",
+   "open", "xdg-open", "start", "explorer", "rundll32", "regsvr32", "mshta",
+   "cscript", "wscript", "msiexec", "schtasks", "at", "crontab", "osascript",
+   "npx", "uvx", "bunx", "pipx", "pnpm", "yarn", "npm", "make", "just", "rake", "task",
+   "gradle", "mvn",
+   "node", "python", "python3", "perl", "ruby", "php"
+  ],
+  "run_limit_seconds": 5
+ },
+ "images": {
+  "$comment": "What `container_image_version` and a probe's `log.container` may name: a repository as Docker spells it, lower case, no tag and no digest. The tag is what is being read, so a publisher naming one would be asserting the answer.",
+  "name": "[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*){0,3}"
+ },
+ "excerpts": {
+  "$comment": "A human probe may carry `log`, naming where the text it asks for usually comes from: `container`, an image whose running container's output the client may load, and `file`, the name a log file usually has. Neither travels by itself. What is loaded is shown on the user's machine for them to cut down; the part they keep is anonymised — account and host names, addresses, e-mail, credentials, tokens, identifiers and timestamps replaced, with a count of each shown — and sent only under the free-text consent, naming its recipient. A file is never searched for: the user is asked where it is.",
+  "load_lines": 400,
+  "max_lines": 120,
+  "max_chars": 8000,
+  "file": "[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+ },
+ "registry": {
+  "$comment": "What a `read_registry` path and value name may contain. This exists because the client built a PowerShell `-Command` string by interpolating both of them, so a single apostrophe in a publisher-supplied path closed the quote and everything after it ran — arbitrary code behind a consent screen that said 'read a registry value'. The client no longer builds a command string at all, and these patterns are the second half: a value that cannot contain a quote, a semicolon or a newline cannot be a command whatever it is passed to. Anchored by both implementations.",
+  "hives": [
+   "HKLM",
+   "HKCU",
+   "HKCR",
+   "HKU",
+   "HKCC"
+  ],
+  "path": "(HKLM|HKCU|HKCR|HKU|HKCC):?(\\\\[A-Za-z0-9._ -]{1,64}){1,12}",
+  "name": "[A-Za-z0-9._ -]{1,128}",
+  "refuse_names": "(?i)machineguid|productid|registeredowner|computername|hostname|username|serial|uuid"
+ }
+}

@@ -1,0 +1,2330 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL</title>
+<style>
+  :root{
+    /* The palette below follows `prefers-color-scheme`; without this the
+       *native* parts of the window do not. The scrollbar, the caret, the
+       select popups and the overscroll edge are drawn by the engine, and the
+       engine assumes light unless it is told — so a dark page came with a
+       white scrollbar down its right-hand side. One declaration rather than
+       `::-webkit-scrollbar` rules, because it is the same answer for every
+       control the engine draws and it keeps the light theme correct too. */
+    color-scheme: light dark;
+    --bg:#F5F8F7; --panel:#FFFFFF; --sub:#EBF0EE; --ink:#12181A; --soft:#3E4D4C;
+    /* --muted was #6C7B79, which is 4.4:1 on white — under the 4.5:1 that the
+       .78rem key/value text needs. #5B6B69 is 5.6:1 on the panel and 5.2:1 on
+       the page background. */
+    --muted:#5B6B69; --rule:#D6DFDC; --ok:#0F6E5C; --okbg:#E4F0EC;
+    --warn:#9A5B2B; --warnbg:#F6EBE1; --stop:#8C2F2A;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0E1315; --panel:#161D1F; --sub:#1C2427; --ink:#E7EDEB; --soft:#BCC8C5;
+           --muted:#849693; --rule:#27312F; --ok:#5BC4A7; --okbg:#12302A;
+           --warn:#D9975F; --warnbg:#2A2018; --stop:#E0776F; }
+    /* White on the dark theme's --ok is 2.1:1; the page background on it is
+       8.9:1. Light keeps white on #0F6E5C, which is 6.2:1. */
+    button.primary{color:var(--bg)}
+  }
+  *{box-sizing:border-box}
+  /* The UA sheet hides [hidden], but any author display: rule beats it, so a
+     flex row with the attribute stayed visible. */
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .app{display:flex;flex-direction:column;height:100vh}
+
+  .idbar{flex:none;display:flex;align-items:center;gap:.6rem;padding:.55rem 1rem;background:var(--panel);
+         border-bottom:1px solid var(--rule);font-size:.88rem}
+  .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--muted);flex:none}
+  .dot.ok{background:var(--ok)} .dot.none{background:var(--warn)}
+  .idbar .who{font-weight:600}
+  .idbar .spacer{margin-left:auto}
+  .idbar details{font-size:.8rem;color:var(--muted)}
+  /* Header controls survive a run; the intro panel does not, and settings that
+     become unreachable after the first question are not settings. */
+  .chip{font:inherit;font-size:.8rem;font-weight:600;padding:.24rem .6rem;border-radius:999px;
+        border:1px solid var(--rule);background:var(--sub);color:var(--soft);cursor:pointer}
+  .chip:hover{filter:brightness(1.08)}
+  .chip:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+  .chip[disabled]{opacity:.55;cursor:not-allowed}
+  select.chip{padding-right:.4rem}
+  /* Both variants are rendered; a single switch shows one. Nothing re-renders,
+     so the original is always exactly one click away from any consent screen. */
+  .bi-o{display:none}
+  body.orig .bi-t{display:none}
+  body.orig .bi-o{display:inline}
+  body.orig div.bi-o{display:block}
+  .chip.ok{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+  /* A missing model is not a neutral state: without it, an unreachable vendor
+     means no answer at all. It has to read as unfinished, not as a choice. */
+  .chip.missing{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+  .chip.missing::before{content:"! ";font-weight:700}
+  .idbar summary{cursor:pointer;list-style:none}
+  .idbar summary::-webkit-details-marker{display:none}
+  .idbar .proof{position:absolute;right:1rem;margin-top:.4rem;background:var(--panel);
+                border:1px solid var(--rule);border-radius:5px;padding:.6rem .8rem;
+                font-family:var(--mono);font-size:.74rem;max-width:34rem;z-index:5;
+                box-shadow:0 6px 24px rgba(0,0,0,.14)}
+
+  /* `min-height:0` is not a tidy-up. A flex item's automatic minimum size is
+     its content, so without it this never shrinks below the panels inside it:
+     the column grows past the viewport, `overflow-y` has nothing to scroll
+     because the box is already as tall as its content, and the footer — where
+     the next question is typed — is pushed off the bottom of a window that
+     does not scroll. It only shows once the window is shorter than the
+     conversation, which is every window after a few panels. */
+  main{flex:1 1 auto;min-height:0;overflow-y:auto;padding:1.2rem;
+       display:flex;flex-direction:column;gap:.8rem}
+  .wrap{width:100%;max-width:44rem;margin:0 auto;display:flex;flex-direction:column;gap:.8rem}
+
+  .q{font-size:1.16rem;font-weight:600;line-height:1.4}
+  .q span{color:var(--muted);font-weight:400;font-size:.84rem;display:block;margin-bottom:.2rem}
+
+  .step{display:flex;gap:.7rem;align-items:flex-start}
+  .step .mark{flex:none;width:1.35rem;height:1.35rem;border-radius:50%;background:var(--okbg);
+               color:var(--ok);display:grid;place-items:center;font-size:.8rem;font-weight:700;margin-top:.1rem}
+  .step .mark.wait{background:var(--sub);color:var(--muted)}
+  .step .body{flex:1;min-width:0}
+  .step .title{font-weight:600}
+  .step .note{color:var(--muted);font-size:.9rem}
+
+  .panel{background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:.95rem 1.05rem}
+  .panel:focus{outline:none}
+  .panel:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+  .panel.decide{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
+  .panel.stop{border-color:var(--warn);background:var(--warnbg)}
+  .panel.done{border-color:var(--ok);background:var(--okbg)}
+  .panel h3{margin:0 0 .45rem;font-size:1.02rem}
+  .panel p{margin:.3rem 0}
+
+  ul.plain{margin:.5rem 0 .2rem;padding:0;list-style:none;display:grid;gap:.42rem}
+  ul.plain li{display:flex;gap:.55rem}
+  ul.plain li::before{content:"·";color:var(--ok);font-weight:700}
+  ul.plain .lbl{font-weight:500}
+  ul.plain .why{color:var(--muted);font-size:.88rem}
+
+  details.more{margin-top:.6rem;border-top:1px solid var(--rule);padding-top:.5rem}
+  details.more summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+  details.more[open] summary{margin-bottom:.4rem}
+  /* A long value used to push the whole name column to nothing; each column
+     now has a floor, and a value that does not fit wraps rather than breaking
+     inside a word wherever the line happens to end. */
+  .kv{display:grid;grid-template-columns:minmax(9rem,1fr) minmax(0,2fr);gap:0;font-family:var(--mono);font-size:.78rem}
+  .kv div{padding:.24rem 0;border-bottom:1px solid var(--sub);overflow-wrap:anywhere}
+  .kv .v{text-align:right}
+  .kv .v.t{color:var(--warn)} .kv .v.f{color:var(--ok)}
+  .kv .held{color:var(--muted);font-style:italic}
+
+  .quote{margin:.55rem 0 0;padding:.6rem .8rem;background:var(--sub);border-radius:5px;
+         font-size:.92rem;color:var(--soft)}
+  .quote b{color:var(--warn);display:block;margin-bottom:.15rem}
+
+  .btns{display:flex;gap:.5rem;margin-top:.85rem;flex-wrap:wrap}
+  button{font:inherit;font-weight:600;padding:.52rem 1.1rem;border-radius:5px;
+         border:1px solid var(--rule);background:var(--sub);color:var(--ink);cursor:pointer}
+  button.primary{background:var(--ok);border-color:var(--ok);color:#fff}
+  button.deny{background:transparent;color:var(--stop)}
+  button.ghost{background:transparent;color:var(--soft)}
+  button:hover{filter:brightness(1.07)}
+  button:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+  button[disabled]{opacity:.45;cursor:not-allowed}
+
+  .spin{display:inline-block;width:.65em;height:.65em;border:2px solid var(--rule);
+        border-top-color:var(--ok);border-radius:50%;animation:s .7s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){.spin{animation:none}}
+
+  /* Everything that used to be a `style="…"` attribute lives here.
+     Tauri puts a nonce into `style-src` for its own injected code, and a
+     browser that sees a nonce ignores 'unsafe-inline' — so every inline style
+     attribute in this window was blocked, and every answer box, list and
+     question rendered at the browser's default width with none of its
+     spacing. The layout of the first screen comes from this block and was
+     fine, which is why nobody saw it: every panel after it was affected. */
+  .field{width:100%;margin-top:.3rem;font:inherit;padding:.5rem .6rem;border:1px solid var(--rule);
+         border-radius:5px;background:var(--bg);color:var(--ink);line-height:1.5}
+  select.field{padding:.45rem .6rem}
+  textarea.field{resize:vertical}
+  .field.mono{font-family:var(--mono);font-size:.8rem}
+  .ask{display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap}
+  .ask input,.ask select{flex:1;min-width:10rem;font:inherit;padding:.5rem .6rem;border:1px solid var(--rule);
+         border-radius:5px;background:var(--bg);color:var(--ink)}
+  .pick{display:flex;gap:.5rem;align-items:flex-start;cursor:pointer}
+  .pick input{margin-top:.35rem}
+  .qb{margin:.6rem 0}
+  .field.invalid{border-color:var(--stop);box-shadow:0 0 0 1px var(--stop) inset}
+  .mt2{margin-top:.3rem} .mt3{margin-top:.4rem} .mt4{margin-top:.6rem} .mt5{margin-top:.7rem}
+  .c-warn{color:var(--warn)} .c-muted{color:var(--muted)} .c-stop{color:var(--stop)} .c-ok{color:var(--ok)}
+  /* A label that is read out and not drawn: the settings row is a row of
+     fields whose meaning is their placeholder, which a screen reader does not
+     treat as a name. */
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  label.lbl{display:block}
+  .answer code{font-family:var(--mono);font-size:.85em;background:var(--sub);padding:.05rem .3rem;border-radius:3px}
+  .answer pre.md{background:var(--sub);padding:.6rem .8rem;border-radius:5px;overflow-x:auto;
+                 font-family:var(--mono);font-size:.82rem;margin:.5rem 0;white-space:pre}
+  .answer ul.md,.answer ol.md{margin:.4rem 0;padding-left:1.3rem}
+  .answer ul.md ul{margin:.15rem 0;padding-left:1.1rem}
+  .answer blockquote.md{margin:.5rem 0;padding:.3rem .8rem;border-left:3px solid var(--rule);color:var(--soft)}
+  .answer p{margin:.45rem 0}
+  /* The method's sections. A cause, what it does not explain, what to do and
+     what would disprove it are four different things to a reader, and one
+     paragraph is all four at once. Only sections the model actually returned
+     are drawn — an empty heading would be the window claiming the method was
+     followed when it was not. */
+  .mpart{margin:.55rem 0}
+  .mpart .mlbl{font-size:.74rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+                color:var(--muted);margin-bottom:.1rem}
+  .mpart:first-child .mlbl{color:var(--soft)}
+  table{border-collapse:collapse;font-size:.85rem;margin-top:.4rem}
+  th,td{text-align:left;padding:.25rem .6rem .25rem 0;border-bottom:1px solid var(--sub)}
+
+  /* Never shrinks, for the same reason: the way back into the conversation
+     must not be the thing that gets squeezed out when there is little room. */
+  footer{flex:none;border-top:1px solid var(--rule);background:var(--panel);padding:.7rem 1rem}
+  footer .wrap{flex-direction:row;gap:.55rem;align-items:center}
+  footer input{flex:1;min-width:8rem;font:inherit;padding:.55rem .7rem;border:1px solid var(--rule);
+               border-radius:5px;background:var(--bg);color:var(--ink)}
+  footer .adr{flex:0 0 13rem;font-size:.9rem}
+  /* A narrow window: the two inputs and the button stack instead of the
+     vendor field being squeezed to nothing, and the header wraps instead of
+     pushing the model chip off the edge. */
+  @media (max-width:560px){
+    footer .wrap{flex-direction:column;align-items:stretch}
+    footer .adr{flex:1 1 auto}
+    .idbar{flex-wrap:wrap}
+    .idbar .proof{right:.5rem;max-width:calc(100vw - 1rem)}
+  }
+</style></head>
+<body>
+<div class="app">
+  <div class="idbar" id="idbar">
+    <span class="dot" id="dot"></span>
+    <span class="who" id="who"></span>
+    <details id="proofbox" hidden>
+      <summary id="proofsum"></summary>
+      <div class="proof" id="proof"></div>
+    </details>
+    <span class="spacer"></span>
+    <select class="chip" id="lang" aria-label="Language"></select>
+    <button class="chip" id="origtab" hidden></button>
+    <button class="chip" id="llmchip">…</button>
+  </div>
+
+  <main aria-live="polite"><div class="wrap" id="main"></div></main>
+
+  <footer><div class="wrap">
+    <input id="problem" aria-label="problem">
+    <input id="vquery" class="adr" aria-label="vendor">
+    <button class="primary" id="go"></button>
+  </div></footer>
+</div>
+
+<script>
+"use strict";
+const invoke = (c,a) => window.__TAURI__.core.invoke(c,a);
+const $ = id => document.getElementById(id);
+// Quotes too: this is used inside attribute values — `data-id="${esc(p.id)}"` —
+// with values a vendor's skill chooses, and a `"` there ended the attribute.
+// The window's CSP blocks inline handlers, which is a second line, not the first.
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------------------------------------------------------------- i18n
+   A support client that speaks one language is not a horizontal layer, and
+   this product's own argument is that a localisation matrix should collapse.
+   Adding a language is one object below; the keys are the contract. */
+const I18N = {};
+const LANGUAGES = ["de", "en", "fr", "es"];
+let LANG = "de";
+
+/// One file per language, fetched rather than executed. They were `.js`
+/// assigning into a global, which meant the only way to read them the way the
+/// client does was to run a JavaScript engine — so the check that every
+/// language defines every key needed node, and a key set is exactly the kind of
+/// contract that should not depend on a second toolchain to verify. As JSON the
+/// suite parses the same bytes this line parses.
+async function loadLanguages() {
+  for (const lang of LANGUAGES) {
+    const res = await fetch(`i18n/${lang}.json`);
+    if (!res.ok) throw new Error(`i18n/${lang}.json: ${res.status}`);
+    I18N[lang] = await res.json();
+  }
+}
+const t = (k, p) => {
+  let s = (I18N[LANG] && I18N[LANG][k]) || I18N.en[k] || k;
+  if (p) for (const [key, val] of Object.entries(p)) s = s.split("{"+key+"}").join(val);
+  return s;
+};
+/// A sentence with a number in it, in the form the number needs. "1 things"
+/// was written into every language as "thing(s)", which is a form no language
+/// has; each such key is now two, `_one` and `_other`, and this picks. The
+/// count is a value from a server or a reading and is escaped like one.
+const n = (key, count, p) => t(key + (Number(count) === 1 ? "_one" : "_other"), {n: esc(count), ...(p || {})});
+
+/// What the binary said, in the language of this window.
+///
+/// The binary cannot know which language was picked here, and most of what it
+/// says arrives as an error string. Its sentences are the `m_*` entries of
+/// en.json — it reads that file when it is built — so a message is recognised
+/// by its English template, its values are lifted out, and it is said again in
+/// the chosen language. Sentence by sentence, because some messages are made of
+/// several. Anything not recognised is shown as it came, which is what it was
+/// before: never a blank where a reason should be. Plain text out; the caller
+/// escapes, as it did for the raw string.
+let MSGS = null;
+function messageTemplates(){
+  if(MSGS) return MSGS;
+  const quote = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  MSGS = Object.entries(I18N.en).filter(([k]) => k.startsWith("m_")).map(([k, tpl]) => {
+    const names = [];
+    const body = tpl.split(/(\{\w+\})/).map(part => {
+      const m = part.match(/^\{(\w+)\}$/);
+      if(m){ names.push(m[1]); return "([\\s\\S]*?)"; }
+      return quote(part);
+    }).join("");
+    return { k, names, re: new RegExp("^" + body + "$"), lit: tpl.replace(/\{\w+\}/g, "").length };
+  }).sort((a, b) => b.lit - a.lit);
+  return MSGS;
+}
+function trOne(s, depth){
+  for(const m of messageTemplates()){
+    const x = s.match(m.re);
+    if(!x) continue;
+    const p = {};
+    // A value is itself a message only sometimes — a refusal inside a
+    // refusal. Most are a path, a number, a name, and stay exactly as they came.
+    m.names.forEach((nm, i) => {
+      const inner = depth < 3 ? trOne(x[i+1], depth+1) : null;
+      p[nm] = inner ?? x[i+1];
+    });
+    return t(m.k, p);
+  }
+  return null;
+}
+function tr(s){
+  s = String(s ?? "");
+  if(!s || LANG === "en") return s;
+  const whole = trOne(s, 0);
+  if(whole !== null) return whole;
+  const parts = s.split(/(?<=[.!?])\s+/);
+  if(parts.length < 2) return s;
+  return parts.map(p => trOne(p, 0) ?? p).join(" ");
+}
+
+/* ------------------------------------------------------------ plumbing */
+const main = $("main");
+let SKILL=null, BASE=null, FACTS={}, VDOMAIN="", LAST_FINDINGS=[];
+// Which of FACTS a person typed or chose rather than the machine reading it.
+// A claim and a measurement must not be able to wear the same name.
+const STATED=new Set();
+// Which facts the answer actually turned on, where the producer said so. With
+// STATED it is what tells a publisher whether an outcome tests their rule or
+// tests whether somebody answered a question correctly.
+let DECIDED=[];
+// Whether a diagnosis is under way. While it is, the language cannot change —
+// half a run in one language and half in another is not a translation — and
+// a new panel takes focus so a screen reader follows the flow.
+let RUNNING=false;
+// The operator server. This was the catch-all on :8724, which served any
+// product's gap report to whoever asked and counted posts rather than people.
+//
+// The loopback values are a fallback and not the configuration. Both are
+// replaced at boot from `endpoints`, which reads them in Rust — a released
+// binary has to be able to talk to a real host, and a constant here would mean
+// it could only ever talk to the machine it runs on. Kept as the defaults so a
+// development checkout behaves exactly as before, and kept as `let` rather than
+// fetched at each use so nothing in the flow depends on a network call.
+let SERVER_URL="http://127.0.0.1:8725";
+// The neutral responsiveness index. Separate from everything else on purpose:
+// it holds no client identity, no incident data and no vendor secrets, so
+// there is nothing there worth breaching.
+let INDEX_URL="http://127.0.0.1:8723";
+// The host a report or a question goes to, as a person would name it.
+const operatorHost = () => { try{ return new URL(SERVER_URL).host; }catch(_){ return SERVER_URL; } };
+// Smooth scrolling is motion; a person who asked the system for less of it
+// gets a jump instead.
+const REDUCED_MOTION = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function add(html, cls, id){
+  if(id){ const old=document.getElementById(id); if(old) old.remove(); }
+  const d=document.createElement("div");
+  if(id) d.id=id;
+  d.className = cls === undefined ? "panel" : cls;
+  d.innerHTML = html;
+  // Focusable so a screen reader lands on the new panel rather than staying
+  // where the last click was. A panel that asks for consent hands focus to
+  // its refusing button instead, in `ask`.
+  d.tabIndex = -1;
+  main.appendChild(d);
+  if(RUNNING && !d.querySelector(".deny")) d.focus({preventScroll:true});
+  d.scrollIntoView({block:"end", behavior: REDUCED_MOTION ? "auto" : "smooth"});
+  return d;
+}
+// A panel that turns into a warning — `el.className="panel stop"` happens at
+// two dozen places — is announced as one. Watching the class is one line here
+// against a call at every one of those places.
+new MutationObserver(ms => ms.forEach(m => {
+  const el = m.target;
+  if(el.parentElement !== main) return;
+  if(el.classList.contains("stop")) el.setAttribute("role", "alert");
+  else if(el.getAttribute("role") === "alert") el.removeAttribute("role");
+})).observe(main, {attributes:true, attributeFilter:["class"], subtree:true});
+function step(mark, title, note, extra){
+  return add(`<div class="step"><div class="mark">${mark}</div><div class="body">
+    <div class="title">${title}</div>${note?`<div class="note">${note}</div>`:""}
+    ${extra||""}</div></div>`, "");
+}
+/// A panel that has been answered. Its controls go quiet, and the frame that
+/// marked it as waiting for a decision goes with them — a decided panel that
+/// still looked undecided was the one thing on the screen that lied.
+function settle(el){
+  el.querySelectorAll("button,input,textarea,select").forEach(b=>b.disabled=true);
+  el.classList.remove("decide");
+}
+
+/// What was read, with its values. Naming the fields without showing them
+/// hides the user's own data from the user — the one party entitled to it.
+function readValues(obj){
+  return `<div class="kv mt3">` + Object.entries(obj||{}).map(([k,v])=>{
+    const l = label(k);
+    const name = (l && l.t && l.t !== k) ? l.t : k;
+    const val = typeof v === "string" ? v : JSON.stringify(v);
+    return `<div>${esc(name)}</div><div class="v">${esc(String(val).slice(0,160))}</div>`;
+  }).join("") + `</div>`;
+}
+/// A value as the person sees it before it travels. `null` is not a value but
+/// the mark of one that was withheld — a report's `stated` map carries it for
+/// every answer whose words stay here — and it says so rather than "null".
+const kvValue = v => v === null
+  ? `<span class="held">${esc(t("held_back"))}</span>` : esc(JSON.stringify(v));
+function kv(obj){
+  return `<div class="kv">` + Object.entries(obj||{}).map(([k,v])=>{
+    const c = v===true?"t":v===false?"f":"";
+    return `<div>${esc(k)}</div><div class="v ${c}">${kvValue(v)}</div>`;
+  }).join("") + `</div>`;
+}
+/// The same table with the publisher's words for each field rather than its
+/// id: "Exactly what would be sent" showed `gpu.driver_version`, which names
+/// the field to a programmer and to nobody else.
+function kvl(obj, names){
+  return `<div class="kv">` + Object.entries(obj||{}).map(([k,v])=>{
+    const c = v===true?"t":v===false?"f":"";
+    const l = label(k), name = (names && names(k)) || ((l.t && l.t !== k) ? l.t : k);
+    return `<div>${esc(name)}</div><div class="v ${c}">${kvValue(v)}</div>`;
+  }).join("") + `</div>`;
+}
+/// Vendor text, in the user's language and in the original.
+/// When the vendor served the user's language there is only one variant and no
+/// switch appears — nothing to compare against, so a tab would be noise.
+let TRANSLATED = false;
+function bi(orig, trans){
+  if(!TRANSLATED || !trans || trans === orig) return esc(orig);
+  return `<span class="bi"><span class="bi-t">${esc(trans)}</span><span class="bi-o" lang="en">${esc(orig)}</span></span>`;
+}
+
+/// What the panel shows, and what the next request sends: one object.
+///
+/// `FACTS` holds what the machine read and what the person typed, raw. The
+/// request anonymises on the way out, so a panel built from `FACTS` showed a
+/// Windows account name under a sentence promising "only this goes — nothing
+/// about you as a person". Both halves were true and the pair was a lie: the
+/// account name was not going, and nothing on screen said so.
+///
+/// This is the anonymised object, and it is what travels. A person who wants
+/// to take out more than the rules caught can edit any answer they typed —
+/// those are their words, and `<user>` is not the only thing somebody might
+/// not want to send.
+async function asSent(facts){
+  const r = await invoke("facts_as_sent", {facts});
+  return {facts: r.facts, replaced: r.replaced || {}};
+}
+const TYPED_IDS = () => new Set([
+  ...(typeof STATED !== "undefined" ? STATED : []),
+  ...(typeof TYPED !== "undefined" ? TYPED : []),
+]);
+const replacedLine = rep => Object.keys(rep).length
+  ? t("anon_done", {list: Object.entries(rep).map(([k,c])=>t("anon_"+k,{n:c})).join(", ")})
+  : t("anon_none");
+/// The answers a person typed, which they may still change on the way out.
+const editableIn = obj => Object.keys(obj).filter(k =>
+  TYPED_IDS().has(k) && typeof obj[k] === "string" && obj[k].trim());
+
+function label(id){
+  // `<probe id>.declined` is a fact on the wire and therefore a line on the
+  // consent panel, and it was arriving there as the raw key beside the word
+  // `true`. C4 says the panel names what travels *in the user's language*;
+  // "serial.printed.declined / true" is neither. It is described as what it
+  // is — the question, and that it went unanswered.
+  if(id.endsWith(".declined")){
+    const base=label(id.slice(0, -".declined".length));
+    return {t:t("declined_of",{q:base.t}), w:t("declined_why")};
+  }
+  const p=(SKILL&&SKILL.probes||[]).find(p=>p.id===id);
+  return p ? {t:(TRANSLATED && p.describes_t) || p.describes, w:(TRANSLATED && p.why_t) || p.why} : {t:id, w:""};
+}
+function ask(el){ return new Promise(res=>{
+  const done=v=>{settle(el);res(v);};
+  el.querySelector(".allow").onclick=()=>done(true);
+  el.querySelector(".deny").onclick=()=>done(false);
+  el.querySelector(".deny").focus();   // a stray Return must never grant consent
+});}
+function pickList(el){ return new Promise(res=>{
+  const done=v=>{settle(el);res(v);};
+  el.querySelector(".allow").onclick=()=>done([...el.querySelectorAll(".rp:checked")].map(c=>c.dataset.id));
+  el.querySelector(".deny").onclick=()=>done(null);
+  el.querySelector(".deny").focus();
+});}
+/// The button that reads says how many it will read, and reads nothing when
+/// nothing is ticked — "Read the selected" with every box cleared was a
+/// button that did nothing, and one that says "Read the 0 selected" is at
+/// least honest, but disabled is clearer.
+function liveReadCount(panel){
+  const btn=panel.querySelector(".allow");
+  const sync=()=>{
+    const count=panel.querySelectorAll(".rp:checked").length;
+    btn.textContent=t("read_yes",{n:count});
+    btn.disabled = count === 0;
+  };
+  panel.querySelectorAll(".rp").forEach(c=>c.addEventListener("change", sync));
+  sync();
+}
+
+/// A wait the person can end.
+///
+/// Every spinner used to be a wait with no way out: a vendor that never
+/// answered, a local model loading for a minute, a translation of forty
+/// probes — the only exit was to close the window. The panel that shows the
+/// spinner gets a Stop button; pressing it ends the run there. The command
+/// itself cannot be interrupted from here and runs to its end in the binary;
+/// its result is simply no longer waited for, which is what the person asked.
+class Cancelled extends Error { constructor(){ super("cancelled"); } }
+function awaitOrCancel(promise, panel){
+  let btns=panel.querySelector(".btns"), made=false;
+  if(!btns){ btns=document.createElement("div"); btns.className="btns"; panel.appendChild(btns); made=true; }
+  const b=document.createElement("button");
+  b.className="ghost stopwait"; b.textContent=t("stop_wait"); btns.appendChild(b);
+  const tidy=()=>{ b.remove(); if(made) btns.remove(); };
+  return new Promise((res, rej)=>{
+    b.onclick=()=>{
+      tidy();
+      panel.className="panel stop";
+      panel.innerHTML=`<h3>${t("stopped_h")}</h3><p>${t("stopped_1")}</p>`;
+      rej(new Cancelled());
+    };
+    promise.then(v=>{ tidy(); res(v); }, e=>{ tidy(); rej(e); });
+  });
+}
+
+/// Every translation this session has made, by what was asked and for which
+/// language. A run that is repeated — the same vendor, the same skill — asked
+/// the model for the same forty sentences again, at a minute on a local model.
+const TR_CACHE = new Map();
+function translate(texts){
+  return translateKeeping(texts, []).then(out => out.texts);
+}
+/// The same, keeping a published project's own terms as written (`LG8`).
+/// Resolves to `{texts, lost}`: `lost` names a kept term the model dropped
+/// anyway, which the window then says beside the translation.
+function translateKeeping(texts, keep){
+  const terms = Array.isArray(keep) ? keep : [];
+  const key = LANG + "\n" + JSON.stringify(terms) + "\n" + JSON.stringify(texts);
+  if(TR_CACHE.has(key)) return Promise.resolve(TR_CACHE.get(key));
+  return invoke("llm_translate",{texts, to:LANG, keep:terms}).then(out => {
+    const got = {texts: out.texts, lost: out.lost || []};
+    TR_CACHE.set(key, got);
+    return got;
+  });
+}
+/// The model settings, read once and kept until they change. Every path
+/// asked the binary again — before a translation, before a refusal, before a
+/// report — for a value only `llm_set` ever changes.
+let LLM_CFG = null;
+async function llmGet(){
+  if(!LLM_CFG) LLM_CFG = await invoke("llm_get");
+  return LLM_CFG;
+}
+function llmSet(cfg){
+  LLM_CFG = null;
+  return invoke("llm_set", cfg);
+}
+
+/// A published solution's text, which is Markdown written by a stranger.
+///
+/// It was shown as `esc(text)` with blank lines turned into breaks, so the
+/// command a solution exists to give — an indented block — ran into one line
+/// with the next command, and `**System → LLM config**` arrived with its
+/// asterisks. Every character is escaped first and only fixed tags are ever
+/// inserted, so nothing a publisher writes can become markup: paragraphs,
+/// indented and fenced code, bulleted and numbered lists with one level of
+/// nesting, quotes, `code`, **bold** and *emphasis*, nothing else.
+function inlineMd(s){
+  return String(s).split("`").map((seg,i)=> i%2 ? `<code>${esc(seg)}</code>`
+    : esc(seg).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+              .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,;:!?]|$)/g,"$1<i>$2</i>")).join("");
+}
+function md(src){
+  const out=[]; let para=[], items=null, listTag="ul", code=null, fenced=false, quote=null;
+  const item=x=>`<li>${inlineMd(x.text)}${x.sub.length?`<ul>${x.sub.map(s=>`<li>${inlineMd(s)}</li>`).join("")}</ul>`:""}</li>`;
+  const flush=()=>{
+    if(para.length){ out.push(`<p>${inlineMd(para.join(" "))}</p>`); para=[]; }
+    if(items){ out.push(`<${listTag} class="md">${items.map(item).join("")}</${listTag}>`); items=null; }
+    if(code){ out.push(`<pre class="md">${esc(code.join("\n"))}</pre>`); code=null; }
+    if(quote){ out.push(`<blockquote class="md">${inlineMd(quote.join(" "))}</blockquote>`); quote=null; }
+  };
+  for(const raw of String(src||"").replace(/\r\n/g,"\n").split("\n")){
+    if(/^\s*```/.test(raw)){ if(fenced){ fenced=false; flush(); } else { flush(); fenced=true; code=[]; } continue; }
+    if(fenced){ code.push(raw); continue; }
+    if(/^( {4}|\t)/.test(raw) && !items){ if(!code){ flush(); code=[]; } code.push(raw.replace(/^( {4}|\t)/,"")); continue; }
+    if(code && raw.trim()===""){ code.push(""); continue; }
+    if(code){ while(code.length && code[code.length-1]==="") code.pop(); flush(); }
+    const q=raw.match(/^\s*>\s?(.*)$/);
+    if(q){ if(!quote){ flush(); quote=[]; } quote.push(q[1]); continue; }
+    if(quote) flush();
+    // A bullet indented under a list item is its sub-list, one level deep;
+    // anything deeper is shown at that one level rather than lost.
+    const sub=items && raw.match(/^\s{2,}[*-]\s+(.*)$/);
+    if(sub){ items[items.length-1].sub.push(sub[1]); continue; }
+    const li=raw.match(/^\s*(?:[*-]|(\d+)[.)])\s+(.*)$/);
+    if(li){
+      const tag = li[1] ? "ol" : "ul";
+      if(para.length || (items && tag !== listTag)) flush();
+      listTag = tag; (items=items||[]).push({text:li[2], sub:[]}); continue;
+    }
+    if(items && /^\s{2,}\S/.test(raw)){ items[items.length-1].text+=" "+raw.trim(); continue; }
+    if(raw.trim()===""){ flush(); continue; }
+    const h=raw.match(/^#{1,6}\s+(.*)$/);
+    if(h){ flush(); out.push(`<p><b>${inlineMd(h[1])}</b></p>`); continue; }
+    if(items) flush();
+    para.push(raw.trim());
+  }
+  flush();
+  return out.join("");
+}
+
+/// The sentence the user consents to, in their language. It is the binary's
+/// own `what` — built from the instruction and the program it would really
+/// start — said again here; this window used to rebuild it from the
+/// instruction itself, which was a second copy of the sentence that could
+/// drift from what the binary does.
+const whatText = p => tr(p.what || "");
+const riskText = p => p.risk_id ? t("risk_"+p.risk_id) : (p.risk||"");
+/// An action from the client's own vocabulary, by its id — the description
+/// in the binary is the specification's, in English, and stays the fallback.
+const actText = a => { const k="act_"+a.id, s=t(k); return s===k ? a.describes : s; };
+const readItem = p => `<li><span>
+  <label class="pick">
+    <input type="checkbox" class="rp" data-id="${esc(p.id)}" checked>
+    <span><span class="lbl">${bi(tr(p.describes), p.describes_t)}</span>
+    ${p.risk?`<span class="why"> · ${esc(t("risk",{r:riskText(p)}))}</span>`:""}<br>
+    ${p.why?`<span class="why">${bi(p.why, p.why_t)}</span><br>`:""}
+    <span class="why">${esc(whatText(p))}</span></span></label></span></li>`;
+/// Free-form context is rarely one line — "since when, which monitor, what was
+/// installed before" needs room, and a cramped field asks for a cramped answer.
+/// `lab` is the id of the element that names the field, so a screen reader
+/// says the question and not "edit text".
+const textInput = (cls, data, ph, rows, lab) => `<textarea class="${cls} field" data-id="${esc(data)}"
+  rows="${rows||2}" placeholder="${esc(ph)}"${lab?` aria-labelledby="${esc(lab)}"`:""}></textarea>`;
+/// An id for the label of one question. Panels are built from strings, and a
+/// label has to be addressable to name a field.
+let QID=0;
+const qid = () => "ql" + (++QID);
+
+/* ---------------------------------------------------------------- flow */
+async function chooseVendor(){
+  const q=$("vquery").value.trim();
+  if(!q){
+    add(`<h3>${t("which_vendor_h")}</h3><p>${t("which_vendor_1")}</p>
+         <p class="why">${t("which_vendor_2")}</p>`, "panel stop");
+    return null;
+  }
+  const hits=await invoke("search_vendors",{query:q});
+  if(hits.length===1) return hits[0];
+  return new Promise(res=>{
+    const el=add(`<h3>${t("pick_vendor_h")}</h3>
+      <ul class="plain">${hits.map(h=>`<li><span><span class="lbl">${esc(h.vendor)}</span> — ${esc(h.domain)}<br>
+        <span class="why">${esc(tr(h.how))}</span></span></li>`).join("")}</ul>
+      <div class="btns">${hits.map((h,i)=>`<button class="${i?'':'primary'}" data-i="${i}">${esc(h.vendor)}</button>`).join("")}</div>`);
+    el.querySelectorAll("button").forEach(b=>b.onclick=()=>{ settle(el); res(hits[+b.dataset.i]); });
+  });
+}
+
+async function run(){
+  $("go").disabled=true;
+  $("lang").disabled=true;
+  RUNNING=true;
+  try { await runInner(); }
+  catch(e){
+    // Stopped by the person: the panel they stopped at already says so.
+    if(e instanceof Cancelled) return;
+    add(`<h3>${t("err_h")}</h3><p>${esc(tr(e && e.message || e))}</p>
+         <p class="why">${t("err_retry")}</p>`, "panel stop");
+  }
+  finally { RUNNING=false; $("go").disabled=false; $("lang").disabled=false; }
+}
+
+async function runInner(){
+  main.innerHTML="";
+  // A new question is a new incident. Every grant made for the last one — a
+  // project directory, a program the user pointed at — goes now, and so does
+  // everything that was read or answered. Nothing ever cleared the project
+  // root, so a directory granted for one diagnosis stayed readable for every
+  // diagnosis after it.
+  await invoke("end_incident");
+  SKILL=null; FACTS={}; STATED.clear(); DECIDED=[]; LAST_FINDINGS=[];
+  // And a translation belongs to the question it was made for.
+  TRANSLATED=false; $("origtab").hidden=true; document.body.classList.remove("orig");
+  const problem=$("problem").value.trim();
+  add(`<div class="q"><span>${t("your_q")}</span>${esc(problem)}</div>`, "");
+
+  const pick=await chooseVendor();
+  if(!pick) return;
+  BASE=pick.base; VDOMAIN=pick.domain;
+
+  const s1=step(`<span class="spin"></span>`, t("contacting",{v:esc(pick.vendor)}),
+                `${esc(pick.base)} <span class="why">— ${esc(tr(pick.how))}</span>`);
+  const d=await awaitOrCancel(invoke("discover",{base:BASE}), s1);
+
+  if(d.no_agent){
+    $("dot").className="dot none";
+    $("who").textContent = pick.vendor; $("proofbox").hidden=true; s1.remove();
+    await noVendorPath(pick, problem, tr(d.reason));
+    return;
+  }
+
+  $("dot").className="dot ok";
+  $("who").innerHTML=`${t("verified_h")}: <b>${esc(d.org)}</b>`;
+  $("proofbox").hidden=false; $("proofsum").textContent=t("proof");
+  $("proof").innerHTML=kv({[t("p_card")]:t("p_found"), [t("p_sig")]:t("p_valid"),
+    [t("p_ident")]:d.org, [t("p_lei")]:d.lei, [t("p_keysrc")]:tr(d.key_source)});
+  s1.remove();
+  step("✓", t("verified_h"), t("verified_1",{v:esc(d.org)}));
+
+  // `triaged`, not `tr`: that name is the function that says the binary's
+  // messages in this window's language, and a local of the same name hid it
+  // for the whole of this function.
+  const triaged=await invoke("triage",{base:BASE, problem, lang:LANG});
+  if(!triaged.skill){
+    add(`<h3>${t("no_skill_h")}</h3><p>${t("no_skill_1",{r:esc(triaged.reason||"")})}</p>`,"panel stop");
+    if(triaged.escalate) await handover(triaged.escalate, d.org);
+    return;
+  }
+  SKILL=triaged.skill;
+
+  // The vendor owes English and may serve more. If it served the user's
+  // language there is nothing to translate and nothing to compare; otherwise
+  // translate locally and keep the original one click away.
+  TRANSLATED = false;
+  $("origtab").hidden = true;
+  if((triaged.lang_served||"en") !== LANG){
+    const cfg=await llmGet();
+    if(cfg.configured){
+      // Said while it happens: a local model takes seconds, and the window
+      // showed nothing at all in the meantime.
+      const th=add(`<p class="why"><span class="spin"></span> ${esc(t("vendor_translating",{v:d.org}))}</p>`, "panel");
+      try{
+        const src={title:SKILL.title, kb:SKILL.static_kb_says||""};
+        SKILL.probes.forEach((p,i)=>{ src["d"+i]=p.describes; src["w"+i]=p.why||""; });
+        const out=await awaitOrCancel(translate(src), th);
+        SKILL.probes.forEach((p,i)=>{ p.describes_t=out["d"+i]; p.why_t=out["w"+i]; });
+        SKILL.title_t=out.title; SKILL.kb_t=out.kb;
+        th.remove();
+        showTranslated();
+      }catch(e){
+        if(e instanceof Cancelled) throw e;
+        th.className="panel"; th.innerHTML=`<p class="why c-warn">${t("tr_failed")}</p>`;
+        th.title=tr(e);
+      }
+    }
+  }
+
+  // "We could not check" and "this advice is not for your machine" are
+  // different answers, and the check existed without ever being called — which
+  // left a Mac user free to be told to update a driver that cannot exist.
+  const ap=await invoke("applicability",{required:SKILL.applies_to||{}});
+  if(!ap.applies){
+    add(`<h3>${t("notapplicable_h")}</h3><p>${esc(tr(ap.why))}</p>`,"panel stop");
+    return;
+  }
+
+  if(!await collectFacts(SKILL.probes, d.org)) return;
+  // Switching is an answer, not a detour: the rest of this run is about the
+  // vendor the person just said is the wrong one. It used to continue anyway,
+  // and send the readings to that vendor.
+  if(await checkMismatch(pick, FACTS)) return;
+
+  // The panel was built from `FACTS` and the request then sent `FACTS`, which
+  // made "what is shown is what is sent" true by coincidence rather than by
+  // construction — two reads of a mutable object with a person's decision in
+  // between. `SHOWN` is that object as the panel displayed it, and it is what
+  // travels: a fact that arrives after the panel is drawn cannot be sent
+  // without being shown, because there is nothing left that could send it.
+  const sent=await asSent(FACTS);
+  const SHOWN=sent.facts;
+  const send=add(`<h3>${t("send_h",{v:esc(d.org)})}</h3><p>${t("send_1")}</p>
+    <ul class="plain">${Object.keys(SHOWN).map(k=>{const l=label(k);
+      return `<li><span><span class="lbl">${esc(l.t)}</span><br><span class="why">${esc(l.w)}</span></span></li>`;}).join("")}</ul>
+    <p class="why">${esc(replacedLine(sent.replaced))}</p>
+    <details class="more"><summary>${t("exact_values")}</summary>${kvl(SHOWN)}</details>
+    ${editableIn(SHOWN).length?`<details class="more"><summary>${t("edit_mine")}</summary>
+      <p class="why">${t("edit_mine_1")}</p>
+      ${editableIn(SHOWN).map(k=>{const lid=qid(); return `<div class="qb">
+        <div class="lbl" id="${lid}">${esc(label(k).t||k)}</div>
+        ${textInput("sv", k, "", 3, lid)}</div>`;}).join("")}</details>`:""}
+    <div class="btns"><button class="primary allow">${t("send_yes")}</button>
+      <button class="deny">${t("cancel")}</button></div>`, "panel decide");
+  // The box holds what would be sent; changing it changes what is sent.
+  // Emptying one is not a blank answer but a withdrawn one, and that is a wire
+  // fact like any other: `<id>.declined`.
+  send.querySelectorAll("textarea.sv").forEach(a=>{ a.value = SHOWN[a.dataset.id] || ""; });
+  if(!await ask(send)){
+    const cfg=await llmGet();
+    send.className="panel stop";
+    send.innerHTML=`<h3>${t("send_none_h")}</h3><p>${cfg.configured
+      ? t("send_none_llm",{v:esc(d.org)}) : t("send_none_nollm",{v:esc(d.org)})}</p>`;
+    return;
+  }
+  send.querySelectorAll("textarea.sv").forEach(a=>{
+    const v=a.value.trim(), k=a.dataset.id;
+    if(v) SHOWN[k]=v; else { delete SHOWN[k]; SHOWN[k+".declined"]=true; }
+  });
+
+  // The vendor endpoint may answer "I still need X" instead of a finding. That
+  // is how a decision tree gets walked without guessing: where two problems look
+  // alike, it asks for the fact that separates them. Same loop the local model
+  // already drives, so the client has one mechanism rather than two.
+  let rem=(await invoke("diagnose",{base:BASE, skillId:SKILL.id, facts:SHOWN, lang:LANG})).remedy;
+  await translateRemedy(rem);
+  for(let round=1; rem.need && rem.need.length; round++){
+    // `SPEC.md` is normative: an endpoint that receives `<id>.declined` must
+    // not ask again for that fact. It also says an endpoint returning `need`
+    // indefinitely "will loop until the user stops it" — which leaves the
+    // person to notice, and they notice by clicking through the same question
+    // a dozen times. A round whose every probe is already answered or already
+    // declined cannot make progress whatever the endpoint intended, and that
+    // is decidable here without judging the vendor's reasoning.
+    const fresh=rem.need.filter(p=>!(p.id in FACTS) && !((p.id+".declined") in FACTS));
+    if(!fresh.length){
+      add(`<h3>${t("need_again_h")}</h3><p>${t("need_again_1",{v:esc(d.org), n:round})}</p>
+        <details class="more"><summary>${t("need_again_what")}</summary>
+          <ul class="plain">${rem.need.map(p=>`<li>${esc(p.describes||p.id)}</li>`).join("")}</ul>
+        </details>`, "panel stop");
+      break;
+    }
+    const machine=rem.need.filter(p=>p.kind==="machine");
+    const human=rem.need.filter(p=>p.kind!=="machine");
+    const el=add(`<h3>${round===1?t("need_h"):t("need_more",{n:round})}</h3>
+      ${rem.need_reason?`<p>${bi(rem.need_reason, rem.need_reason_t)}</p>`:""}
+      ${machine.length?`<p class="lbl">${t("need_read",{v:esc(d.org)})}</p>
+        <ul class="plain">${machine.map(p=>`<li><span><span class="lbl">${esc(p.describes)}</span><br>
+          <span class="why">${esc(p.why||"")}</span></span></li>`).join("")}</ul>`:""}
+      ${human.length?`<p class="lbl">${t("need_ask",{v:esc(d.org)})}</p>
+        ${human.map(p=>{ const id=qid(); return `<div class="qb">
+          <div class="lbl" id="${id}">${esc(p.describes)}</div>
+          <div class="why">${esc(p.why||"")}</div>
+          ${p.choices
+            ? `<select class="nq field" data-id="${esc(p.id)}" aria-labelledby="${id}">
+                 <option value="">${esc(t("q_pick"))}</option>
+                 ${p.choices.map(c=>`<option>${esc(c)}</option>`).join("")}</select>`
+            : textInput("nq", p.id, p.example||t("q_ph"), 1, id)}
+        </div>`;}).join("")}`:""}
+      <div class="btns"><button class="primary allow">${t("need_send")}</button>
+        <button class="ghost" id="needskip">${t("need_skip")}</button>
+        <button class="deny">${t("need_stop")}</button></div>`, "panel decide");
+
+    const answer=await new Promise(res=>{
+      const done=v=>{settle(el);res(v);};
+      el.querySelector(".allow").onclick=()=>done("answer");
+      el.querySelector("#needskip").onclick=()=>done("skip");
+      el.querySelector(".deny").onclick=()=>done("stop");
+      el.querySelector(".deny").focus();
+    });
+    if(answer==="stop"){
+      el.className="panel stop";
+      el.innerHTML=`<h3>${t("need_stopped_h")}</h3><p>${t("need_stopped_1",{v:esc(d.org)})}</p>`;
+      return;
+    }
+    if(answer==="skip"){
+      // "Don't know" is a valid answer and must never dead-end: it is recorded
+      // as declined so the endpoint falls back to the parent instead of asking
+      // again forever.
+      rem.need.forEach(p=>{ FACTS[p.id+".declined"]=true; });
+    } else {
+      el.querySelectorAll(".nq").forEach(i=>{
+        const v=(i.value||"").trim();
+        if(v) FACTS[i.dataset.id]=v; else FACTS[i.dataset.id+".declined"]=true;
+      });
+      if(machine.length){
+        const c=await invoke("perform_reads",{probes:machine, allow:machine.map(p=>p.id)});
+        Object.assign(FACTS, c.facts);
+        machine.forEach(p=>{ if(!(p.id in c.facts)) FACTS[p.id+".declined"]=true; });
+      }
+    }
+    step("✓", t("read_done"), t("read_done_note"), readValues(FACTS));
+    // The need panel showed these and the person answered them, so they join
+    // what may be sent. `SHOWN` means one thing everywhere: what has been put
+    // in front of them and agreed to.
+    Object.assign(SHOWN, FACTS);
+    rem=(await invoke("diagnose",{base:BASE, skillId:SKILL.id, facts:SHOWN, lang:LANG})).remedy;
+    await translateRemedy(rem);
+  }
+  LAST_FINDINGS = rem.findings || [];
+  if(rem.abstained){
+    add(`<h3>${t("abstain_h")}</h3><p>${esc(rem.abstain_reason)}</p>`,"panel stop");
+    // Abstention with a destination: the vendor said what it will not answer
+    // and where the case goes instead.
+    await handover(rem.escalate, d.org);
+    await offerReport(d, "vendor_skill", "abstained");
+    return;
+  }
+
+  let html="";
+  for(const f of rem.findings){
+    html+=`<h3>${bi(f.summary, f.summary_t)}</h3>`;
+    if(f.contradicts_kb && SKILL.static_kb_says)
+      html+=`<div class="quote"><b>${t("finding_kb")}</b>„${bi(SKILL.static_kb_says, SKILL.kb_t)}“ ${t("finding_kb_2")}</div>`;
+    html+=`<details class="more"><summary>${t("evidence")}</summary>
+      <ul class="plain">${f.evidence.map((x,i)=>`<li><span>${bi(x, (f.evidence_t||[])[i])}</span></li>`).join("")}</ul></details>`;
+  }
+  add(html+`<details class="more"><summary>${t("origin")}</summary>
+    ${kv({skill:SKILL.id+"@"+SKILL.version, model:rem.model_id, signature:"ok"})}</details>`);
+
+  // Every file a step changed, so one Undo puts all of them back. It kept
+  // the last file only, and a plan of two steps in two files undid one.
+  const changedFiles=new Set();
+  for(const s of (rem.plan||[])){
+    if(s.action==="report_only") continue;
+    const dry=await invoke("dry_run",{action:s.action, params:s.params});
+    const el=add(`<h3>${t("change_h")}</h3><p>${esc(tr(dry))}</p>
+      <p class="note c-muted">${t("why",{w:bi(s.because, s.because_t)})}</p>
+      <details class="more"><summary>${t("tech_details")}</summary>${kv({action:s.action, ...s.params})}</details>
+      <div class="btns"><button class="primary allow">${t("change_yes")}</button>
+        <button class="deny">${t("change_no")}</button></div>`, "panel decide");
+    if(!await ask(el)){
+      el.className="panel stop";
+      el.innerHTML=`<h3>${t("changed_none_h")}</h3><p>${t("changed_none_1")}</p>`;
+      break;
+    }
+    await invoke("execute",{action:s.action, params:s.params});
+    if(s.params && s.params.file) changedFiles.add(s.params.file);
+  }
+
+  const changed=changedFiles.size>0;
+  if(changed){
+    const done=add(`<h3>${t("done_h")}</h3><p>${t("done_1")}</p>
+      <div class="btns"><button class="ghost" id="undo">${t("undo")}</button></div>`,"panel done");
+    $("undo").onclick=async()=>{
+      try{
+        for(const file of changedFiles)
+          await invoke("execute",{action:"restore_backup",params:{file}});
+        done.className="panel";
+        done.innerHTML=`<h3>${t("undone_h")}</h3><p>${t("undone_1")}</p>`;
+      }catch(e){ done.innerHTML+=`<p class="c-stop">${esc(tr(e))}</p>`; }
+    };
+  }
+  if(rem.escalate) await handover(rem.escalate, d.org);
+  await offerReport(d, "vendor_skill", changed?"resolved":"unresolved");
+}
+
+/// The vendor's finding in the reader's language, once the vendor's skill is
+/// being translated at all. The probes were translated and the finding that
+/// rested on them was not — a German screen that asked in German and
+/// answered in English. Same switch, same original one click away; nothing
+/// happens where nothing was translated.
+async function translateRemedy(rem){
+  if(!TRANSLATED || !rem) return;
+  const src={};
+  if(rem.need_reason) src.need_reason=rem.need_reason;
+  (rem.findings||[]).forEach((f,i)=>{
+    if(f.summary) src["s"+i]=f.summary;
+    (f.evidence||[]).forEach((x,j)=>{ src["e"+i+"_"+j]=x; });
+  });
+  (rem.plan||[]).forEach((s,i)=>{ if(s.because) src["b"+i]=s.because; });
+  if(!Object.keys(src).length) return;
+  const th=add(`<p class="why"><span class="spin"></span> ${esc(t("finding_translating"))}</p>`, "panel");
+  try{
+    const out=await awaitOrCancel(translate(src), th);
+    rem.need_reason_t=out.need_reason;
+    (rem.findings||[]).forEach((f,i)=>{
+      f.summary_t=out["s"+i];
+      f.evidence_t=(f.evidence||[]).map((_,j)=>out["e"+i+"_"+j]);
+    });
+    (rem.plan||[]).forEach((s,i)=>{ s.because_t=out["b"+i]; });
+    th.remove();
+  }catch(e){
+    if(e instanceof Cancelled) throw e;
+    // Shown as it came: an untranslated finding is still the finding.
+    th.remove();
+  }
+}
+
+/* ------------------------------------------- reading, then asking — once */
+
+/* One mechanism for every path that has declared probes: a vendor's skill and a
+   published project's `collect` alike. Say what would be read, read what the
+   user allows, find what was not on the search path, and only then ask a person
+   — for what the machine could not answer, and for what only a person can.
+
+   This was inline in the vendor path and built its questions from the read
+   *plan*, which carries machine probes only and none of their authored fields.
+   So a probe declared `human` was never asked at all, and a publisher's
+   `choices` on a question were never offered — every answer became free text,
+   which never travels. The published path did not have it at all, and asked a
+   person for facts a reading could have given. Returns false only when the
+   plan itself is refused. */
+async function collectFacts(probes, org){
+  const byId = Object.fromEntries((probes||[]).map(p=>[p.id, p]));
+  const pl=await invoke("plan_reads",{probes});
+  if(!pl.ok){ add(`<h3>${t("read_none_h")}</h3><p>${esc(tr(pl.reason))}</p>`,"panel stop"); return false; }
+  // The plan is the binary's, built from the instructions; the words for a
+  // reading in the reader's language were made here, on the probes, and have
+  // to be carried across or the consent list stays in the publisher's language.
+  pl.plan.forEach(p=>{ const o=byId[p.id]; if(o){ p.describes_t=o.describes_t; p.why_t=o.why_t; } });
+  const refused=pl.plan.filter(p=>p.refused), doable=pl.plan.filter(p=>!p.refused);
+
+  let allowed=[];
+  if(doable.length){
+    const prl=qid();
+    const rc=add(`<h3>${t("read_h")}</h3>
+      <p>${t("read_vendor",{v:esc(org), n:doable.length})}</p>
+      <ul class="plain">${doable.map(readItem).join("")}</ul>
+      ${refused.length?`<p class="note c-warn">${esc(t("refused_anyway",
+        {list:refused.map(p=>tr(p.describes)+" — "+(p.refused_kind?t("refused_"+p.refused_kind):tr(p.what))).join("; ")}))}</p>`:""}
+      <details class="more"><summary>${t("proj_h")}</summary>
+        <p class="why" id="${prl}">${t("proj_1")}</p>
+        ${textInput("pr","projroot",t("proj_ph"),1,prl)}
+        <div class="btns"><button class="ghost" id="prok">${t("proj_grant")}</button></div>
+        <p class="note" id="prmsg"></p></details>
+      <div class="btns"><button class="primary allow">${t("read_yes",{n:doable.length})}</button>
+        <button class="deny">${t("read_no")}</button></div>`, "panel decide");
+    liveReadCount(rc);
+
+    // Granting a directory is itself a consent, so it sits with the other
+    // consents rather than in a settings screen. It lasts for this diagnosis
+    // and is not a wider default root; leaving it empty withdraws it again.
+    rc.querySelector("#prok").onclick=async()=>{
+      const v=rc.querySelector('[data-id="projroot"]')?.value.trim() || "";
+      try{
+        const r=await invoke("set_project_root",{path:v||null});
+        rc.querySelector("#prmsg").textContent = r.granted
+          ? t("proj_ok",{p:r.path}) : t("proj_none");
+      }catch(e){ rc.querySelector("#prmsg").textContent=tr(e); }
+    };
+    allowed=(await pickList(rc))||[];
+  }
+  const c=await invoke("perform_reads",{probes, allow:allowed});
+  Object.assign(FACTS, c.facts);
+  // A measurement may replace a claim; the reverse never happens.
+  Object.keys(c.facts).forEach(k=>STATED.delete(k));
+  await locatePrograms(probes, allowed);
+  await askAboutInterpreter();
+
+  // What is still open: readings that came back empty, with the publisher's
+  // own question where they wrote one; and every question declared for a
+  // person, unless it waits on a reading that did answer.
+  //
+  // A reading is put to the person only if there is something a person can
+  // answer: the publisher wrote a question for it, or the person withheld it
+  // themselves and may prefer to say it. A reading that simply found nothing —
+  // no Ollama container running, `uname` on Windows — used to become a bare
+  // text box labelled "Kernel version", which nobody can fill in usefully and
+  // which reads as the client asking the person to do its job.
+  const withheld = id => !allowed.includes(id);
+  const open=[
+    ...pl.plan.filter(p=>!(p.id in FACTS) && !p.derived)
+      .map(p=>({...p, ...(byId[p.id]||{})}))
+      .filter(p=>p.prompt || (withheld(p.id) && !p.refused)),
+    ...(probes||[]).filter(p=>p.kind!=="machine" && !(p.id in FACTS)
+                        && !(p.when_missing && p.when_missing in FACTS)),
+  ];
+  if(open.length) await askQuestions(open, probes);
+  step("✓", t("read_done"), t("read_done_note"), readValues(FACTS));
+  return true;
+}
+
+/* A program a publisher asked for its version, not on this machine's search
+   path. Nothing is searched for — a client walking the disk to find a program
+   would be reading far more than it was allowed to — so the person is asked
+   where it is. They know; pointing at it is the consent; and the file has to be
+   the program that was asked about, which the binary checks rather than this
+   window. Declining costs nothing: the fact is simply not read. */
+async function locatePrograms(probes, allowed){
+  const wanted=(probes||[]).filter(p=>p.read && p.read.op==="program_version"
+    && allowed.includes(p.id) && !(p.id in FACTS));
+  for(const p of wanted){
+    const prog=p.read.program, id=qid();
+    const el=add(`<h3 id="${id}">${t("loc_h",{p:esc(prog)})}</h3>
+      <p>${t("loc_1",{p:esc(prog), d:bi(p.describes||p.id, p.describes_t)})}</p>
+      <p class="why">${t("loc_2",{p:esc(prog), f:esc(p.read.flag||"--version")})}</p>
+      ${textInput("locp", p.id, t("loc_ph",{p:prog}), 1, id)}
+      <p class="note" data-msg="loc"></p>
+      <div class="btns"><button class="primary allow">${t("loc_yes")}</button>
+        <button class="deny">${t("loc_no")}</button></div>`, "panel decide");
+    const msg=el.querySelector('[data-msg="loc"]');
+    const done=await new Promise(res=>{
+      const fin=v=>{settle(el);res(v);};
+      el.querySelector(".deny").onclick=()=>fin(false);
+      el.querySelector(".deny").focus();     // a stray Return must never grant
+      el.querySelector(".allow").onclick=async()=>{
+        const given=el.querySelector(".locp").value.trim();
+        if(!given){ msg.textContent=t("loc_empty"); return; }
+        try{
+          const g=await invoke("grant_program_path",{program:prog, path:given});
+          if(!g.granted){ msg.textContent=t("loc_err_"+g.code,{p:prog}); msg.title=g.detail||""; return; }
+          const r=await invoke("perform_reads",{probes:[p], allow:[p.id]});
+          if(p.id in r.facts){
+            FACTS[p.id]=r.facts[p.id]; STATED.delete(p.id);
+            el.dataset.path=g.path; fin(true);
+          } else {
+            msg.textContent=t("loc_noversion",{p:prog, path:g.path});
+          }
+        }catch(e){ msg.textContent=tr(e); }
+      };
+    });
+    el.className = done ? "panel done" : "panel";
+    el.innerHTML = done
+      ? `<h3>${t("loc_ok_h",{p:esc(prog)})}</h3><p>${t("loc_ok_1",{v:esc(FACTS[p.id]), path:esc(el.dataset.path||"")})}</p>`
+      : `<h3>${t("loc_none_h",{p:esc(prog)})}</h3>`;
+  }
+}
+
+/* The questions, one panel. A bounded answer is a list — the publisher's own
+   `choices` — and anything else is room to write. A question that says where
+   its answer usually comes from (`log`) offers to load it: a container's
+   output, or a file the person names. What is loaded is shown here and nowhere
+   else; they cut it down to the lines that matter, and only that — anonymised,
+   shown again, under its own consent — can ever travel. */
+async function askQuestions(open, probes){
+  const qa=add(`<h3>${t("ask_you_h")}</h3><p>${n("ask_you_1", open.length)}</p>
+    ${open.map(p=>{ const id=qid(); return `<div class="qb">
+      <div class="lbl" id="${id}">${bi(p.prompt||p.describes||p.id, p.prompt ? p.prompt_t : p.describes_t)}</div>
+      <div class="why">${bi(p.why||"", p.why_t)}</div>
+      ${/* A publisher may attach a question to a reading, used only when the
+            reading comes back empty. Offering their choices rather than a text
+            box is not cosmetic: a bounded answer may travel and free text may
+            not, so an authored question is the difference between a fact the
+            publisher gets and one they never see. */
+        Array.isArray(p.choices)&&p.choices.length
+        ? `<select class="ai field" data-id="${esc(p.id)}" aria-labelledby="${id}">
+             <option value="">${esc(t("q_pick"))}</option>
+             ${p.choices.map(c=>`<option>${esc(c)}</option>`).join("")}</select>`
+        : p.log ? logBox(p, id) : textInput("ai",p.id,p.example||t("q_ph"),2,id)}
+      </div>`;}).join("")}
+    <p class="note c-stop" data-msg="qa"></p>
+    <div class="btns"><button class="primary" id="qaok">${t("next")}</button>
+      ${open.some(p=>p.kind==="machine")?`<button class="ghost" id="qaread">${t("read_after_all")}</button>`:""}</div>`);
+  bindLogBoxes(qa);
+  await new Promise(res=>{
+    const fin=()=>{settle(qa);res();};
+    qa.querySelector("#qaok").onclick=()=>{
+      // P3: an answer that does not fit the publisher's declared `pattern` is
+      // caught here and asked again — not after a report was built around it.
+      // The hand-off has checked this since it was written; the questions
+      // never did.
+      let bad=false;
+      qa.querySelectorAll(".ai").forEach(i=>{
+        const p=open.find(x=>x.id===i.dataset.id), v=(i.value||"").trim();
+        i.classList.remove("invalid");
+        if(p && p.pattern && v && !matchesPattern(p.pattern, v)){ i.classList.add("invalid"); bad=true; }
+      });
+      const note=qa.querySelector("[data-msg=qa]");
+      if(bad){ if(note) note.textContent=t("q_pattern"); return; }
+      qa.querySelectorAll(".ai").forEach(i=>{
+        const v=i.value.trim();
+        // A question left empty is a question answered "I don't know", and
+        // `SPEC.md` makes that a wire fact: `<probe id>.declined`. This panel
+        // recorded an answer and recorded *nothing* for a skip, so the
+        // endpoint was never told and asked again — forever, on any card whose
+        // firmware carries no serial. The need loop had always written it; the
+        // panel that arms a question from `when_missing` never did.
+        if(v){ FACTS[i.dataset.id]=v; STATED.add(i.dataset.id); }
+        else { FACTS[i.dataset.id+".declined"]=true; } }); fin(); };
+    const again=qa.querySelector("#qaread");
+    if(again) again.onclick=async()=>{
+      const machine=open.filter(p=>p.kind==="machine");
+      const r=await invoke("perform_reads",{probes, allow:machine.map(p=>p.id)});
+      // A measurement may replace a claim; the reverse is what this guards.
+      Object.keys(r.facts).forEach(k=>STATED.delete(k));
+      Object.assign(FACTS, r.facts);
+      qa.className="panel";
+      qa.innerHTML=`<h3>${t("read_after_all_h")}</h3>${kv(r.facts)}`; res(); };
+  });
+}
+
+/// A publisher's `pattern`, anchored the way the client anchors every pattern.
+/// One that is not a valid expression constrains nothing rather than blocking
+/// a person on somebody else's typo.
+function matchesPattern(pattern, v){
+  let re;
+  try{ re=new RegExp("^(?:"+String(pattern).replace(/^\^|\$$/g,"")+")$"); }
+  catch(_){ return true; }
+  return re.test(v);
+}
+
+function logBox(p, lab){
+  const log=p.log||{};
+  return `${log.file?`<div class="why">${esc(t("log_hint",{f:log.file}))}</div>`:""}
+    ${textInput("ai", p.id, t("log_ph"), 6, lab)}
+    <div class="btns mt3">
+      ${log.container?`<button class="ghost" data-load="container" data-for="${esc(p.id)}"
+         data-target="${esc(log.container)}">${esc(t("log_from_container",{i:log.container}))}</button>`:""}
+      <button class="ghost" data-pick="file" data-for="${esc(p.id)}">${esc(t("log_from_file"))}</button>
+    </div>
+    <div data-file-for="${esc(p.id)}" hidden class="mt3">
+      ${textInput("logpath", p.id, t("log_path_ph",{f:log.file||"…"}), 1)}
+      <div class="btns mt2"><button class="ghost" data-load="file"
+         data-for="${esc(p.id)}">${esc(t("log_load"))}</button></div>
+    </div>
+    <p class="why" data-log-msg="${esc(p.id)}"></p>`;
+}
+
+function bindLogBoxes(root){
+  const box=id=>root.querySelector(`.ai[data-id="${CSS.escape(id)}"]`);
+  const say=(id,s)=>{ const m=root.querySelector(`[data-log-msg="${CSS.escape(id)}"]`); if(m) m.textContent=s; };
+  root.querySelectorAll("[data-pick=file]").forEach(b=>b.onclick=()=>{
+    const f=root.querySelector(`[data-file-for="${CSS.escape(b.dataset.for)}"]`);
+    if(f){ f.hidden=false; const i=f.querySelector(".logpath"); if(i) i.focus(); }
+  });
+  root.querySelectorAll("[data-load]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.for, source=b.dataset.load;
+    const target = source==="container" ? b.dataset.target
+      : (root.querySelector(`[data-file-for="${CSS.escape(id)}"] .logpath`)||{value:""}).value.trim();
+    if(!target){ say(id, t("log_path_empty")); return; }
+    say(id, t("log_loading"));
+    try{
+      const r=await invoke("load_log_excerpt",{source, target});
+      if(r.loaded===false){ say(id, t("log_err_"+r.code,{i:target})); return; }
+      const ta=box(id);
+      if(ta){ ta.value=r.text; ta.rows=12; }
+      say(id, n("log_loaded", r.lines, {from:r.from}));
+    }catch(e){ say(id, tr(e)); }
+  });
+}
+
+/* ------------------------------------ a published answer, before any model */
+
+/* Reached when the index found somebody who publishes for this. `pick.answers`
+   are the problem classes they declared — the vocabulary they can answer in —
+   so the user picks one rather than us guessing which of their words maps to
+   which of the publisher's.
+
+   Returns true when it answered — or when the person ended it — so the
+   caller knows not to reach for a model. */
+async function publishedPath(pick, problem){
+  const classes = Array.isArray(pick.answers) ? pick.answers : [];
+  if(!classes.length) return false;
+
+  const el=add(`<h3>${t("pub_h",{v:esc(pick.vendor)})}</h3>
+    <p id="pcls_l">${t("pub_1")}</p>
+    <select id="pcls" class="field" aria-labelledby="pcls_l">
+      ${classes.map(c=>`<option>${esc(c)}</option>`).join("")}</select>
+    <div class="btns"><button class="primary allow">${t("pub_yes")}</button>
+      <button class="deny">${t("pub_no")}</button></div>`, "panel decide");
+  if(!await ask(el)){ el.className="panel"; el.innerHTML=`<h3>${t("pub_skipped_h")}</h3>`; return false; }
+  const cls = el.querySelector("#pcls").value;
+
+  // The project's own files: what it asks to have read, and — through the ids —
+  // how each fact is coarsened before it may travel. Without them this path
+  // asked a person for facts a reading would have given (`os.name`, typed into
+  // a box) and built its report from a skill it never had, which dropped every
+  // fact on the way out.
+  let card=null;
+  try{ card=await invoke("published_card",{base:SERVER_URL, host:pick.domain}); }
+  catch(e){ add(`<h3>${t("pub_off_h")}</h3><p>${esc(tr(e))}</p>`,"panel stop"); return false; }
+  SKILL={id:cls, version:card.commit||"", probes:(card.collect||[]).map(p=>({...p}))};
+  // A project owes English and nothing more. Without a model of their own the
+  // reader meets its questions and its answer as written, and is told so
+  // once rather than left to wonder why the window changed language.
+  let saidEnglish=false;
+  const sayEnglish=async()=>{
+    if(saidEnglish || LANG==="en" || await publisherModel()) return;
+    saidEnglish=true;
+    add(`<p class="why c-warn">${t("pub_english_no_model")}</p>`, "panel");
+  };
+  // The project's own terms — a feature, a file format — kept as written by
+  // whatever model translates its words (`LG8`).
+  const KEEP = (card.glossary && Array.isArray(card.glossary.keep)) ? card.glossary.keep : [];
+  if(SKILL.probes.length) await sayEnglish();
+  await translatePublisher(SKILL.probes, KEEP);
+  if(SKILL.probes.length && !await collectFacts(SKILL.probes, pick.vendor)) return false;
+
+  // Nothing leaves before this. The readings and the answers go to the
+  // operator that mirrors the project — a third party the person has not
+  // yet been told about — and every other path asks before its first send.
+  // This one asked the operator straight after the readings. Refusing ends
+  // the run: a person who will not send the values to the operator has not
+  // asked for a model to see them instead.
+  // As on the vendor path: what the panel showed is the object that travels,
+  // rather than a second read of one that could have moved since.
+  const sent=await asSent(FACTS);
+  const SHOWN=sent.facts;
+  const tx=add(`<h3>${t("pub_send_h",{o:esc(operatorHost())})}</h3>
+    <p>${t("pub_send_1",{v:esc(pick.vendor), o:esc(operatorHost())})}</p>
+    <ul class="plain">${Object.keys(SHOWN).map(k=>{const l=label(k);
+      return `<li><span><span class="lbl">${esc(l.t)}</span>${l.w?`<br><span class="why">${esc(l.w)}</span>`:""}</span></li>`;}).join("")}</ul>
+    <p class="why">${esc(replacedLine(sent.replaced))}</p>
+    <details class="more"><summary>${t("exact_values")}</summary>${kvl(SHOWN)}</details>
+    ${editableIn(SHOWN).length?`<details class="more"><summary>${t("edit_mine")}</summary>
+      <p class="why">${t("edit_mine_1")}</p>
+      ${editableIn(SHOWN).map(k=>{const lid=qid(); return `<div class="qb">
+        <div class="lbl" id="${lid}">${esc(label(k).t||k)}</div>
+        ${textInput("sv", k, "", 3, lid)}</div>`;}).join("")}</details>`:""}
+    <div class="btns"><button class="primary allow">${t("send_yes")}</button>
+      <button class="deny">${t("cancel")}</button></div>`, "panel decide", "pubsend");
+  tx.querySelectorAll("textarea.sv").forEach(a=>{ a.value = SHOWN[a.dataset.id] || ""; });
+  if(!await ask(tx)){
+    tx.className="panel stop";
+    tx.innerHTML=`<h3>${t("send_none_h")}</h3><p>${t("pub_send_none_1",{o:esc(operatorHost())})}</p>`;
+    return true;
+  }
+  tx.querySelectorAll("textarea.sv").forEach(a=>{
+    const v=a.value.trim(), k=a.dataset.id;
+    if(v) SHOWN[k]=v; else { delete SHOWN[k]; SHOWN[k+".declined"]=true; }
+  });
+
+  // The third outcome — "I still need X" — is answered through the same loop
+  // the vendor path uses, so a question here costs no second mechanism. An
+  // answer given in that loop was asked for in the operator's name and goes
+  // the way the panel above said.
+  let out=null;
+  for(let round=0; round<3; round++){
+    try{
+      out=await invoke("ask_published",{base:SERVER_URL, subject:pick.domain,
+        problemClass:cls, facts:SHOWN, stated:[...STATED]});
+    }catch(e){
+      add(`<h3>${t("pub_off_h")}</h3><p>${esc(tr(e))}</p>`,"panel stop"); return false;
+    }
+    if(out.outcome!=="need") break;
+    if(!await askOneProbe(out.need[0], out.need_reason, pick.vendor)) break;
+    // Asked in the operator's name and answered, so it goes the way the panel
+    // above said it would.
+    Object.assign(SHOWN, FACTS);
+  }
+
+  if(!out || out.outcome!=="finding"){
+    add(`<h3>${t("pub_none_h")}</h3><p>${esc((out&&out.reason)||"")}</p>
+      <p class="why">${t("pub_none_1")}</p>`,"panel");
+    return false;
+  }
+
+  // What the answer turned on, kept for the report. With STATED this is what
+  // lets the publisher tell an outcome that tests their rule from one that
+  // tests whether somebody answered a question right.
+  DECIDED = out.decided_on || [];
+  const sol = out.solution || {};
+  const text = (sol.text_by_lang && (sol.text_by_lang[LANG]||sol.text_by_lang.en)) || "";
+  // Not written in this language: the reader's own model may say it in theirs,
+  // marked as such and with the original one click away. The answer itself
+  // was still matched without any model; only the wording is translated.
+  const inLang = !!(sol.text_by_lang||{})[LANG];
+  if(!inLang) await sayEnglish();
+  const textT = inLang ? null : await translatePublisherText(text, KEEP);
+  const answered=add(`<h3>${t("pub_found_h")}</h3>
+    <p class="why">${t("pub_found_1",{v:esc(pick.vendor), c:esc(sol.commit||"")})}</p>
+    ${textT?`<p class="why c-warn">${esc(t("pub_translated"))}</p>`:""}
+    ${textT?termsLostLine(textT.lost):""}
+    ${attestationLine(card, pick.domain)}
+    <div class="answer">${biBlock(md(text), textT && md(textT.text))}</div>
+    ${out.confidence==="rests_on_supplied"
+      ? `<p class="why c-warn">${esc(t("pub_supplied",
+          {list:(out.rested_on_supplied||[]).join(", ")}))}</p>` : ""}`, "panel done");
+  // Not awaited: the answer is readable while the proof is fetched.
+  checkLogEntry(answered, card);
+
+  // Whether it worked is the person's to say, after trying. It was sent as
+  // `resolved` the moment the text appeared — before anybody had tried it —
+  // and that label is the most valuable column the maintainer's dashboard
+  // has: "your answer worked for 0 of 6" is only true if it was asked.
+  const oc=add(`<h3>${t("pub_try_h")}</h3><p>${t("pub_try_1",{v:esc(pick.vendor)})}</p>
+    <div class="btns"><button class="primary" data-o="resolved">${t("pub_try_yes")}</button>
+      <button class="ghost" data-o="unresolved">${t("pub_try_no")}</button>
+      <button class="deny" data-o="">${t("pub_try_skip")}</button></div>`, "panel decide");
+  const outcome=await new Promise(res=>{
+    oc.querySelectorAll("button[data-o]").forEach(b=>b.onclick=()=>{ settle(oc); res(b.dataset.o); });
+    oc.querySelector(".deny").focus();
+  });
+  oc.className="panel";
+  oc.innerHTML=`<h3>${outcome==="resolved"?t("pub_try_yes_h"):outcome==="unresolved"?t("pub_try_no_h"):t("pub_try_skip_h")}</h3>`;
+  if(outcome) await offerPublishedReport(pick, outcome);
+  return true;
+}
+
+/* A publisher's words in the reader's language, by the reader's own model.
+
+   A published project owes English and nothing more, so a person reading this
+   window in German, French or Spanish met every question and every answer in
+   English while the window around them was in their language. Where a model
+   is set up it translates — the same switch as a vendor's skill: marked, with
+   the original one click away, because a consent decision must never rest on
+   a translation nobody can check. `choices` are never translated: the answer
+   that is recorded has to be the publisher's own word, or one situation splits
+   into as many as there are languages. Without a model nothing changes. */
+async function publisherModel(){
+  if(LANG === "en") return null;
+  const cfg = await llmGet();
+  return cfg.configured ? cfg : null;
+}
+function showTranslated(){
+  TRANSLATED = true;
+  $("origtab").hidden = false;
+  $("origtab").textContent = document.body.classList.contains("orig") ? t("tab_yours") : t("tab_orig");
+}
+/* `keep` is the project's glossary: its own terms, which the model is told to
+   leave as written. A term it changed anyway is said, not hidden — a *cerveau*
+   where the project wrote *brain* reads as a statement about an organ. */
+function termsLostLine(lost){
+  return (lost && lost.length)
+    ? `<p class="why c-warn">${esc(t("pub_terms_lost",{list:lost.join(", ")}))}</p>` : "";
+}
+async function translatePublisher(probes, keep){
+  if(!probes.length || !await publisherModel()) return false;
+  const src = {};
+  probes.forEach((p,i)=>{
+    if(p.describes) src["d"+i]=p.describes;
+    if(p.why) src["w"+i]=p.why;
+    if(p.prompt) src["p"+i]=p.prompt;
+  });
+  const th = add(`<p class="why"><span class="spin"></span> ${esc(t("pub_translating"))}</p>`, "panel");
+  try{
+    const {texts:out, lost} = await awaitOrCancel(translateKeeping(src, keep), th);
+    probes.forEach((p,i)=>{ p.describes_t=out["d"+i]; p.why_t=out["w"+i]; p.prompt_t=out["p"+i]; });
+    th.remove(); showTranslated();
+    if(lost.length) add(termsLostLine(lost), "panel");
+    return true;
+  }catch(e){
+    if(e instanceof Cancelled) throw e;
+    th.innerHTML = esc(t("pub_tr_failed")); th.className = "panel";
+    th.title = tr(e);
+    return false;
+  }
+}
+async function translatePublisherText(text, keep){
+  if(!text || !await publisherModel()) return null;
+  try{
+    const {texts:out, lost} = await translateKeeping({text}, keep);
+    if(!out || typeof out.text !== "string" || !out.text.trim()) return null;
+    showTranslated();
+    return {text: out.text, lost};
+  }catch(_){ return null; }
+}
+/// `bi` for a block of markup already made safe — a solution rendered by `md`.
+function biBlock(origHtml, transHtml){
+  if(!TRANSLATED || !transHtml) return origHtml;
+  return `<div class="bi"><div class="bi-t">${transHtml}</div><div class="bi-o" lang="en">${origHtml}</div></div>`;
+}
+
+/* What the operator attests about whoever published this, and nothing more:
+   that somebody controls the location, when that was last confirmed, and the
+   project's own word about itself. The window knew only a vendor's key —
+   verified or untrusted — and could not say "confirmed three weeks ago", which
+   is the thing a person weighing a stranger's advice can actually use. A
+   deprecated project's answer is still shown; its age is not a verdict. */
+function attestationLine(card, host){
+  const a=(card&&card.anchor)||{}, p=(card&&card.project)||{};
+  const day=String(a.last_confirmed||"").slice(0,10);
+  const parts=[];
+  if(a.status==="live") parts.push(t("att_live",{h:esc(host), d:esc(day)}));
+  else if(a.status==="stale") parts.push(t("att_stale",{h:esc(host), d:esc(day)}));
+  else parts.push(t("att_unknown",{h:esc(host)}));
+  if(card && card.log_seq!=null) parts.push(t("att_log",{n:esc(card.log_seq)}));
+  if(p.declared_status==="deprecated")
+    parts.push(p.successor ? t("att_deprecated_to",{s:esc(p.successor)}) : t("att_deprecated"));
+  else if(p.forge_archived===true) parts.push(t("att_archived"));
+  const warn = a.status!=="live" || p.declared_status==="deprecated" || p.forge_archived===true;
+  return `<p class="why${warn?" c-warn":""}" data-att="${esc(a.status||"unknown")}">${parts.join(" ")}
+    ${card && card.log_seq!=null?`<span data-att-proof>${t("att_checking")}</span>`:""}</p>`;
+}
+
+/* "Anybody can check" was true of the log and not of this client: nothing on
+   the user's side checked anything. Now it does — the signed head against the
+   pinned key, the entry's inclusion for exactly that head, and that the entry
+   attests the files being served — and says which it was. A failure is shown,
+   not hidden: an answer whose log entry does not prove is still the publisher's
+   text, and the person should know that nobody can vouch for it. */
+async function checkLogEntry(panel, card){
+  const slot=panel && panel.querySelector("[data-att-proof]");
+  if(!slot || !card || card.log_seq==null) return;
+  try{
+    const r=await invoke("verify_log_entry",{base:SERVER_URL, seq:card.log_seq,
+      expected:{content_sha256:card.content_sha256||null, commit:card.commit||null}});
+    slot.textContent=t("att_proved",{n:r.tree_size});
+    slot.dataset.attProof="ok";
+  }catch(e){
+    slot.textContent=t("att_unproved");
+    slot.title=tr(e);
+    slot.className="c-stop";
+    slot.dataset.attProof="failed";
+  }
+}
+
+/* The report about a published project, to the operator that mirrors it — the
+   same policy and the same two maps as every other report, and free text only
+   on its own consent, anonymised first.
+
+   This path called `offerReport`, which sends A2A to a vendor's agent at the
+   project's own address — where no agent exists — built from a skill the
+   published path never had, so every fact was dropped on the way and the send
+   failed. The one branch whose offer is "the maintainer finally hears about
+   it" could not deliver a single report. */
+async function offerPublishedReport(pick, outcome){
+  const pv=await invoke("preview_report",{skill:SKILL, facts:FACTS, stated:[...STATED],
+    decidedOn:DECIDED, resolvedBy:"vendor_skill", outcome});
+  const el=add(`<h3>${t("pub_report_h",{v:esc(pick.vendor)})}</h3><p>${t("pub_report_1",{v:esc(pick.vendor)})}</p>
+    <p class="why">${t("report_2")}</p>
+    <details class="more"><summary>${t("report_what")}</summary>
+      <div class="lbl">${t("pub_measured")}</div>${kvl(pv.report.observed)}
+      <div class="lbl mt3">${t("pub_stated")}</div>${kvl(pv.report.stated)}
+      ${pv.held_back.length?`<p class="why mt3">${esc(t("report_held",{list:pv.held_back.map(k=>label(k).t).join(", ")}))}</p>`:""}
+      <p class="why" id="pseudo"></p></details>
+    <div class="btns"><button class="primary allow">${t("report_yes")}</button>
+      <button class="deny">${t("report_no")}</button></div>`, "panel decide");
+  invoke("identity_info",{domain:pick.domain}).then(i=>{
+    const slot=el.querySelector("#pseudo");
+    if(slot) slot.innerHTML=`<code>${esc(i.pseudonym)}</code> (${esc(i.epoch)}) — ${esc(t("pseudo_explain"))}`;
+  });
+  if(!await ask(el)){ el.className="panel"; el.innerHTML=`<h3>${t("report_none_h")}</h3><p>${t("report_none_1")}</p>`; return; }
+
+  const dest=t("pub_dest",{v:pick.domain});
+  const report=await offerFreeText(pv, {org:pick.vendor}, dest);
+  // The receipt is its own panel, last — not written back into the consent
+  // panel above the free text, where it read as coming before the question it
+  // followed. And it is not "a reply from the vendor": there is no vendor here.
+  el.className="panel";
+  try{
+    const r=await invoke("send_published_report",{base:SERVER_URL, subject:pick.domain, report});
+    if(r.accepted===false || r.code) throw new Error(r.reason||r.code);
+    add(`<h3>${t("pub_receipt_h")}</h3><p>${r.surfaced
+      ? t("pub_ok_yes",{n:esc(r.reporters), v:esc(pick.vendor)})
+      : t("pub_ok_below")}</p>
+      ${r.counted===false?`<p class="why">${t("pub_ok_again")}</p>`:""}`, "panel done");
+  }catch(e){
+    add(`<h3>${t("err_h")}</h3><p>${esc(tr(e && e.message || e))}</p>`, "panel stop");
+  }
+}
+
+/* One probe the diagnosis still needs. Read if it can be read — under the same
+   consent as every other reading — and asked only if not: the `need` names a
+   probe from the project's own `collect`, and it used to go straight to a
+   question, so a person typed their operating system into a box that
+   `os_fact` answers without asking anybody. Bounded answers get the
+   publisher's list; anything else is free text, which is withheld unless the
+   user later says otherwise. */
+async function askOneProbe(p, why, org){
+  const own=(SKILL&&SKILL.probes||[]).find(x=>x.id===p.id) || p;
+  if(own.read && !(own.id in FACTS)){
+    await collectFacts([{...own, kind:"machine"}], org||"");
+    if(!(own.id in FACTS)) FACTS[`${own.id}.declined`]=true;
+    return true;
+  }
+  p=own;
+  const id=qid();
+  const el=add(`<h3>${t("ask_you_h")}</h3><p>${esc(why||"")}</p>
+    <div class="lbl" id="${id}">${bi(p.prompt||p.describes||p.id, p.prompt ? p.prompt_t : p.describes_t)}</div>
+    ${Array.isArray(p.choices)&&p.choices.length
+      ? `<select class="ai field" data-id="${esc(p.id)}" aria-labelledby="${id}">
+          <option value="">${esc(t("q_pick"))}</option>
+          ${p.choices.map(c=>`<option>${esc(c)}</option>`).join("")}</select>`
+      : textInput("ai",p.id,p.example||t("q_ph"),2,id)}
+    <div class="btns"><button class="primary allow">${t("next")}</button>
+      <button class="deny">${t("need_skip")}</button></div>`, "panel decide");
+  const ok=await ask(el);
+  if(!ok){
+    // "Don't know" is an answer and must not dead-end: the endpoint ships a
+    // fallback with every question and honours a declined fact.
+    FACTS[`${p.id}.declined`]=true;
+    el.className="panel"; el.innerHTML=`<h3>${t("need_skipped_h")}</h3>`;
+    return true;
+  }
+  const f=el.querySelector(".ai");
+  if(f && f.value.trim()){ FACTS[p.id]=f.value.trim(); STATED.add(p.id); }
+  el.className="panel"; el.innerHTML=`<h3>${t("ask_ok_h")}</h3>`;
+  return true;
+}
+
+/* -------------------------------------------- no vendor: the model leads */
+async function noVendorPath(pick, problem, reason){
+  // "Does not publish a support agent" is only news when nothing else was
+  // published. Shown above a project's own answers it read as "this project
+  // has no files", beside the panel offering those files — so it waits until
+  // the published path is not taken.
+  const saidNoAgent=()=>add(`<h3>${t("noagent_h",{v:esc(pick.vendor)})}</h3>
+    <p>${t("noagent_1",{r:esc(reason)})}</p>
+    <p class="why">${t("noagent_2")}</p>`, "panel stop");
+  const published = Array.isArray(pick.answers) && pick.answers.length > 0;
+  if(!published) saidNoAgent();
+
+  // A published answer first, and a model only if there is none. This is the
+  // open-source path and the common one: somebody wrote the answer down, we
+  // mirror it, and the decision is a walk over what they wrote. Nothing is
+  // generated, and a user with no model configured gets the whole of it.
+  if(await publishedPath(pick, problem)) return;
+  if(published) saidNoAgent();
+
+  const cfg=await llmGet();
+  if(!cfg.configured){
+    add(`<h3>${t("needllm_h")}</h3><p>${t("needllm_1")}</p>`); return;
+  }
+
+  FACTS=await invoke("baseline_facts");
+  step("✓", t("platform",{os:FACTS.os, arch:FACTS.arch}), t("platform_note"));
+
+  // Rounds: first establish what is installed, then ask what only matters given
+  // that. Each round is consented separately. After a soft limit the user
+  // decides whether to continue — three was an arbitrary number of mine, and a
+  // diagnosis that stops because of it stops for the wrong reason. The hard cap
+  // only exists so a model that never converges cannot loop forever.
+  // No hard cap: only the user ends this. Every additional round costs a
+  // click, so it is bounded by their patience rather than by a number I made
+  // up — and a diagnosis that stops at three stops for the wrong reason.
+  const SOFT_ROUNDS = 3;
+  const asked = new Set();
+  // What the *person* answered, as against what the machine read. Both live in
+  // `FACTS` because both are facts, but a cause resting on a typed value is a
+  // different claim from one resting on a measurement — the person could have
+  // been mistaken — and `SV71` has made that distinction on the published path
+  // for a while. This path had nowhere to put it.
+  const TYPED = new Set();
+
+  // The one question a person can always answer and no tool ever can, asked
+  // first and by us rather than by whichever model is configured. Nothing on
+  // this path is vendor-specific, so there is no decision tree to walk and no
+  // publisher who has thought about which fact separates their problems — the
+  // model is guessing at what to ask, and a small one guesses badly. "What
+  // changed" is the question that most often ends the diagnosis on its own,
+  // and leaving it to the model means sometimes it is asked fourth and
+  // sometimes not at all.
+  //
+  // The answer is free text the person typed, so it is a `stated` fact the
+  // catalogue does not know — it reaches the model on this device and it does
+  // not travel. Marked as asked, so no round repeats it.
+  {
+    const id = qid();
+    const cp = add(`<h3>${t("changed_h")}</h3><p class="why">${t("changed_1")}</p>
+      <div class="qb"><div class="lbl" id="${id}">${t("changed_q")}</div>
+        ${textInput("hq", "change.last", t("changed_ph"), 2, id)}</div>
+      <div class="btns"><button class="primary" id="chok">${t("next")}</button>
+        <button class="deny" id="chno">${t("changed_none")}</button></div>`);
+    asked.add(t("changed_q"));
+    await new Promise(res=>{
+      const take=()=>{ cp.querySelectorAll(".hq").forEach(i=>{
+        if(i.value.trim()) FACTS["change.last"]=i.value.trim(); }); settle(cp); res(); };
+      cp.querySelector("#chok").onclick=()=>{ TYPED.add("change.last"); take(); };
+      cp.querySelector("#chno").onclick=()=>{ FACTS["change.last"]=t("changed_nothing");
+                                              TYPED.add("change.last"); take(); };
+    });
+  }
+
+  for(let round=1; ; round++){
+    if(round > SOFT_ROUNDS){
+      const cont=add(`<h3>${t("more_h")}</h3>
+        <p>${t("more_1",{m:esc(cfg.label), n:round-1})}</p>
+        <div class="btns"><button class="primary allow">${t("more_yes")}</button>
+          <button class="deny">${t("more_no")}</button></div>`, "panel decide");
+      if(!await ask(cont)) break;
+    }
+    const th=add(`<h3><span class="spin"></span>
+      ${round===1?t("thinking_pick",{m:esc(cfg.label)}):t("thinking_pick_more",{m:esc(cfg.label)})}</h3>`);
+    let chosen=null;
+    try{ chosen=await awaitOrCancel(invoke("llm_choose_reads",{problem, known:FACTS, lang:LANG, round}), th); }
+    catch(e){
+      if(e instanceof Cancelled) throw e;
+      th.className="panel stop";
+      th.innerHTML=`<h3>${t("pick_failed_h")}</h3><p>${esc(tr(e))}</p>`; return; }
+    th.remove();
+
+    // Never ask the same thing twice — neither a value already read nor a
+    // question already answered. The read side is filtered on the Rust side;
+    // questions are free text and are filtered here.
+    const fresh = (chosen.questions||[]).filter(q=>!asked.has(q));
+    fresh.forEach(q=>asked.add(q));
+    chosen.questions = fresh;
+
+    if(chosen.questions && chosen.questions.length){
+      const qp=add(`<h3>${t("questions_h",{m:esc(cfg.label)})}</h3><p class="why">${t("questions_1")}</p>
+        ${chosen.questions.map(q=>{ const id=qid(); return `<div class="qb"><div class="lbl" id="${id}">${esc(q)}</div>
+          ${textInput("hq",q,t("q_ph"),2,id)}</div>`;}).join("")}
+        <div class="btns"><button class="primary" id="hqok">${t("next")}</button></div>`);
+      await new Promise(res=>{ qp.querySelector("#hqok").onclick=()=>{
+        qp.querySelectorAll(".hq").forEach(i=>{ if(i.value.trim()){
+          FACTS[i.dataset.id]=i.value.trim(); TYPED.add(i.dataset.id); } });
+        settle(qp); res(); }; });
+    }
+
+    if(chosen.done || !chosen.probes.length){
+      if(round===1 && !(chosen.questions||[]).length){
+        add(`<h3>${t("nothing_picked_h")}</h3><p class="why">${t("nothing_picked_1")}</p>`,"panel stop");
+        break;
+      }
+      // The model reporting "enough" is a suggestion, not a termination.
+      const dp=add(`<h3>${t("model_done_h",{m:esc(cfg.label)})}</h3>
+        <p>${t("model_done_1")}</p>
+        <div class="btns"><button class="primary allow">${t("more_yes")}</button>
+          <button class="deny">${t("more_no")}</button></div>`, "panel decide");
+      if(await ask(dp)) continue;
+      break;
+    }
+
+    const plan=await invoke("plan_reads",{probes:chosen.probes});
+    const doable=plan.plan.filter(p=>!p.refused);
+    if(!doable.length) break;
+
+    const rc=add(`<h3>${round===1?t("read_h"):t("read_h_n",{n:round})}</h3>
+      <p>${t("read_own",{m:esc(cfg.label), v:esc(pick.vendor)})}</p>
+      <ul class="plain">${doable.map(readItem).join("")}</ul>
+      <div class="btns"><button class="primary allow">${t("read_yes",{n:doable.length})}</button>
+        <button class="deny">${t("read_no_more")}</button></div>`, "panel decide");
+    liveReadCount(rc);
+    const allowed=await pickList(rc);
+    if(allowed===null) break;
+    const c=await invoke("perform_reads",{probes:chosen.probes, allow:allowed});
+    Object.assign(FACTS, c.facts);
+    if(Object.keys(c.facts).length){
+      step("✓", t("read_done"), t("read_done_note"), readValues(c.facts));
+      if(await checkMismatch(pick, c.facts)) return;
+    }
+  }
+
+  const th=add(`<h3><span class="spin"></span> ${t("thinking",{m:esc(cfg.label)})}</h3>`);
+  let sol=null;
+  try{ sol=await awaitOrCancel(invoke("llm_solve",{problem, facts:FACTS, lang:LANG,
+                                                   typed:[...TYPED]}), th); }
+  catch(e){
+    if(e instanceof Cancelled) throw e;
+    th.className="panel stop";
+    th.innerHTML=`<h3>${t("solve_failed_h")}</h3><p>${esc(tr(e))}</p>`; return; }
+
+  let last=sol.answer, sec=sol.sections||null;
+  const ful=qid();
+  // A section the model left out is left out here: an empty heading would be
+  // the window claiming the method was followed when it was not. An answer
+  // with no sections at all is shown as it arrived, which is also how a
+  // reader sees that the model ignored what it was asked for.
+  const method=()=>{ if(!sec || !sec.structured) return md(last);
+    const part=(k,key)=>sec[k] ? `<div class="mpart"><div class="mlbl">${t(key)}</div>
+      <div>${md(sec[k])}</div></div>` : "";
+    return (sec.abstained ? `<div class="mpart"><div class="mlbl">${t("meth_abstained")}</div>
+        <div>${md(sec.abstained)}</div></div>` : part("cause","meth_cause"))
+      + part("why_not","meth_why_not") + part("next","meth_next") + part("if_wrong","meth_if_wrong"); };
+  const rests=()=>{ if(!sec || !sec.confidence || sec.confidence==="unstated") return "";
+    const cls = sec.confidence==="measured" ? "why" : "why c-warn";
+    return `<p class="${cls}">${t(sec.confidence==="measured"?"meth_measured":"meth_supplied",
+      {f:esc((sec.rests_on_ids||[]).join(", "))})}</p>`; };
+  const show=el=>{ el.className="panel";
+    el.innerHTML=`<h3>${t("answer_h",{m:esc(cfg.label)})}</h3>
+      <div class="answer">${method()}</div>
+      ${rests()}
+      <details class="more"><summary>${t("basis")}</summary>${kv(FACTS)}</details>
+      <div class="mt5"><div class="lbl" id="${ful}">${t("followup_h")}</div>
+        <div class="why">${t("followup_1")}</div>${textInput("fu","fu",t("followup_ph"),4,ful)}</div>
+      <p class="note c-stop" data-msg="fu"></p>
+      <div class="btns"><button class="primary fuask">${t("followup_ask")}</button>
+        <button class="ghost fudone">${t("followup_done")}</button></div>`; };
+  show(th);
+
+  await new Promise(res=>{
+    const bind=()=>{
+      th.querySelector(".fuask").onclick=async()=>{
+        const added=th.querySelector(".fu").value.trim();
+        if(!added) return;
+        // The answer stays on screen while the model thinks about the
+        // addition, and stays if the model fails: a follow-up that could not
+        // be answered used to take the first answer with it.
+        th.querySelectorAll("button,textarea").forEach(b=>b.disabled=true);
+        const wait=add(`<p class="why"><span class="spin"></span> ${t("thinking_more",{m:esc(cfg.label)})}</p>`, "panel");
+        // `typed` travels here too, and this is where it matters most: the
+        // person has just supplied something, so a follow-up answer is the one
+        // most likely to rest on what they said rather than on a measurement.
+        try{ const r=await awaitOrCancel(invoke("llm_follow_up",{problem, facts:FACTS,
+                     previous:last, added, lang:LANG, typed:[...TYPED]}), wait);
+          wait.remove();
+          last=r.answer; sec=r.sections||null; show(th); bind();
+        }catch(e){
+          if(!(e instanceof Cancelled)){
+            wait.className="panel stop";
+            wait.innerHTML=`<h3>${t("solve_failed_h")}</h3><p>${esc(tr(e))}</p>`;
+          }
+          th.querySelectorAll("button,textarea").forEach(b=>b.disabled=false);
+        }
+      };
+      th.querySelector(".fudone").onclick=()=>{ settle(th); res(); };
+    };
+    bind();
+  });
+
+  const el=add(`<h3>${t("catch_h",{v:esc(pick.vendor)})}</h3><p>${t("catch_1")}</p>
+    <p class="why">${t("catch_2")}</p>
+    <details class="more"><summary>${t("report_what")}</summary>${kv({
+      subject: pick.domain, model_class: cfg.model_class })}</details>
+    <div class="btns"><button class="primary allow">${t("report_yes")}</button>
+      <button class="deny">${t("report_no")}</button></div>`, "panel decide");
+  if(!await ask(el)){ el.innerHTML=`<h3>${t("report_none_h")}</h3><p>${t("report_none_1")}</p>`; return; }
+  try{
+    const r=await invoke("report_without_vendor",{base:SERVER_URL, subject:pick.domain,
+      modelClass:cfg.model_class, uxSeverity:sol.ux_severity, observed:FACTS});
+    el.className="panel done";
+    // `reporters` is distinct people, not submissions, and `surfaced` is the
+    // server applying the floor to that figure — so reporting the same thing
+    // twice does not move either one.
+    // No count below the floor, and not because it is unknown: the server
+    // withholds it on purpose, because "you are the third" is a count about
+    // other people's machines, and counting up to the floor one report at a
+    // time is how the floor is read from outside. The sentence used to ask for
+    // `{n}` and rendered `undefined` at a person.
+    el.innerHTML=`<h3>${t("catch_ok_h")}</h3><p>${r.surfaced
+      ? t("catch_ok_yes",{n:esc(r.reporters), v:esc(pick.vendor)})
+      : t("catch_ok_below")}</p>`;
+  }catch(e){ el.className="panel stop"; el.innerHTML=`<h3>${t("err_h")}</h3><p>${esc(tr(e))}</p>`; }
+}
+
+/* EN3. The interpreter on the search path is often not the one a project runs.
+   Where the two disagree neither is obviously the one meant, so this asks —
+   it never picks. A solution keyed on the wrong interpreter is a confidently
+   wrong answer, and the whole design would rather be silent than that. */
+async function askAboutInterpreter(){
+  const r = await invoke("interpreter_conflict",{facts:FACTS});
+  if(!r.conflict) return;
+  const q = r.question;
+  const el = add(`<h3>${t("env_h")}</h3>
+    <p>${t("env_1",{host:esc(q.host), project:esc(q.project)})}</p>
+    <p class="why">${t("env_why")}</p>
+    <div class="btns">${q.choices.map((c,i)=>
+      `<button class="${i===0?"primary":"ghost"}" data-c="${i}">${esc(t("env_c_"+c))}</button>`).join("")}
+    </div>`, "panel decide");
+  const pick = await new Promise(res=>{
+    el.querySelectorAll("button[data-c]").forEach(b=>
+      b.onclick=()=>{ settle(el); res(+b.dataset.c); });
+  });
+  // Recorded under its own name and marked as stated. It does **not** overwrite
+  // `python.version`: that reading was true of what it read, and a person
+  // choosing which interpreter they meant is answering a different question.
+  // Letting the answer take the reading's name would make an assertion
+  // indistinguishable from a measurement everywhere downstream.
+  FACTS["python.environment"] = q.choices[pick];
+  STATED.add("python.environment");
+  el.className = "panel done";
+  el.innerHTML = `<h3>${t("env_ok_h")}</h3><p>${t("env_ok_1",{c:esc(t("env_c_"+q.choices[pick]))})}</p>`;
+}
+
+/// A person at a computer names a vendor from memory; the readings do not.
+/// Where they disagree, say so and offer the switch — never override, and
+/// never continue silently against a false premise.
+async function checkMismatch(pick, facts){
+  const m = await invoke("vendor_mismatch",{chosen:pick.vendor, facts});
+  if(!m.conflict) return false;
+  const el=add(`<h3>${t("mismatch_h")}</h3>
+    <p>${t("mismatch_1",{chosen:esc(pick.vendor), found:esc(m.found)})}</p>
+    <div class="btns">
+      <button class="primary allow">${t("mismatch_switch",{found:esc(m.found)})}</button>
+      <button class="deny">${t("mismatch_keep",{chosen:esc(pick.vendor)})}</button></div>`,
+    "panel stop");
+  if(await ask(el)){
+    $("vquery").value = m.found;
+    el.className="panel";
+    el.innerHTML=`<h3>${t("mismatch_switch",{found:esc(m.found)})}</h3>
+      <p class="why">${esc(m.found)} — ${t("go")}.</p>`;
+    return true;
+  }
+  return false;
+}
+
+/// The hand-off. Everything about it is the vendor's declaration — where it
+/// goes, what it needs, how the answer returns — and everything about what
+/// leaves is the user's decision.
+async function handover(plan, vendorName){
+  if(!plan) return false;
+  const extra = {};
+
+  // Whatever the vendor needs is asked for as an ordinary probe, so a contact
+  // address is validated and consented like any other value rather than being
+  // a field this client decided everyone must have.
+  if((plan.require||[]).length){
+    const need=add(`<h3>${t("esc_h")}</h3><p>${t("esc_1",{r:esc(plan.reason), v:esc(vendorName)})}</p>
+      <p class="lbl">${t("esc_need")}</p>
+      ${plan.require.map(p=>{ const id=qid(); return `<div class="qb">
+        <div class="lbl" id="${id}">${esc(p.describes)}</div>
+        <div class="why">${esc(p.why||"")}</div>
+        ${p.choices
+          ? `<select class="rq field" data-id="${esc(p.id)}" aria-labelledby="${id}">
+               <option value="">${esc(t("q_pick"))}</option>
+               ${p.choices.map(c=>`<option>${esc(c)}</option>`).join("")}</select>`
+          : textInput("rq", p.id, p.example || t("q_ph_req"), 1, id)}
+      </div>`;}).join("")}
+      <p class="note c-stop" data-msg="rq"></p>
+      <div class="btns"><button class="primary" id="rqok">${t("next")}</button></div>`);
+    // The mark goes the moment the person starts correcting the answer, so it
+    // never stands over a value that is already different.
+    need.querySelectorAll(".rq").forEach(i=>i.addEventListener("input",()=>i.classList.remove("invalid")));
+    await new Promise(res=>{ need.querySelector("#rqok").onclick=()=>{
+      let bad=false;
+      need.querySelectorAll(".rq").forEach(i=>{
+        const p=plan.require.find(x=>x.id===i.dataset.id);
+        const v=(i.value||"").trim();
+        i.classList.remove("invalid");
+        if(!v){
+          // Required, and now genuinely answerable as empty: the choices used
+          // to arrive with the first one selected, so this could not happen
+          // and was never checked. An unanswered required field must not open
+          // a case in somebody's name.
+          i.classList.add("invalid"); bad=true; return;
+        }
+        if(p && p.pattern && !matchesPattern(p.pattern, v)){
+          i.classList.add("invalid"); bad=true; return;
+        }
+        extra[i.dataset.id]=v;
+      });
+      const note=need.querySelector("[data-msg=rq]");
+      if(note) note.textContent = bad ? t("q_pattern") : "";
+      if(bad) return;                       // caught here, not after a case is opened
+      settle(need);
+      res();
+    };});
+  }
+
+  const ch=await invoke("reply_channels",{offered:plan.reply_via||["none"]});
+  const usable=ch.usable.length?ch.usable:["none"];
+  const payload={};
+  for(const f of (plan.include||[])){
+    if(f==="facts_machine"||f==="facts_human") Object.assign(payload, FACTS);
+    else if(f==="findings") payload.findings=(LAST_FINDINGS||[]).map(x=>x.summary);
+    else if(f==="reported") payload.reported=$("problem").value;
+  }
+  Object.assign(payload, extra);
+  // What a person typed — an answer in their own words, a pasted log, the
+  // problem as they described it — is anonymised before it is shown, and
+  // shown exactly as it will leave. The hand-off carried the typed text as
+  // typed, the one place in the client where free text travelled unread by
+  // the anonymiser. The vendor's own required fields — an address to answer
+  // to — are not text about the machine and go as given.
+  const replaced={};
+  for(const k of Object.keys(payload)){
+    const typed = (STATED.has(k) || k==="reported") && typeof payload[k]==="string" && payload[k].trim();
+    if(!typed) continue;
+    const a=await invoke("anonymise_text",{text:payload[k]});
+    payload[k]=a.text;
+    for(const [kind,count] of Object.entries(a.replaced||{})) replaced[kind]=(replaced[kind]||0)+count;
+  }
+  const replacedNote = Object.keys(replaced).length
+    ? t("anon_done",{list:Object.entries(replaced).map(([k,c])=>t("anon_"+k,{n:c})).join(", ")}) : "";
+
+  const el=add(`<h3>${t("esc_h")}</h3>
+    <p>${t("esc_1",{r:esc(plan.reason), v:esc(vendorName)})}</p>
+    ${plan.human_verification?`<p class="why">${t("esc_human")}</p>`:""}
+    <label class="lbl mt4" for="replyvia">${t("esc_reply_h")}</label>
+    <div class="ask"><select id="replyvia">${usable.map(c=>{
+      const d=ch.all.find(a=>a.id===c);
+      return `<option value="${esc(c)}">${esc(d?tr(d.describes):c)}</option>`;}).join("")}</select></div>
+    <details class="more"><summary>${t("esc_sends")}</summary>
+      ${replacedNote?`<p class="why">${esc(replacedNote)}</p>`:""}${kvl(payload, k=>((plan.require||[]).find(p=>p.id===k)||{}).describes)}</details>
+    <div class="btns"><button class="primary allow">${t("esc_yes")}</button>
+      <button class="deny">${t("esc_no")}</button></div>`, "panel decide");
+  if(!await ask(el)){
+    el.className="panel stop";
+    el.innerHTML=`<h3>${t("esc_none_h")}</h3><p>${t("esc_none_1")}</p>`;
+    return false;
+  }
+  // Read after the decision, not before it: the channel was read the moment
+  // the panel appeared, so a person who changed it before pressing Hand over
+  // had their first choice sent.
+  const via=()=>el.querySelector("#replyvia").value;
+  const chosen=via();
+  try{
+    const r=await invoke("escalate",{base:BASE, queue:plan.queue, target:plan.target||null,
+                                     replyVia:chosen, payload, lang:LANG});
+    el.className="panel done";
+    el.innerHTML=`<h3>${t("esc_done_h")}</h3>
+      <p>${t("esc_done_1",{ref:esc(r.reference), note:esc(r.reply_note||"")})}</p>
+      ${r.ticket_url?`<p class="why"><code>${esc(r.ticket_url)}</code></p>`:""}`;
+    return true;
+  }catch(e){
+    el.className="panel stop";
+    el.innerHTML=`<h3>${t("err_h")}</h3><p>${esc(tr(e))}</p>`;
+    return false;
+  }
+}
+
+/* The free text a publisher asked for, offered on its own consent.
+
+   `stated` names every probe a person answered; the ones with a null value are
+   those whose words did not travel. Those are the candidates, and each is shown
+   as it will be sent. Sending nothing is the default and costs the user
+   nothing. */
+async function offerFreeText(pv, d, destination){
+  const stated = pv.report.stated || {};
+  const ids = Object.keys(stated).filter(k => stated[k] === null && (FACTS[k]||"").trim());
+  if(!ids.length) return pv.report;
+
+  // Anonymised before it is shown, not after it is agreed to. Nobody reliably
+  // spots their own user name in forty lines of a log, or a token three screens
+  // to the right; the person is told what was replaced and still sees — and
+  // may still edit — every word that would travel.
+  const shown = {};
+  for(const id of ids) shown[id] = await invoke("anonymise_text",{text:FACTS[id]});
+  const replaced = r => Object.entries(r.replaced||{}).map(([k,c])=>t("anon_"+k,{n:c})).join(", ");
+
+  const el = add(`<h3>${t("free_h")}</h3>
+    <p>${t("free_1",{v:esc(d.org)})}</p>
+    ${destination?`<p class="why">${t("free_to",{d:esc(destination)})}</p>`:""}
+    <p class="why">${t("free_2")}</p>
+    ${ids.map(id=>{ const lid=qid(); return `<div class="qb">
+      <div class="lbl" id="${lid}">${esc(label(id).t||id)}</div>
+      <p class="why">${Object.keys(shown[id].replaced||{}).length
+        ? esc(t("anon_done",{list:replaced(shown[id])})) : esc(t("anon_none"))}
+        ${shown[id].cut?esc(" "+t("anon_cut",{n:shown[id].max_lines, c:shown[id].max_chars})):""}</p>
+      <textarea class="ft field mono" data-id="${esc(id)}" aria-labelledby="${lid}" rows="${Math.min(14, 3 + shown[id].text.split("\n").length)}">${esc(shown[id].text)}</textarea>
+    </div>`;}).join("")}
+    <div class="btns"><button class="primary allow">${t("free_yes")}</button>
+      <button class="deny">${t("free_no")}</button></div>`, "panel decide");
+
+  if(!await ask(el)){
+    el.className="panel"; el.innerHTML=`<h3>${t("free_none_h")}</h3><p>${t("free_none_1")}</p>`;
+    return pv.report;
+  }
+  const text = [...el.querySelectorAll(".ft")]
+    .map(a=>`${a.dataset.id}: ${a.value.trim()}`)
+    .filter(x=>!x.endsWith(": ")).join("\n\n");
+  if(!text) return pv.report;
+  try{
+    const r = await invoke("attach_consented_text",
+      {report:pv.report, text, destination:destination||VDOMAIN});
+    el.className="panel done";
+    el.innerHTML=`<h3>${t("free_ok_h")}</h3><p>${t("free_ok_1",{v:esc(d.org)})}</p>`;
+    return r;
+  }catch(e){
+    el.className="panel stop"; el.innerHTML=`<h3>${t("err_h")}</h3><p>${esc(tr(e))}</p>`;
+    return pv.report;
+  }
+}
+
+async function offerReport(d, resolvedBy, outcome){
+  // Asked before the button exists, not after. Efficacy is the vendor's to
+  // deliver, and a vendor that has never once acted damages the channel for
+  // everyone — so where one has earned it, the button is not offered at all
+  // and the reason is stated.
+  const st=await invoke("vendor_standing",{vendor:VDOMAIN, indexUrl:INDEX_URL});
+  if(!st.offer){
+    add(`<h3>${t("report_h",{v:esc(d.org)})}</h3><p>${esc(tr(st.note))}</p>`, "panel done");
+    return;
+  }
+  const pv=await invoke("preview_report",{skill:SKILL, facts:FACTS, stated:[...STATED], decidedOn:DECIDED, resolvedBy, outcome});
+  const el=add(`<h3>${t("report_h",{v:esc(d.org)})}</h3><p>${t("report_1")}</p><p class="why">${t("report_2")}</p>
+    <details class="more"><summary>${t("report_what")}</summary>${kvl(pv.report.observed)}
+      ${pv.held_back.length?`<p class="why mt3">${esc(t("report_held",{list:pv.held_back.map(k=>label(k).t).join(", ")}))}</p>`:""}
+      <p class="why" id="pseudo"></p></details>
+    <div class="btns"><button class="primary allow">${t("report_yes")}</button>
+      <button class="deny">${t("report_no")}</button></div>`, "panel decide");
+  invoke("identity_info",{domain:VDOMAIN}).then(i=>{
+    const slot=el.querySelector("#pseudo");
+    if(slot) slot.innerHTML=`<code>${esc(i.pseudonym)}</code> (${esc(i.epoch)}) — ${esc(t("pseudo_explain"))}`;
+  });
+  if(!await ask(el)){ el.innerHTML=`<h3>${t("report_none_h")}</h3><p>${t("report_none_1")}</p>`; return; }
+
+  // Free text is withheld by default and offered separately, because it is the
+  // one thing no policy can generalise safely — and also the most useful thing
+  // a publisher can receive. An error message copied by hand is exactly what
+  // they need and exactly what a machine cannot produce. So the words are shown
+  // verbatim, they stay editable so anything personal can be removed, the
+  // recipient is named, and the refusing button holds focus.
+  const report = await offerFreeText(pv, d, VDOMAIN);
+
+  const r=await invoke("send_report",{base:BASE, report, domain:VDOMAIN, lang:LANG});
+  // What the receipt actually said, recorded locally. This is the other half of
+  // the measurement: a state that changed something counts, an acknowledgement
+  // does not, and the next report to this vendor is offered on that evidence.
+  await invoke("record_report_state",{vendor:VDOMAIN, receiptState:r.state||"received"});
+  el.className="panel done";
+  el.innerHTML=`<h3>${t("receipt_h")}</h3><p>${esc(r.message||"")}</p>
+    <p class="why">${esc(tr(st.note))}</p>`;
+  await offerContribution();
+}
+
+// Contributing the local figure to the neutral index is a *separate*
+// transmission decision and gets its own consent. It is the network effect the
+// whole channel rests on — no single vendor can compute this number — which is
+// exactly why it must not be taken quietly.
+//
+// Entries are submitted one vendor per request. The set of vendors this client
+// has dealt with is a profile of the software it runs, sharper than any single
+// value in it, so a batch would disclose in one call what the design refuses
+// to hold at all.
+async function offerContribution(){
+  const preview=await invoke("contribute_standing",{indexUrl:INDEX_URL, dryRun:true});
+  if(!preview.pending.length) return;
+  const rows=preview.pending.map(c=>
+    `<tr><td>${esc(c.vendor)}</td><td>${c.rate_pct} %</td><td>${esc(c.weight)}</td></tr>`).join("");
+  const el=add(`<h3>${t("contrib_h")}</h3><p>${t("contrib_1")}</p>
+    <details class="more"><summary>${t("contrib_what")}</summary>
+      <table><tr><th>${t("contrib_vendor")}</th><th>${t("contrib_rate")}</th>
+        <th>${t("contrib_weight")}</th></tr>${rows}</table>
+      <p class="why">${t("contrib_sep")}</p></details>
+    <div class="btns"><button class="primary allow">${t("contrib_yes")}</button>
+      <button class="deny">${t("contrib_no")}</button></div>`, "panel decide");
+  if(!await ask(el)){
+    el.className="panel done";
+    el.innerHTML=`<h3>${t("contrib_none_h")}</h3><p>${t("contrib_none_1")}</p>`;
+    return;
+  }
+  const done=await invoke("contribute_standing",{indexUrl:INDEX_URL, dryRun:false});
+  el.className="panel done";
+  el.innerHTML=`<h3>${t("contrib_done_h")}</h3><p>${n("contrib_done_1", done.sent.length)}</p>`;
+}
+
+/* ------------------------------------------------------------ settings */
+async function refreshLlmChip(){
+  const chip=$("llmchip");
+  chip.className="chip"; chip.textContent="…";
+  const st=await invoke("llm_probe");
+  if(st.state==="unconfigured"){
+    chip.className="chip missing"; chip.textContent=t("llm_none"); chip.title=t("llm_tip_none");
+  } else if(st.state==="reachable"){
+    chip.className="chip ok"; chip.textContent=st.label; chip.title=t("llm_tip_ok",{m:st.label,n:st.models});
+  } else {
+    chip.className="chip missing"; chip.textContent=t("llm_offline",{m:st.label});
+    chip.title=t("llm_tip_off",{e:tr(st.error)});
+  }
+  return st;
+}
+
+async function openSettings(){
+  const [c, provs] = await Promise.all([llmGet(), invoke("llm_providers")]);
+  const el=add(`<h3>${t("set_h")}</h3><p>${t("set_1")}</p>
+    <div class="ask">
+      <label class="sr" for="lprov">${t("set_provider")}</label>
+      <select id="lprov">${provs.map(p=>`<option value="${esc(p.id)}"${c.provider===p.id?" selected":""}>${esc(tr(p.name))}</option>`).join("")}</select>
+      <label class="sr" for="lclass">${t("set_class")}</label>
+      <select id="lclass">
+        <option value="local_small"${c.model_class==="local_small"?" selected":""}>${t("cls_small")}</option>
+        <option value="local_large"${c.model_class==="local_large"?" selected":""}>${t("cls_large")}</option>
+        <option value="cloud"${c.model_class==="cloud"?" selected":""}>${t("cls_cloud")}</option>
+      </select>
+    </div>
+    <div class="ask"><label class="sr" for="lep">${t("set_ep")}</label>
+      <input id="lep" placeholder="${t("set_ep")}" value="${esc(c.endpoint||"")}"></div>
+    <div class="ask" id="keyrow"><label class="sr" for="lkey">${t("set_key_ph")}</label>
+      <input id="lkey" type="password" autocomplete="off"
+      placeholder="${c.has_key?t("set_key_have"):t("set_key_ph")}">
+      <button class="ghost" id="lkeyrm"${c.has_key?"":" hidden"}>${t("set_key_remove")}</button></div>
+    <p class="why" id="keynote">${t("set_key_note")}</p>
+    <div class="ask">
+      <label class="sr" for="lmodel">${t("set_model")}</label>
+      <input id="lmodel" placeholder="${t("set_model")}" value="${esc(c.model||"")}" list="modellist">
+      <datalist id="modellist"></datalist>
+      <button class="ghost" id="lload">${t("set_load")}</button>
+    </div>
+    <div id="lstatus" class="why"></div>
+    <div class="btns"><button class="primary" id="lsave">${t("set_save")}</button>
+      <button class="ghost" id="ltest" title="${esc(t("set_test_cost"))}">${t("set_test")}</button>
+      <button class="ghost" id="lclose">${t("close")}</button></div>`, "panel", "llmpanel");
+
+  const $$=id=>el.querySelector("#"+id);
+  // A class the person picked stays picked. The preset used to reset it on
+  // every change of provider, so choosing "large, local" and then correcting
+  // the provider quietly put it back to "small".
+  let classChosen=false;
+  $$("lclass").onchange=()=>{ classChosen=true; };
+  const showKey=needs=>{ $$("keyrow").hidden=!needs; $$("keynote").hidden=!needs; };
+  const applyPreset=()=>{
+    const p=provs.find(x=>x.id===$$("lprov").value); if(!p) return;
+    if(!$$("lep").value || provs.some(x=>x.base===$$("lep").value)) $$("lep").value=p.base;
+    if(p.hint && !$$("lmodel").value) $$("lmodel").value=p.hint;
+    showKey(p.needs_key);
+    if(!classChosen) $$("lclass").value=p.local?"local_small":"cloud";
+  };
+  $$("lprov").onchange=applyPreset;
+  if(!c.provider) applyPreset();
+  else showKey((provs.find(x=>x.id===c.provider)||{needs_key:true}).needs_key);
+
+  const collect=()=>({provider:$$("lprov").value, model:$$("lmodel").value.trim(),
+    endpoint:$$("lep").value.trim(), modelClass:$$("lclass").value,
+    apiKey:$$("lkey").value===""?null:$$("lkey").value});
+
+  // Looking is not saving. Both buttons below used to write the form to disk
+  // first, so pressing "Load models" to see what a provider offers replaced
+  // the settings a person had. The list is asked for with the form's values;
+  // the test runs against what is saved and says so, since the command tests
+  // the stored configuration and nothing else.
+  $$("lload").onclick=async()=>{
+    $$("lstatus").textContent=t("set_loading");
+    try{
+      const r=await invoke("llm_models",{provider:$$("lprov").value, endpoint:$$("lep").value.trim()});
+      el.querySelector("#modellist").innerHTML=r.models.map(m=>`<option value="${esc(m)}">`).join("");
+      $$("lstatus").textContent=n("set_loaded", r.models.length);
+      if(!$$("lmodel").value && r.models.length) $$("lmodel").value=r.models[0];
+    }catch(e){ $$("lstatus").textContent=t("set_load_fail",{e:tr(e)}); }
+  };
+  $$("ltest").onclick=async()=>{
+    $$("lstatus").textContent=t("set_testing");
+    try{
+      const r=await invoke("llm_test");
+      $$("lstatus").innerHTML=`${t("set_test_ok",{m:esc(r.label), ms:esc(r.ms), a:esc(r.answer)})} <span class="c-muted">${t("set_test_saved")}</span>`;
+    }catch(e){ $$("lstatus").innerHTML=t("set_test_fail",{e:esc(tr(e))}); }
+    await refreshLlmChip();
+  };
+  // The stored key goes on a button, not on a magic value typed into the key
+  // field — "enter an em-dash to delete" is a convention nobody would guess
+  // and a screen reader would not distinguish from a hyphen.
+  $$("lkeyrm").onclick=async()=>{
+    try{
+      await llmSet({...collect(), apiKey:""});
+      $$("lkey").value=""; $$("lkey").placeholder=t("set_key_ph"); $$("lkeyrm").hidden=true;
+      $$("lstatus").textContent=t("set_key_removed");
+      await refreshLlmChip();
+    }catch(e){ $$("lstatus").textContent=tr(e); }
+  };
+  $$("lsave").onclick=async()=>{
+    try{
+      const r=await llmSet(collect());
+      $$("lkey").value="";
+      if(r.has_key){ $$("lkey").placeholder=t("set_key_have"); $$("lkeyrm").hidden=false; }
+      const st=await refreshLlmChip();
+      syncHint(st);
+      el.className=r.configured?"panel":"panel stop";
+      $$("lstatus").innerHTML=r.configured
+        ? (st.state==="reachable"?t("set_saved_ok"):t("set_saved_unreach"))
+        : t("set_incomplete");
+    }catch(e){ el.className="panel stop"; $$("lstatus").textContent=tr(e); }
+  };
+  $$("lclose").onclick=()=>el.remove();
+}
+
+/* ---------------------------------------------------------------- boot */
+function applyLang(){
+  document.documentElement.lang = LANG;
+  $("go").textContent=t("go");
+  $("problem").placeholder=t("ph_problem");
+  $("problem").setAttribute("aria-label", t("ph_problem"));
+  $("vquery").placeholder=t("ph_vendor");
+  $("vquery").setAttribute("aria-label", t("ph_vendor"));
+  $("lang").setAttribute("aria-label", t("lang_label"));
+  if(!$("who").textContent || $("dot").className==="dot") $("who").textContent=t("novendor_chip");
+  $("proofsum").textContent=t("proof");
+  // The introduction is rebuilt in the new language; a run's panels are not.
+  // Switching the language used to wipe the screen, diagnosis and all, and
+  // the results of a run are not something a person expects a menu to erase.
+  if(main.children.length && !$("intro")) return null;
+  main.innerHTML="";
+  const intro=add(`<h3>${t("intro_h")}</h3><p>${t("intro_1")}</p>
+    <p class="note c-muted">${t("intro_2")}</p>
+    <p class="note c-warn" id="llmhint" hidden>${t("intro_nollm")}</p>
+    <details class="more"><summary>${t("vocab_h")}</summary>
+      <div id="vocablist" class="why"></div>
+      <p class="why">${t("vocab_1")}</p>
+      <div class="btns"><button class="ghost" id="resetid">${t("reset_id")}</button></div>
+    </details>`, "panel", "intro");
+  // The vocabulary is the product's central claim; showing it is not a detail.
+  invoke("vocabulary").then(v=>{
+    const box=$("vocablist");
+    if(!box) return;
+    const li = (head, sub) => `<li><span><span class="lbl">${esc(head)}</span>
+      ${sub?`<br><span class="why">${esc(sub)}</span>`:""}</span></li>`;
+    box.innerHTML =
+      `<ul class="plain">${v.actions.map(a=>li(actText(a), a.id)).join("")}</ul>
+       <div class="lbl mt4">${t("vocab_read")}</div>
+       <ul class="plain">${v.readable.map(r=>li(tr(r.describes), r.id)).join("")}</ul>
+       ${v.unavailable.length?`<div class="lbl mt4">${t("vocab_unavail")}</div>
+         <ul class="plain">${v.unavailable.map(u=>li(tr(u.describes), tr(u.why))).join("")}</ul>`:""}`;
+  });
+  // A right nobody can exercise is not a right.
+  $("resetid").onclick=async()=>{
+    await invoke("identity_reset");
+    $("vocablist").insertAdjacentHTML("afterend",
+      `<p class="why c-ok">${t("reset_done")}</p>`);
+  };
+  return intro;
+}
+
+/// Set from state, never only toggled on: a hint that contradicts the chip
+/// beside it is worse than no hint.
+function syncHint(st){
+  const h=$("llmhint");
+  if(h) h.hidden = !!(st && st.state==="reachable");
+}
+
+$("origtab").onclick=()=>{
+  document.body.classList.toggle("orig");
+  $("origtab").textContent = document.body.classList.contains("orig")
+    ? t("tab_yours") : t("tab_orig");
+};
+
+$("llmchip").onclick=()=>openSettings();
+$("go").onclick=run;
+// Return runs the question exactly when the button would: while a run is
+// under way the button is disabled, and Return started a second run over the
+// first one's panels.
+for(const id of ["vquery","problem"])
+  $(id).addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); if(!$("go").disabled) run(); }});
+
+$("lang").onchange=async()=>{
+  LANG=$("lang").value;
+  try{ localStorage.setItem("lang", LANG); }catch(_){}
+  applyLang();
+  syncHint(await refreshLlmChip());
+};
+
+/* A window that fails to start must say so.
+
+   `loadLanguages` throws when a language file cannot be fetched, and an
+   exception here abandons the rest of boot — so every label stays empty and the
+   user gets a blank window that looks like a hung application rather than a
+   broken one. Nothing in the product is allowed to fail silently; this least of
+   all, because it is the failure a user meets first and can report least. */
+function bootFailed(e){
+  const box = document.getElementById("main");
+  if(box) box.innerHTML =
+    `<div class="panel stop" role="alert"><h3>PODSHL could not start</h3>`
+    + `<p>This window could not load its own files.</p>`
+    + `<p class="why"><code>${String(e && e.message || e).replace(/[<&]/g, "")}</code></p>`
+    + `<p class="why">Nothing was read from this device and nothing was sent.</p></div>`;
+  console.error("[podshl] boot failed:", e);
+}
+
+window.addEventListener("load", async () => {
+ try {
+  // Before anything reaches the network. `endpoints` is a local call into the
+  // binary, so a wrong or unreachable server is a later failure with a message,
+  // not a silent fall back to loopback in the middle of a report.
+  const ep = await invoke("endpoints");
+  SERVER_URL = ep.operator; INDEX_URL = ep.index;
+  await loadLanguages();
+  $("lang").innerHTML=Object.entries(I18N).map(([k,v])=>`<option value="${k}">${v._name}</option>`).join("");
+  let saved=null; try{ saved=localStorage.getItem("lang"); }catch(_){}
+  if(saved && I18N[saved]) LANG=saved;
+  else { const l=await invoke("os_locale"); if(I18N[l.code]) LANG=l.code; else LANG="en"; }
+  $("lang").value=LANG;
+  applyLang();
+  setTimeout(()=>$("problem").focus(), 60);
+  syncHint(await refreshLlmChip());
+
+  // The published catalogue, on a clock of its own.
+  //
+  // Not once at startup: the catalogue moves — projects are published,
+  // deprecated, held — and this window stays open for days. Not on the search
+  // path either, and that is the important half: a fetch arriving the moment a
+  // user types would tell the operator that *a* search happened, which is the
+  // one thing the whole download-it-whole design is protecting. So the timing
+  // is independent of the person using it. `refresh_index` is conditional —
+  // it re-fetches only past MAX_AGE_MS, and an unchanged catalogue costs a 304.
+  //
+  // Failing is a legitimate state, not an error worth a dialog: without it a
+  // project may not be found by name, which is a far smaller thing than a
+  // wrong answer. The old cache stands and its age is reported.
+  const syncIndex = () => invoke("refresh_index",{base:SERVER_URL})
+    .then(r=>console.log(`[podshl] index ${r.fetched?"fetched":"still current"}: `
+      + `${r.entries} entries at tree size ${r.tree_size}`))
+    .catch(async e=>{
+      const have=await invoke("index_status");
+      console.warn(`[podshl] index not refreshed (${e}); `
+        + (have.have ? `using the cached one, ${have.entries} entries, `
+                     + `${Math.round(have.age_ms/3600000)} h old` : "none cached"));
+    });
+  syncIndex();
+  setInterval(syncIndex, 6*60*60*1000);
+ } catch(e) { bootFailed(e); }
+});
+</script>
+</body>
+</html>

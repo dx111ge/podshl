@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podshl.example/spec/report.json",
+  "title": "Report",
+  "description": "User-initiated, and filed after the attempt so it can carry whether the fix worked. Deliberately carries no timestamp and no incident id: a report must not be linkable back to the run that produced it. `dropped` names what was withheld, so the omission is visible rather than silent, and `observed` and `stated` are separate so a measurement and a claim can never wear the same name. Free text travels only in `description`, only when the user has seen it and agreed, and only with a destination named.",
+  "type": "object",
+  "required": [
+    "skill_id",
+    "skill_version",
+    "resolved_by",
+    "outcome",
+    "observed",
+    "dropped",
+    "stated"
+  ],
+  "properties": {
+    "skill_id": {},
+    "skill_version": {},
+    "resolved_by": {
+      "type": "string",
+      "enum": [
+        "vendor_skill",
+        "general_agent",
+        "human",
+        "unresolved"
+      ],
+      "description": "A measurement, not metadata. A small local model solving something from public knowledge means the information was available and the product surface failed to convey it — a UX defect rather than a knowledge gap."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "resolved",
+        "unresolved",
+        "escalated",
+        "abstained"
+      ]
+    },
+    "observed": {
+      "type": "object",
+      "description": "Readings, already coarsened by the generalisation policy. **Measurements only.** A value a person supplied is never here, so a recipient that ignores `stated` sees fewer facts rather than a claim it mistakes for a measurement."
+    },
+    "stated": {
+      "type": "object",
+      "description": "What a person supplied — typed, chosen, or answering a probe the skill declared `human` — coarsened by the same policy. Kept apart from `observed` rather than flagged inside it, because the failure to design against is a consumer that does not look: ignoring a flag turns a claim into a measurement, whereas ignoring this map only loses facts. A publisher needs the difference — a solution that matched on a measurement and failed is a defect in their rule; one that matched on a typed value and failed may be nothing of the sort. A null value means supplied but withheld: free text a person typed never travels, but that somebody supplied it is a property of the report rather than anything about them, and it is what decides whether an outcome says anything about a published rule."
+    },
+    "dropped": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decided_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The facts the answer actually turned on — the switches taken, not every fact that was present. Empty where the producer did not say. Combined with `stated` it is what lets a publisher tell an outcome that tests their rule from one that tests whether somebody answered a question correctly, and only the first is evidence about them."
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free-text answers the user chose to send, each labelled with the probe that asked for it. A publisher may ask a free-text question — an error message is the single most useful thing they can receive and the one thing no machine can generalise — and the answer is withheld by default, shown to the user verbatim and editable, and travels only if they agree. `stated` still names the probe with a null value, so a recipient can always tell a question was asked even when the answer did not travel."
+    },
+    "description_consent": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Its own consent, naming who receives it. `granted` must be true, `destination` names the recipient, and `granted_at` is a year-month — the same granularity as the pseudonym, because a precise time would relink a report to the run that produced it, which is the one thing the report format refuses. Enforced by a database CHECK on the receiving side, not by a handler.",
+      "properties": {
+        "granted": {
+          "type": "boolean"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "granted_at": {
+          "type": "string",
+          "description": "Year-month."
+        }
+      }
+    },
+    "failed_actions": {
+      "type": "array"
+    },
+    "pseudonym": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Per vendor and per epoch, so a recipient can count, rate-limit and block without linking this client across vendors or across months. A recipient counting distinct reporters must count distinct pseudonyms; counting submissions cannot tell five people from one person reporting five times."
+    },
+    "epoch": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Year-month."
+    }
+  }
+}

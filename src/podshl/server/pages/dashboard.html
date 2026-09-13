@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — your project</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>Your project</h1>
+
+<div class="panel" id="signin">
+  <label for="host">Host</label>
+  <input type="text" id="host" placeholder="example.org" autocomplete="off">
+  <label for="token">Your token</label>
+  <input type="text" id="token" placeholder="from /register" autocomplete="off">
+  <label class="inline"><input type="checkbox" id="remember"> Remember on this device</label>
+  <div class="btns">
+    <button class="primary" id="open">Open</button>
+    <button id="forget">Forget on this device</button>
+  </div>
+  <!-- Directly under the button that caused it, and announced. It was one grey
+       line under two paragraphs of explanation, saying "this dashboard is
+       private to whoever controls the domain" — which reads as a policy, not
+       as "the token you typed was refused", and was easy not to see at all. -->
+  <div class="panel stop" id="signin-error" role="alert" hidden>
+    <p class="lbl" id="signin-error-title"></p>
+    <div id="signin-error-body"></div>
+  </div>
+  <p class="why" id="msg"></p>
+  <p class="why">The host goes in this page's address after the <code>#</code>,
+  which browsers never send to a server — so our access log cannot record which
+  domain you were looking at. Your token is sent as a header and is never put in
+  a URL, a cookie or a form.</p>
+  <p class="why">Forgetting is not revoking. It clears this browser and leaves
+  the token working.</p>
+</div>
+
+<div id="view" hidden>
+  <h2 id="who"></h2>
+  <p class="why" id="policy-short"></p>
+
+  <div class="tabs" role="tablist" aria-label="Your project">
+    <button role="tab" id="tab-problems" aria-controls="panel-problems" aria-selected="true">Problems</button>
+    <button role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false" tabindex="-1">Your files<span class="tag stop" id="files-badge" hidden></span></button>
+    <button role="tab" id="tab-reporting" aria-controls="panel-reporting" aria-selected="false" tabindex="-1">Reporting</button>
+    <button role="tab" id="tab-access" aria-controls="panel-access" aria-selected="false" tabindex="-1">Access &amp; log</button>
+  </div>
+
+  <!-- What recurs, grouped by the file you would edit, work first. -->
+  <section role="tabpanel" id="panel-problems" aria-labelledby="tab-problems">
+    <p id="summary"></p>
+    <p class="why" id="cut" hidden></p>
+    <div class="panel warn" id="files-warning" hidden>
+      <p id="files-warning-text"></p>
+      <div class="btns"><button id="to-files">Open your files</button></div>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Show"></div>
+    <details class="help">
+      <summary>How to read these</summary>
+      <p class="why"><strong>People</strong> is distinct people who <em>reported</em>,
+      never occurrences, and almost nobody reports at all — so it is a floor, not a
+      count. Nothing appears for a configuration below five people. An answer's
+      total adds up its configurations, so somebody with two counts twice.</p>
+      <p class="why"><strong>Worked / did not</strong> comes from what people said
+      <em>after</em> trying your answer. An answer that helped nobody comes first,
+      then one that worked in some configurations and not in others — usually two
+      problems, and the row suggests the fact that tells them apart.</p>
+      <p class="why"><strong>Measured</strong> was read from the machine.
+      <strong>They typed</strong> was supplied by a person, and the difference
+      decides what an outcome tells you: if your answer turned only on
+      measurements, a failure is a defect in your rule. If it turned on something
+      typed, the person may simply have answered wrong.</p>
+      <p class="why"><strong>Your answer</strong> is found by walking your own
+      solutions against these facts — the same walk <code>/diagnose</code> does. A
+      suggestion is computed only from what this page shows, and nothing changes
+      until you change your own solution file.</p>
+      <p class="why"><strong>In their own words</strong> is text a person chose to
+      send — usually the error, or the lines of a log around it. Names, addresses,
+      tokens and times were replaced on their machine before they saw it, and it
+      came only because they agreed to send it to you.</p>
+      <p class="why" id="counter-means"></p>
+    </details>
+    <div id="groups"></div>
+  </section>
+
+  <!-- What we could and could not make of what you published. -->
+  <section role="tabpanel" id="panel-files" aria-labelledby="tab-files" hidden>
+    <div id="files"></div>
+  </section>
+
+  <section role="tabpanel" id="panel-reporting" aria-labelledby="tab-reporting" hidden>
+    <h3>What answered it</h3>
+    <p class="why" id="reading"></p>
+    <div id="models"></div>
+    <h3>Facts people typed rather than the machine reading</h3>
+    <p class="why" id="stated-means"></p>
+    <div id="stated"></div>
+  </section>
+
+  <section role="tabpanel" id="panel-access" aria-labelledby="tab-access" hidden>
+    <div class="panel ok">
+      <p id="policy"></p>
+      <p class="why" id="limitation"></p>
+    </div>
+
+    <h3>The log about your anchor</h3>
+    <div id="log"></div>
+
+    <h3>If this token leaked</h3>
+    <div class="panel warn">
+      <p>Revoking stops <strong>every</strong> token for this domain, including
+      the one you are using now — they are indistinguishable to you, because each
+      was shown exactly once. Then prove control again at
+      <a href="/register">/register</a> to get a new one. Your project stays
+      published and stays mirrored; only the tokens stop.</p>
+      <label for="confirm">Type the host to confirm</label>
+      <input type="text" id="confirm" placeholder="example.org" autocomplete="off">
+      <div class="btns"><button id="revoke">Revoke every token</button></div>
+      <p class="why" id="revoke-msg"></p>
+    </div>
+
+    <h3>If you no longer want to take part</h3>
+    <div class="panel stop">
+      <p>Withdrawing stops the mirror and withdraws the attestation. Your anchor
+      goes back to <code>unknown</code> — <strong>where every project starts, and
+      which says nothing about anybody</strong>. Your tokens are revoked with it,
+      because a live credential for an empty dashboard helps nobody.</p>
+      <p><strong>Nothing of yours is touched.</strong> The files are in your
+      repository; we only ever held a copy. Taking part was something you did, and
+      stopping is too — you should not have to file a complaint against yourself
+      or ask us.</p>
+      <p class="why">It is recorded in the public log as <code>self_withdrawn</code>,
+      kept distinct from a takedown on purpose: a project that left is not a
+      project that was reported, and a log that could not tell those apart would
+      make leaving look like an accusation. You can come back whenever you like.</p>
+      <label for="confirm-out">Type the host to confirm</label>
+      <input type="text" id="confirm-out" placeholder="example.org" autocomplete="off">
+      <div class="btns"><button class="danger" id="withdraw">Withdraw this project</button></div>
+      <p class="why" id="withdraw-msg"></p>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <p><a href="/publish">What to publish</a> · <a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a></p>
+</footer>
+</div>
+
+<script src="/list.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const say = (id, t) => { $(id).textContent = t; };
+let HOST = "", TOKEN = "", DATA = null;
+
+/* Values here were written by strangers' machines, so everything lands through
+   `textContent`. Never markup, on any path. */
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = String(text);
+  return n;
+};
+const people = n => n + (n === 1 ? " person" : " people");
+const shown = v => v === null || v === undefined ? "(not reported)" : String(v);
+const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+const cell = (tr, text, cls) => {
+  const td = document.createElement("td");
+  td.textContent = text === null || text === undefined ? "" : String(text);
+  if (cls) td.className = cls;
+  tr.appendChild(td);
+};
+
+/* A table row from named fields, the first in monospace. */
+const row = cols => item => {
+  const tr = document.createElement("tr");
+  cols.forEach((c, i) => cell(tr, item[c], i === 0 ? "mono" : ""));
+  return tr;
+};
+const most = field => (a, b) => (b[field] || 0) - (a[field] || 0);
+const byName = field => (a, b) => String(a[field]).localeCompare(String(b[field]));
+
+const factLine = (label, facts, cls) => {
+  const keys = Object.keys(facts || {});
+  if (!keys.length) return null;
+  const p = el("p", cls);
+  p.appendChild(el("strong", null, label + " "));
+  p.appendChild(el("span", "mono", keys.map(k => k + "=" + facts[k]).join("   ")));
+  return p;
+};
+const factsText = c => Object.entries(Object.assign({}, c.measured, c.typed))
+  .map(([k, v]) => k + "=" + v).join("  ");
+
+/* Every list on this page is the shared one (`list.js`): numbered pages, a
+   filter on what this browser already holds, and the orders that make sense
+   for it. It replaced a "Show 20 more" button, which at 263 configurations
+   was eleven presses with no idea where the end was. Nothing inside a row is
+   built until the row is opened. */
+const CONFIG_SORTS = [
+  {id: "people", label: "Most people", compare: most("reporters")},
+  {id: "did_not", label: "Most who said it did not work",
+   compare: (a, b) => most("did_not")(a, b) || most("reporters")(a, b)},
+  {id: "worked", label: "Most who said it worked",
+   compare: (a, b) => most("worked")(a, b) || most("reporters")(a, b)},
+  {id: "words", label: "Most text sent",
+   compare: (a, b) => ((b.in_their_words || {}).count || 0) - ((a.in_their_words || {}).count || 0)},
+];
+
+function configurations(container, list, initial) {
+  PodshlList(container, {
+    noun: {one: "configuration", many: "configurations"},
+    filter: {placeholder: "a fact or a value — os.name=linux, 2.4, nvidia",
+             text: factsText, initial},
+    sorts: CONFIG_SORTS,
+    empty: "No configuration here.",
+    render: configuration,
+  }).set(list);
+}
+
+/* A group opened while the list of groups is filtered starts with the same
+   filter, unless it was the group's own name that matched. */
+function carriedQuery(name) {
+  const q = GROUPS ? GROUPS.query() : "";
+  return q && !name.toLowerCase().includes(q) ? q : "";
+}
+let GROUPS = null;
+
+/* A <details> whose body is built the first time it is opened. */
+function lazy(cls, summary, build, open) {
+  const d = el("details", cls);
+  d.appendChild(summary);
+  let built = false;
+  d.addEventListener("toggle", () => {
+    if (!d.open || built) return;
+    built = true;
+    const body = el("div", "body");
+    build(body);
+    d.appendChild(body);
+  });
+  if (open) d.open = true;
+  return d;
+}
+
+const STATUS = {
+  did_not_help: ["did not help", "tag stop"],
+  needs_a_distinction: ["needs a distinction", "tag flag"],
+  nobody_said: ["nobody said", "tag"],
+  working: ["working", "tag live"],
+};
+
+/* One configuration: who, whether it worked, and its facts on the closed row;
+   the grade, the words and the grouping id once it is opened. */
+function configuration(c) {
+  const s = el("summary");
+  s.appendChild(el("strong", null, people(c.reporters)));
+  const said = (c.worked || 0) + (c.did_not || 0);
+  /* "Your answer worked" is only true where one of their answers applies. A
+     configuration nothing answers was resolved some other way, if at all. */
+  s.appendChild(el("span", "why grow", !said ? "nobody said whether it worked"
+    : (c.answer ? "your answer worked for " : "resolved for ") + c.worked + " of " + said +
+      (c.worked === 0 ? " — it helped nobody who reported back" : "")));
+  s.appendChild(el("span", "facts", factsText(c)));
+  return lazy("cfg", s, body => {
+    const measured = factLine("Measured", c.measured, "why");
+    if (measured) body.appendChild(measured);
+    const typed = factLine("They typed", c.typed, "why");
+    if (typed) body.appendChild(typed);
+    const answer = c.answer;
+    if (answer) {
+      body.appendChild(el("p", "why", answer.confidence === "measured"
+        ? "Your answer turned only on measurements, so if it is wrong here, that is a defect in your rule."
+        : "Your answer turned on " + answer.rested_on_typed.join(", ") + ", which the person " +
+          "supplied rather than the machine reading. If it is wrong, that may be the answer rather than your rule."));
+      if ((c.also_answered_by || []).length) {
+        body.appendChild(el("p", "why", "Also matched by: " + c.also_answered_by.join(", ") +
+          " — two of your classes overlap on this configuration, and whoever asks gets whichever they named."));
+      }
+    } else if (c.why_no_answer) {
+      body.appendChild(el("p", "why", c.why_no_answer));
+    }
+    /* Each excerpt was anonymised on the sender's machine, shown to them, and
+       sent only because they agreed to send it to you. */
+    const words = c.in_their_words || {count: 0, shown: []};
+    if (words.count) {
+      body.appendChild(el("p", "why", "In their own words: " + words.count +
+        (words.count === 1 ? " person sent" : " people sent") + " text" +
+        (words.count > words.shown.length ? ", " + words.shown.length + " shown" : "") +
+        ". Anonymised on their machine and sent with their consent."));
+      words.shown.forEach(w => {
+        const pre = el("pre", "words", w.text);
+        if (w.outcome) pre.title = "they said: " + w.outcome;
+        body.appendChild(pre);
+      });
+    }
+    body.appendChild(el("p", "why", "grouping id " + c.class + " · " + c.reports + " reports"));
+  });
+}
+
+/* Where an answer needs a distinction. Computed from the configurations on this
+   page and nothing else. The `answers.when` is written as YAML flow values —
+   JSON is valid there — so `3.13` stays a string when it is pasted. */
+function fork(s) {
+  const box = el("div", "panel warn");
+  /* A fact that separates the two sides is a finding; one that merely differs
+     is mostly noise — on a busy answer every fact differs somewhere. So the
+     separating ones, or failing any, the two the server ranked first. */
+  const all = s.candidates || [];
+  const separating = all.filter(c => c.separates_completely);
+  const listed = separating.length ? separating : all.slice(0, 2);
+  listed.forEach((c, i) => {
+    const p = el("p", i === 0 ? null : "why");
+    p.appendChild(el("strong", null, c.separates_completely ? "Separates them: " : "Differs: "));
+    p.appendChild(el("span", "mono", c.fact));
+    p.appendChild(el("span", null, " — worked with " + c.when_it_worked.map(shown).join(", ") +
+      "; did not with " + c.when_it_did_not.map(shown).join(", ") +
+      (c.provenance === "typed" ? ". People typed this rather than the machine reading it." : ".")));
+    box.appendChild(p);
+    if (i !== 0) return;
+    box.appendChild(el("p", "why", "A switch on it splits the reports you already have:"));
+    const table = el("table");
+    const head = el("tr");
+    [c.fact, "Reports", "Worked", "Did not"].forEach(h => head.appendChild(el("th", null, h)));
+    table.appendChild(el("thead")).appendChild(head);
+    const tbody = table.appendChild(el("tbody"));
+    (c.splits_history || []).forEach(v => {
+      const tr = el("tr");
+      cell(tr, shown(v.value), "mono"); cell(tr, v.reports); cell(tr, v.worked); cell(tr, v.did_not);
+      tbody.appendChild(tr);
+    });
+    box.appendChild(table);
+    if (c.when) {
+      box.appendChild(el("p", "why", "To limit this answer to where it worked, its front matter would say:"));
+      const lines = ["answers:", "  when:"].concat(Object.keys(c.when).map(
+        k => "    " + k + ": " + JSON.stringify(c.when[k])));
+      box.appendChild(el("pre", null, lines.join("\n")));
+      box.appendChild(el("p", "why", "The configurations where it did not work then need an answer of their own."));
+    } else if (c.acquired === false) {
+      box.appendChild(el("p", "why", "Nothing in your current collect reads " + c.fact +
+        ", so a condition on it would be refused. Add a probe for it first."));
+    }
+  });
+  if (all.length > listed.length) {
+    box.appendChild(el("p", "why", plural(all.length - listed.length, "more fact differs",
+      "more facts differ") + " between the two sides without separating them."));
+  }
+  if (all.length && s.history) box.appendChild(el("p", "why", s.history));
+  (s.same_configuration_both_ways || []).forEach(b => {
+    const p = factLine("Worked and did not in one configuration:",
+      Object.assign({}, b.measured, b.typed), "why");
+    if (p) box.appendChild(p);
+  });
+  if (s.forward_only) box.appendChild(el("p", "why", s.forward_only));
+  box.appendChild(el("p", "why", "Attributed by " + s.attributed_by + "."));
+  return box;
+}
+
+function answerGroup(entry) {
+  const g = entry.group, rowsOf = DATA.clusters;
+  const s = el("summary");
+  const name = el("span", "grow");
+  name.appendChild(el("strong", "mono", g.solution_id));
+  name.appendChild(document.createTextNode(" "));
+  name.appendChild(el("span", "why nowrap", g.problem_class));
+  s.appendChild(name);
+  const said = g.worked + g.did_not;
+  s.appendChild(el("span", "why", people(g.people) + " · " +
+    plural(g.configurations.length, "configuration", "configurations") +
+    (said ? " · worked for " + g.worked + " of " + said : "")));
+  const [label, cls] = STATUS[g.status];
+  s.appendChild(el("span", cls, label));
+  return lazy("group", s, body => {
+    const suggestion = (DATA.suggestions || []).find(x => x.solution_id === g.solution_id);
+    if (suggestion) body.appendChild(fork(suggestion));
+    const list = el("div");
+    body.appendChild(list);
+    configurations(list, g.configurations.map(i => rowsOf[i]), carriedQuery(entry.name));
+  });
+}
+
+function unansweredGroup(entry, open) {
+  const s = el("summary");
+  s.appendChild(el("strong", "grow", "Not answered by anything you published"));
+  const n = entry.configurations.reduce((sum, i) => sum + (DATA.clusters[i].reporters || 0), 0);
+  s.appendChild(el("span", "why", people(n) + " · " +
+    plural(entry.configurations.length, "configuration", "configurations")));
+  s.appendChild(el("span", "tag stop", "no answer"));
+  return lazy("group", s, body => {
+    body.appendChild(el("p", "why", "Each of these recurs, and none of your solutions matches it. " +
+      "That is a gap in your own project, and it is the one figure this service shows nobody else."));
+    const list = el("div");
+    body.appendChild(list);
+    configurations(list, entry.configurations.map(i => DATA.clusters[i]), carriedQuery(entry.name));
+  }, open);
+}
+
+/* The chips. "Needs attention" is the default because it is the question a
+   maintainer opens this page with. */
+const CHIPS = [
+  {id: "attention", label: "Needs attention", statuses: ["did_not_help", "needs_a_distinction"], unanswered: true},
+  {id: "not_answered", label: "Not answered", statuses: [], unanswered: true},
+  {id: "did_not_help", label: "Did not help", statuses: ["did_not_help"]},
+  {id: "needs_a_distinction", label: "Needs a distinction", statuses: ["needs_a_distinction"]},
+  {id: "nobody_said", label: "Nobody said", statuses: ["nobody_said"]},
+  {id: "working", label: "Working", statuses: ["working"]},
+  {id: "all", label: "All", statuses: null, unanswered: true},
+];
+let CHIP = "attention";
+
+function renderChips() {
+  const sum = DATA.triage.summary, box = $("chips");
+  box.textContent = "";
+  CHIPS.forEach(c => {
+    const count = c.id === "not_answered" ? sum.not_answered : sum[c.id];
+    const b = el("button", null, c.label + (count === undefined ? "" : " " + count));
+    b.setAttribute("aria-pressed", c.id === CHIP ? "true" : "false");
+    b.disabled = count === 0;
+    b.addEventListener("click", () => { CHIP = c.id; renderChips(); renderProblems(); });
+    box.appendChild(b);
+  });
+}
+
+/* The rows the chip selects: the configurations nothing answers, as one row,
+   then each of their answers. Each carries what the filter and the orders read,
+   so the list needs to know nothing about what a row is. */
+function renderProblems() {
+  const t = DATA.triage, rowsOf = DATA.clusters, chip = CHIPS.find(c => c.id === CHIP);
+  const text = idx => idx.map(i => factsText(rowsOf[i])).join("\n");
+  const sum = (idx, f) => idx.reduce((n, i) => n + (rowsOf[i][f] || 0), 0);
+  const entries = [];
+  if (chip.unanswered && t.not_answered.length) {
+    const name = "Not answered by anything you published";
+    entries.push({kind: "none", configurations: t.not_answered, name, order: -1,
+                  people: sum(t.not_answered, "reporters"), did_not: sum(t.not_answered, "did_not"),
+                  text: name + "\n" + text(t.not_answered)});
+  }
+  t.answers.forEach((g, order) => {
+    if (chip.statuses && !chip.statuses.includes(g.status)) return;
+    const name = g.solution_id + " " + g.problem_class;
+    entries.push({kind: "answer", group: g, configurations: g.configurations, name, order,
+                  people: g.people, did_not: g.did_not,
+                  text: name + " " + STATUS[g.status][0] + "\n" + text(g.configurations)});
+  });
+  GROUPS.set(entries);
+}
+
+function renderLists(o) {
+  GROUPS = PodshlList($("groups"), {
+    noun: {one: "row", many: "rows"},
+    filter: {placeholder: "an answer, a class, a fact or a value", text: e => e.text},
+    sorts: [
+      {id: "work", label: "Needs work first", compare: (a, b) => a.order - b.order},
+      {id: "people", label: "Most people", compare: most("people")},
+      {id: "did_not", label: "Most who said it did not work",
+       compare: (a, b) => most("did_not")(a, b) || most("people")(a, b)},
+      {id: "name", label: "Name", compare: byName("name")},
+    ],
+    empty: o.clusters.length
+      ? "Nothing under this chip — try another."
+      : "Nothing yet. Nothing appears below five distinct reporters, because below that a " +
+        "constellation identifies the person who reported it.",
+    render: e => e.kind === "none" ? unansweredGroup(e, CHIP === "not_answered") : answerGroup(e),
+  });
+
+  PodshlList($("models"), {
+    table: ["Model class", "Distinct reporters"],
+    noun: {one: "model class", many: "model classes"},
+    filter: {text: m => m.model_class},
+    sorts: [{id: "n", label: "Most reporters", compare: most("reporters")},
+            {id: "name", label: "Name", compare: byName("model_class")}],
+    empty: "No model class has five distinct reporters yet.",
+    render: row(["model_class", "reporters"]),
+  }).set(o.model_classes || []);
+
+  PodshlList($("stated"), {
+    table: ["Fact", "Distinct reporters", "Reports"],
+    noun: {one: "fact", many: "facts"},
+    filter: {text: f => f.fact},
+    sorts: [{id: "reports", label: "Most reports", compare: most("reports")},
+            {id: "reporters", label: "Most reporters", compare: most("reporters")},
+            {id: "name", label: "Name", compare: byName("fact")}],
+    empty: "No typed fact has five distinct reporters yet.",
+    render: row(["fact", "reporters", "reports"]),
+  }).set(o.stated_facts || []);
+}
+
+function renderFiles(f) {
+  const box = $("files");
+  box.textContent = "";
+  const without = Object.keys(f.classes_without_a_tree || {});
+  const issues = (f.last_refusal ? 1 : 0) + without.length;
+  $("files-badge").hidden = !issues;
+  say("files-badge", issues);
+
+  if (!f.manifest_url) {
+    box.appendChild(el("p", null, "Nothing of yours is mirrored yet. Say where your files are at /register."));
+  } else {
+    const p = el("p");
+    p.appendChild(el("span", null, "Mirrored from "));
+    p.appendChild(el("span", "mono", f.manifest_url));
+    if (f.commit) { p.appendChild(el("span", null, ", commit ")); p.appendChild(el("span", "mono", f.commit)); }
+    box.appendChild(p);
+    const when = iso => iso ? new Date(iso).toLocaleString() : "never";
+    box.appendChild(el("p", "why", "Last fetched " + when(f.last_fetched) +
+      (f.last_changed ? ", last changed " + when(f.last_changed) : "") + "."));
+  }
+  if (f.unanswered_fetches) {
+    box.appendChild(el("div", "panel warn", "The last " + plural(f.unanswered_fetches, "fetch", "fetches") +
+      " got no answer from your host. The version we hold is still served."));
+  }
+  if (f.last_refusal) {
+    const panel = el("div", "panel stop");
+    panel.appendChild(el("p", "lbl", "Your latest version was refused"));
+    panel.appendChild(el("p", "why", "The previous version is still served, and nothing you changed " +
+      "is live until this is fixed:"));
+    panel.appendChild(el("pre", "words", f.last_refusal));
+    box.appendChild(panel);
+  }
+  if (without.length) {
+    const panel = el("div", "panel warn");
+    panel.appendChild(el("p", "lbl", "No decision tree for " + plural(without.length, "class", "classes")));
+    panel.appendChild(el("p", "why", "These solutions are mirrored, but nothing can walk them: nobody is " +
+      "answered from them, and they match nothing on your Problems tab."));
+    without.forEach(cls => {
+      const p = el("p");
+      p.appendChild(el("strong", "mono", cls));
+      p.appendChild(el("span", "why", " — " + f.classes_without_a_tree[cls]));
+      panel.appendChild(p);
+    });
+    box.appendChild(panel);
+  }
+  if ((f.trees || []).length) {
+    box.appendChild(el("p", "why", "Decision trees derived for " + plural(f.trees.length, "class", "classes") +
+      ": " + f.trees.join(", ")));
+  }
+
+  $("files-warning").hidden = !issues;
+  say("files-warning-text", issues ? (without.length
+    ? plural(without.length, "of your classes has", "of your classes have") + " no decision tree, " +
+      "so what they answer shows up here as not answered."
+    : "Your latest version was refused, and the previous one is still served.") : "");
+}
+
+const TABS = ["problems", "files", "reporting", "access"];
+function showTab(name) {
+  TABS.forEach(t => {
+    const on = t === name;
+    $("tab-" + t).setAttribute("aria-selected", on ? "true" : "false");
+    $("tab-" + t).tabIndex = on ? 0 : -1;
+    $("panel-" + t).hidden = !on;
+  });
+}
+TABS.forEach((t, i) => {
+  $("tab-" + t).addEventListener("click", () => showTab(t));
+  $("tab-" + t).addEventListener("keydown", e => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    const next = TABS[(i + step + TABS.length) % TABS.length];
+    showTab(next);
+    $("tab-" + next).focus();
+  });
+});
+$("to-files").addEventListener("click", () => { showTab("files"); $("tab-files").focus(); });
+
+/* Signing in, and saying precisely what went wrong when it did not.
+
+   A refusal cannot say *which* thing was wrong, and must not: a token that
+   never existed, one that was revoked, one that expired and a host nobody has
+   claimed all get the same answer from the server, because a different one
+   would tell a stranger whether a domain has been claimed (`SV78`). What it can
+   do is say plainly that it was the host and token, and what to check. */
+let SAVED_TOKEN = null;
+const FIELDS = ["host", "token"];
+
+function clearSigninError() {
+  $("signin-error").hidden = true;
+  FIELDS.forEach(f => $(f).removeAttribute("aria-invalid"));
+}
+
+function signinError(title, lines, invalid) {
+  say("signin-error-title", title);
+  const body = $("signin-error-body");
+  body.textContent = "";
+  lines.forEach(line => {
+    const p = el("p");
+    (Array.isArray(line) ? line : [line]).forEach(part => {
+      if (part && part.href) {
+        const a = el("a", null, part.text);
+        a.href = part.href;
+        p.appendChild(a);
+      } else {
+        p.appendChild(document.createTextNode(part));
+      }
+    });
+    body.appendChild(p);
+  });
+  say("msg", "");
+  FIELDS.forEach(f => invalid.includes(f)
+    ? $(f).setAttribute("aria-invalid", "true") : $(f).removeAttribute("aria-invalid"));
+  $("signin-error").hidden = false;
+  const first = invalid[invalid.length - 1];
+  if (first) { $(first).focus(); $(first).select(); }
+}
+
+function refused(status) {
+  if (status === 403 || status === 401) {
+    const remembered = SAVED_TOKEN !== null && SAVED_TOKEN === TOKEN;
+    signinError("This host and token do not open a dashboard", [
+      remembered
+        ? "The token remembered on this device for " + HOST + " was refused. If it was revoked, " +
+          "or a newer one was issued since, this one no longer works — press “Forget on this device” " +
+          "and paste the current one."
+        : "The token was refused for " + HOST + ". Check that it is complete — every character, " +
+          "from the first to the last, exactly as it was shown when you proved control — and " +
+          "that the host is the one you registered.",
+      "A token that was mistyped, revoked, has expired or belongs to another host is refused in " +
+        "exactly the same way. The answer does not say which, because telling anybody who asks " +
+        "whether a domain has been claimed is something only its owner should learn.",
+      ["If you no longer have a working token, prove control again at ",
+       {text: "/register", href: "/register"},
+       " — that issues a new one and stops every earlier one."],
+    ], ["host", "token"]);
+    return;
+  }
+  signinError("The dashboard could not be loaded", [
+    "The server answered with an error (HTTP " + status + "). This is not a problem with your host " +
+      "or your token — try again in a moment.",
+  ], []);
+}
+
+function load() {
+  const h = {"X-Podshl-Claim": TOKEN, "Accept": "application/json"};
+  fetch("/dashboard/" + encodeURIComponent(HOST), {headers: h, credentials: "omit"})
+    .then(r => r.json().catch(() => ({})).then(o => ({ok: r.ok, status: r.status, o})))
+    .then(({ok, status, o}) => {
+      if (!ok) { refused(status); return; }
+      clearSigninError();
+      /* Only a token that worked is remembered. It used to be stored before it
+         was tried, so a mistyped one came back on every visit. */
+      if ($("remember").checked) {
+        try { localStorage.setItem("podshl.claim." + HOST, TOKEN); } catch (_) {}
+      }
+      DATA = o;
+      $("signin").hidden = true;
+      $("view").hidden = false;
+      say("who", o.host);
+      say("policy-short", o.policy ? o.policy.statement : "");
+      say("policy", o.policy ? o.policy.statement : "");
+      say("limitation", o.limitation || "");
+      say("counter-means", "The counts are " + (o.counter_means || "") + ".");
+      say("reading", o.reading || "");
+      say("stated-means", o.stated_means || "");
+
+      const sum = o.triage.summary;
+      say("summary", plural(sum.configurations, "configuration", "configurations") +
+        " recurring · " + plural(sum.answers, "of your answers applies", "of your answers apply") +
+        " · " + sum.not_answered + " not answered");
+      $("cut").hidden = o.shown >= o.total;
+      say("cut", "Showing the " + o.shown + " with the most people, of " + o.total + ".");
+      if (!sum.did_not_help && !sum.needs_a_distinction && !sum.not_answered) CHIP = "all";
+      renderLists(o);
+      renderChips();
+      renderProblems();
+      renderFiles(o.files || {});
+      $("confirm").setAttribute("placeholder", o.host);
+      $("confirm-out").setAttribute("placeholder", o.host);
+    })
+    .catch(e => signinError("The server could not be reached", [
+      "Nothing was checked, so this says nothing about your host or your token. " +
+        "Check your connection and try again. (" + e + ")",
+    ], []));
+
+  fetch("/dashboard/" + encodeURIComponent(HOST) + "/log", {headers: h, credentials: "omit"})
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d) return;
+      /* Entries carry values strangers chose; they land as text, never markup. */
+      PodshlList($("log"), {
+        table: ["Seq", "Kind"],
+        noun: {one: "entry", many: "entries"},
+        filter: {text: e => e.kind},
+        sorts: [{id: "new", label: "Newest first", compare: (a, b) => b.seq - a.seq},
+                {id: "old", label: "Oldest first", compare: (a, b) => a.seq - b.seq}],
+        empty: "Nothing in the log about your anchor yet.",
+        render: row(["seq", "kind"]),
+      }).set(d.entries || []);
+    })
+    .catch(() => {});
+}
+
+$("open").addEventListener("click", () => {
+  HOST = $("host").value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  TOKEN = $("token").value.trim();
+  if (!HOST || !TOKEN) {
+    const missing = FIELDS.filter(f => !$(f).value.trim());
+    signinError("Both the host and the token are needed", [
+      "Fill in " + (missing.length === 2 ? "both fields" : "the " + missing[0]) +
+        ": the host you registered, and the token you were shown when you proved control.",
+    ], missing.reverse());
+    return;
+  }
+  /* The host, and only the host, goes in the fragment. Never the token: a
+     fragment lands in browser history and in a photograph of the address bar. */
+  location.hash = HOST;
+  load();
+});
+
+$("forget").addEventListener("click", () => {
+  const h = $("host").value.trim();
+  try { localStorage.removeItem("podshl.claim." + h); } catch (_) {}
+  $("token").value = "";
+  SAVED_TOKEN = null;
+  $("remember").checked = false;
+  clearSigninError();
+  say("msg", "Cleared from this browser. The token still works.");
+  $("token").focus();
+});
+FIELDS.forEach(f => $(f).addEventListener("input", () => $(f).removeAttribute("aria-invalid")));
+[$("host"), $("token")].forEach(i => i.addEventListener("keydown", e => {
+  if (e.key === "Enter") $("open").click();
+}));
+
+$("revoke").addEventListener("click", () => {
+  if ($("confirm").value.trim() !== HOST) {
+    say("revoke-msg", "Type the host exactly to confirm.");
+    return;
+  }
+  fetch("/claim/" + encodeURIComponent(HOST) + "/revoke",
+        {method: "POST", headers: {"X-Podshl-Claim": TOKEN}, credentials: "omit"})
+    .then(r => r.json())
+    .then(o => {
+      if (o.code) { say("revoke-msg", o.reason || o.code); return; }
+      try { localStorage.removeItem("podshl.claim." + HOST); } catch (_) {}
+      say("revoke-msg", o.note + " " + o.then);
+    })
+    .catch(e => say("revoke-msg", "could not revoke: " + e));
+});
+
+$("withdraw").addEventListener("click", () => {
+  if ($("confirm-out").value.trim() !== HOST) {
+    say("withdraw-msg", "Type the host exactly to confirm.");
+    return;
+  }
+  fetch("/claim/" + encodeURIComponent(HOST) + "/withdraw",
+        {method: "POST", headers: {"X-Podshl-Claim": TOKEN}, credentials: "omit"})
+    .then(r => r.json())
+    .then(o => {
+      if (o.code) { say("withdraw-msg", o.reason || o.code); return; }
+      try { localStorage.removeItem("podshl.claim." + HOST); } catch (_) {}
+      say("withdraw-msg", o.means + " " + o.your_files + " " + o.coming_back);
+    })
+    .catch(e => say("withdraw-msg", "could not withdraw: " + e));
+});
+
+/* Arriving from /register with the host already in the fragment. */
+window.addEventListener("load", () => {
+  const h = decodeURIComponent(location.hash.replace(/^#/, ""));
+  if (!h) return;
+  $("host").value = h;
+  let saved = null;
+  try { saved = localStorage.getItem("podshl.claim." + h); } catch (_) {}
+  if (saved) { $("token").value = saved; $("remember").checked = true; SAVED_TOKEN = saved; }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+.git
+.venv
+.hf
+data
+out
+var
+client-rs/target
+client-rs/gen
+**/__pycache__

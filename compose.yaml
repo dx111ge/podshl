@@ -1,0 +1,59 @@
+# The Linux side, for a developer whose machine is not Linux.
+#
+# The client is deliberately not here: it is a native binary and it is meant to
+# run on the customer's own machine, which is the whole claim. `mise run client`
+# builds and runs it against these ports.
+services:
+  podshl:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: podshl
+    ports:
+      - "127.0.0.1:8721:8721"   # vendor
+      - "127.0.0.1:8722:8722"   # plain website
+      - "127.0.0.1:8723:8723"   # index
+      - "127.0.0.1:8725:8725"   # operator server
+      - "127.0.0.1:8726:8726"   # ops view
+      - "127.0.0.1:8727:8727"   # example OSS project
+    environment:
+      # The crawler follows URLs it was given, so loopback is refused unless
+      # switched on. The counterparty lives on 127.0.0.1 here, so the demo
+      # needs the exception — and `/` reports that it is on.
+      PODSHL_ALLOW_LOOPBACK: "1"
+      # The operator's identity, from `.env`, which is not in git. A real name
+      # and postal address do not belong in a repository meant to be published.
+      # Unset, `/imprint` answers 503 and says which settings are missing rather
+      # than rendering something that looks like an imprint and is not one.
+      PODSHL_IMPRINT_NAME: "${PODSHL_IMPRINT_NAME:-}"
+      PODSHL_IMPRINT_ADDRESS: "${PODSHL_IMPRINT_ADDRESS:-}"
+      PODSHL_IMPRINT_EMAIL: "${PODSHL_IMPRINT_EMAIL:-}"
+      PODSHL_IMPRINT_REGISTER: "${PODSHL_IMPRINT_REGISTER:-}"
+      PODSHL_SECURITY_CONTACT: "${PODSHL_SECURITY_CONTACT:-}"
+      PODSHL_SECURITY_EXPIRES: "${PODSHL_SECURITY_EXPIRES:-}"
+      PODSHL_NOTICE_CONTACT: "${PODSHL_NOTICE_CONTACT:-}"
+      # Where this project's own source lives, once it is published. Unset, the
+      # landing page says the repository is not linked yet rather than offering
+      # a link that 404s.
+      PODSHL_SOURCE_URL: "${PODSHL_SOURCE_URL:-}"
+      # The operator listener's bearer token. Left empty, the entrypoint mints
+      # one per start and writes it to var/ops.token; set it in `.env` to keep
+      # one across restarts.
+      PODSHL_OPS_TOKEN: "${PODSHL_OPS_TOKEN:-}"
+      # A missing log key may be minted here and nowhere else — see the
+      # entrypoint, which defaults it on when unset.
+      PODSHL_LOG_KEY_CREATE: "${PODSHL_LOG_KEY_CREATE:-}"
+    volumes:
+      # The source, live: edit on the host, restart the process, no rebuild.
+      - .:/app
+      # Not the bind mount. initdb refuses a directory whose ownership it
+      # cannot control, and a Windows bind mount is exactly that.
+      - podshl-pgdata:/pgdata
+      # The Linux build tree, kept off the Windows mount and away from the
+      # host's own target/ — same directory, different target triple.
+      - podshl-cargo-target:/cargo-target
+    stop_grace_period: 10s
+
+volumes:
+  podshl-pgdata:
+  podshl-cargo-target:

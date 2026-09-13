@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — imprint</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>Imprint <span class="why">Impressum</span></h1>
+
+<div class="panel">
+  <p class="lbl">Responsible</p>
+  <p id="name"></p>
+  <pre id="address"></pre>
+  <p class="lbl">Contact</p>
+  <p id="email"></p>
+  <p id="register" class="why"></p>
+</div>
+
+<p class="why">Written out rather than linked. An imprint has to be published;
+it does not have to be published to an address harvester, and a person reads it
+either way.</p>
+
+<h2>Reporting a security finding</h2>
+<p id="security"></p>
+
+<h2>Notices about content we mirror</h2>
+<p>We mirror files that open-source projects publish in their own repositories.
+A notice reaches the mirror, never the source: the copy here is withdrawn and
+the project returns to <code>unknown</code> — the state of one that never
+registered — while everything in the developer's repository is untouched.</p>
+<p>Every removal is logged with a public reason code, and the affected party is
+told why. That log entry <em>is</em> the statement of reasons. A notice aimed at
+a problem class rather than at a specific project is refused, because otherwise
+naming somebody else's software could be forbidden by whoever owns the name.</p>
+<p><a href="/notice">File a notice</a> · <span id="notice-contact"></span></p>
+
+<h2>No warranty</h2>
+<p>This service and the client are provided <strong>as is and without warranty
+of any kind</strong>, express or implied — including any warranty of
+merchantability, fitness for a particular purpose, accuracy, or uninterrupted
+availability. Use is at your own risk.</p>
+<p><strong>Support content is written by the projects themselves, not by us.</strong>
+We mirror what a project publishes in its own repository and serve a copy. We do
+not author it, we do not review it for correctness, and we do not endorse it. A
+solution that is wrong is wrong at its source, and the project that published it
+is named in every answer so you can see whose advice you are taking.</p>
+<p><strong>What the client changes on a machine, it changes because a person
+said yes.</strong> Every action is shown first, dry-run first, reversible, and
+consented to individually. That is a bound on effect, not a guarantee of
+outcome: nothing here promises that a suggested change fixes anything, and you
+remain responsible for what you run on your own systems. Back up what matters
+before acting on any advice, from here or anywhere.</p>
+<p>To the fullest extent permitted by law the operator is not liable for any
+damage arising from use of this service, the client, or any content mirrored
+here. Liability for intent and gross negligence, and liability under mandatory
+law — including injury to life, body or health, and the German Product Liability
+Act — is unaffected, because it cannot be excluded and a notice pretending
+otherwise would be worthless.</p>
+<p class="why">The licences say this too, in their own words: AGPL-3.0 sections
+15 and 16 for the code, Apache-2.0 sections 7 and 8 for the specification. This
+is the same statement in a place somebody will actually read.</p>
+
+<h2>Links to other sites</h2>
+<p>Project pages, repositories and the addresses in a published manifest belong
+to the projects that published them. We do not control what is at the other end
+and are not responsible for it. Anchors are re-checked on a schedule and what we
+observe is stated as an observation — never as a verdict about anybody.</p>
+
+<footer>
+  <p><a href="/">PODSHL</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/security">What this does and does not do</a></p>
+</footer>
+</div>
+
+<script>
+/* Values come from the server's own answer, never from markup here. A page
+   reciting an identity it holds a copy of can drift from the configuration; a
+   page rendering what the server says cannot. Everything lands via textContent
+   — nothing on these pages ever writes HTML. */
+const put = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v || ""; };
+
+fetch("/operator", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    put("name", o.name);
+    put("address", (o.address || []).join("\n"));
+    put("email", o.email);
+    put("register", o.register ? "Register: " + o.register : "");
+    put("security", o.security_contact
+      ? "Report it to " + o.security_contact + ". This is also published at /.well-known/security.txt."
+      : "No security contact is configured, so /.well-known/security.txt is not served — an address nobody answers is worse than none.");
+    put("notice-contact", o.notice_contact ? "Or write to " + o.notice_contact : "");
+  })
+  .catch(e => put("name", "The operator's details could not be loaded: " + e));
+</script>
+</body>
+</html>

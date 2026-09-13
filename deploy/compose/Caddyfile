@@ -1,0 +1,53 @@
+# The public side of the operator. TLS, sizes, rate limits and an access log
+# that names nobody — the server does none of these itself (deploy/README.md).
+#
+# PODSHL_SITE is the address. A domain name gets a certificate from Let's
+# Encrypt on first start; `:80` serves plain HTTP on the bare IP, which is for
+# checking a fresh machine before a name points at it and for nothing public.
+{
+	order rate_limit before reverse_proxy
+}
+
+{$PODSHL_SITE::80} {
+	encode zstd gzip
+
+	# A report with 16 KiB of free text is the largest honest body.
+	request_body {
+		max_size 256KB
+	}
+
+	# The routes a stranger can write to. The server counts people, not
+	# requests, so this is what stands between it and a flood.
+	@writes path /report /claim/* /notice
+	rate_limit @writes {
+		zone writes {
+			key {remote_host}
+			events 30
+			window 1m
+		}
+	}
+
+	# What the privacy notice (/privacy) says is logged, and nothing more. It
+	# used to keep the path with two host segments blanked and three headers
+	# deleted — which left the dashboard token in X-Podshl-Claim in plain text,
+	# /claim/<host> naming who claimed what, and /log/entries?start=N naming the
+	# project somebody checked. So: the first path segment, never the rest and
+	# never the query; no request headers at all; the address cut to its
+	# network. Seven days, then gone.
+	log {
+		output file /var/log/caddy/podshl.log {
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 168h
+		}
+		format filter {
+			# The rate limit keeps its own count in memory and needs no log.
+			request>remote_ip ip_mask 16 32
+			request>client_ip ip_mask 16 32
+			request>uri regexp ^(/[^/?]*).*$ $1
+			request>headers delete
+		}
+	}
+
+	reverse_proxy server:8725
+}

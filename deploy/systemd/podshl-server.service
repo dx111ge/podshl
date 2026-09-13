@@ -1,0 +1,39 @@
+# The operator server: the public listener, behind a TLS-terminating reverse
+# proxy on the same host. Bound to loopback — the proxy is the only thing that
+# reaches it, so a misconfigured firewall cannot publish it without TLS.
+[Unit]
+Description=PODSHL operator server (public, via the reverse proxy)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=podshl
+Group=podshl
+EnvironmentFile=/etc/podshl/env
+WorkingDirectory=/opt/podshl
+ExecStart=/opt/podshl/venv/bin/python -m uvicorn podshl.server.app:app --host 127.0.0.1 --port 8725 --proxy-headers --forwarded-allow-ips=127.0.0.1 --log-level warning
+Restart=always
+RestartSec=5
+
+# The log's signing key and the epoch salts live in /var/lib/podshl — on a
+# persistent disk, never in the database and never on an ephemeral filesystem:
+# losing the key forks the log, and losing a salt early is the one thing the
+# epoch design must not do by accident.
+ReadWritePaths=/var/lib/podshl
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

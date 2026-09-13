@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — build your files</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap wide">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap wide">
+<h1>Build your files</h1>
+
+<div class="panel">
+  <p>Fill in what your project can answer and what it needs to know, and this page
+  writes <code>.podshl/agent.yaml</code> and one file per solution. Press
+  <strong>Check with the mirror</strong> and the files are judged by the same code
+  that ingests them — not a copy of the rules in this page — so what passes here is
+  what the mirror takes.</p>
+  <p class="why">Your draft stays in this browser. Checking sends the files to
+  <code>/validate</code>, which reads them and keeps nothing: no copy, no log line.
+  When they pass, put them under <code>.podshl/</code> where your project is served,
+  and prove control at <a href="/register">/register</a>.</p>
+  <div class="btns">
+    <button id="example">Fill with a small example</button>
+    <button id="reset">Start over</button>
+  </div>
+  <label for="load">Already publishing? Load your files to change them</label>
+  <input type="file" id="load" multiple accept=".yaml,.yml,.md">
+  <p class="why">Choose your <code>agent.yaml</code> and the solution files it lists, all
+  at once. They are read by the same parser the mirror uses, and whatever this form
+  has no field for is kept exactly as you wrote it.</p>
+  <p class="why" id="loaded" aria-live="polite"></p>
+</div>
+
+<div class="builder">
+<div class="builder-form">
+
+  <section class="panel">
+    <h2>Where it lives</h2>
+    <label for="anchor">The address your files are served from</label>
+    <input type="text" id="anchor" placeholder="https://example.org/your-project/" autocomplete="off">
+    <p class="why">Where <code>.podshl/</code> will sit — the location you prove you
+    control. The endpoint has to lie under it.</p>
+    <div class="grid2">
+      <div><label for="endpoint">Endpoint</label>
+        <input type="text" id="endpoint" placeholder="the same address, unless yours differs" autocomplete="off"></div>
+      <div><label for="commit">Commit or release</label>
+        <input type="text" id="commit" placeholder="v1.2.0" autocomplete="off"></div>
+      <div><label for="status">Status</label>
+        <select id="status"><option value="active">active</option><option value="deprecated">deprecated</option></select></div>
+      <div><label for="langs">Languages</label>
+        <input type="text" id="langs" placeholder="en, de" autocomplete="off"></div>
+    </div>
+    <p class="why">English is the one obligation. A reader in another language gets
+    your words through their own model, marked as a translation.</p>
+  </section>
+
+  <section class="panel">
+    <h2>What you can answer</h2>
+    <p class="why">Problem classes: one name for each kind of problem, like
+    <code>pip.install.wheel-missing</code>. A client offers these to a person, so a
+    solution for a class you do not list can never be reached.</p>
+    <div id="classes"></div>
+    <div class="btns"><button id="add-class">Add a problem class</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>What to find out</h2>
+    <p class="why">Each is a fact your solutions can decide on. A reading is taken
+    from the person's machine, with their consent, by the client — only operations
+    from the published vocabulary, checked when your file arrives. A question is
+    asked of the person; give it choices, or the answer never reaches you.</p>
+    <div id="probes"></div>
+    <div class="grid2">
+      <div><label for="catalogue">A reading from the catalogue</label>
+        <select id="catalogue"><option value="">choose…</option></select></div>
+      <div class="btns end"><button id="add-catalogue">Add this reading</button></div>
+    </div>
+    <div class="btns">
+      <button id="add-reading">Add your own reading</button>
+      <button id="add-question">Add a question</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Solutions</h2>
+    <p class="why">One file each. It answers one problem class, when the facts you
+    name have the values you give — and all of them must hold. The text below is
+    what a person reads; write it in English.</p>
+    <div id="solutions"></div>
+    <div class="btns"><button id="add-solution">Add a solution</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>Your own words</h2>
+    <label for="glossary">Terms a translation must keep as written</label>
+    <input type="text" id="glossary" placeholder="brain, wheel" autocomplete="off">
+    <p class="why">A feature or a file format that looks like an ordinary word. The
+    reader's model is never shown these, so it cannot translate them.</p>
+  </section>
+
+  <section class="panel">
+    <h2>When nothing answers</h2>
+    <label class="inline"><input type="checkbox" id="esc-on"> Say where a case goes when it needs a person</label>
+    <div id="esc" hidden>
+      <div class="grid2">
+        <div><label for="esc-queue">Queue</label>
+          <input type="text" id="esc-queue" placeholder="github-issues" autocomplete="off"></div>
+        <div><label for="esc-target">Where</label>
+          <input type="text" id="esc-target" placeholder="https://github.com/you/project/issues" autocomplete="off"></div>
+      </div>
+      <label for="esc-reason">Why a case goes there</label>
+      <input type="text" id="esc-reason" placeholder="Neither the readings nor a solution explain this" autocomplete="off">
+      <p class="lbl">How you may reply</p>
+      <label class="inline"><input type="checkbox" class="esc-reply" value="ticket_url"> a link to the ticket</label>
+      <label class="inline"><input type="checkbox" class="esc-reply" value="email"> e-mail</label>
+      <label class="inline"><input type="checkbox" class="esc-reply" value="none"> no reply — and saying so</label>
+    </div>
+  </section>
+
+</div>
+
+<aside class="builder-out">
+  <div class="panel sticky">
+    <h2>Your files</h2>
+    <label for="file">File</label>
+    <select id="file"></select>
+    <pre id="preview" class="lines"></pre>
+    <div class="btns">
+      <button id="copy">Copy</button>
+      <button id="download">Download this file</button>
+      <button class="primary" id="check">Check with the mirror</button>
+    </div>
+    <p class="why" id="copied" aria-live="polite"></p>
+    <div id="verdict" aria-live="polite"></div>
+  </div>
+</aside>
+</div>
+
+<footer>
+  <p><a href="/publish">What the files are</a> · <a href="/register">Prove control</a>
+     · <a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a></p>
+</footer>
+</div>
+
+<script>
+/* The files, written from the draft. Pure — no page, no network — so the suite
+   runs exactly this in node and sends what it writes to `/validate` (`W19`):
+   a builder whose own output the mirror refuses would teach the format wrong.
+
+   Every scalar is written as a JSON string, which YAML reads as the same string.
+   That is what keeps `commit: 1.10` from arriving as the number 1.1, and `yes`
+   from arriving as true — the YAML traps ingest refuses rather than coerces. */
+const Emit = (() => {
+  const q = s => JSON.stringify(String(s));
+  const clean = xs => (xs || []).map(x => String(x).trim()).filter(Boolean);
+  const path = sol => sol.path || ("solutions/" + (String(sol.id || "").trim() || "unnamed") + ".md");
+  const OPS = [">=", "<=", ">", "<", "="];
+  const SEVERITIES = ["low", "medium", "high"];
+  // Written verbatim, as JSON, for what the form does not edit — a project's
+  // own file loaded here keeps every field it had.
+  const kept = (L, indent, obj) =>
+    Object.entries(obj || {}).forEach(([k, v]) => L.push(indent + k + ": " + JSON.stringify(v)));
+
+  function condition(c) {
+    if (c.raw !== undefined) return JSON.stringify(c.raw);
+    const v = String(c.value || "").trim();
+    if (c.op === "in") return JSON.stringify(clean(v.split(",")));
+    return q(c.op && c.op !== "=" ? c.op + " " + v : v);
+  }
+
+  function read(p) {
+    const out = {op: p.op};
+    Object.entries(p.params || {}).forEach(([k, v]) => {
+      if (Array.isArray(v)) { if (v.length) out[k] = v; }
+      else if (String(v).trim() !== "") out[k] = String(v).trim();
+    });
+    return JSON.stringify(out);
+  }
+
+  function manifest(d) {
+    const L = [];
+    L.push("endpoint: " + q((d.endpoint || "").trim() || (d.anchor || "").trim()));
+    if ((d.commit || "").trim()) L.push("commit: " + q(d.commit.trim()));
+    L.push("status: " + (d.status === "deprecated" ? "deprecated" : "active"));
+    kept(L, "", d.extra);
+    const langs = clean((d.langs || "").split(","));
+    L.push("langs: " + JSON.stringify(langs.includes("en") ? langs : ["en"].concat(langs)));
+    const classes = clean(d.classes);
+    L.push("");
+    L.push(classes.length ? "problem_classes:" : "problem_classes: []");
+    classes.forEach(c => L.push("  - " + q(c)));
+    const probes = (d.probes || []).filter(p => (p.id || "").trim());
+    if (probes.length) {
+      L.push("", "collect:");
+      probes.forEach(p => {
+        L.push("  - id: " + q(p.id.trim()));
+        L.push("    kind: " + (p.kind === "human" ? "human" : "machine"));
+        if ((p.describes || "").trim()) L.push("    describes: " + q(p.describes.trim()));
+        if ((p.why || "").trim()) L.push("    why: " + q(p.why.trim()));
+        if (p.kind !== "human" && p.op) L.push("    read: " + read(p));
+        if (p.kind === "human") {
+          if ((p.prompt || "").trim()) L.push("    prompt: " + q(p.prompt.trim()));
+          const choices = clean((p.choices || "").split("\n"));
+          if (choices.length) L.push("    choices: " + JSON.stringify(choices));
+          if (p.optional) L.push("    required: false");
+        }
+        kept(L, "    ", p.extra);
+      });
+    }
+    const terms = clean((d.glossary || "").split(","));
+    if (terms.length) L.push("", "glossary:", "  keep: " + JSON.stringify(terms));
+    const e = d.escalate || {};
+    if (e.raw !== undefined) {
+      L.push("", "escalate: " + JSON.stringify(e.raw));
+    } else if (e.on) {
+      L.push("", "escalate:");
+      L.push("  reason: " + q((e.reason || "").trim()));
+      L.push("  queue: " + q((e.queue || "").trim()));
+      if ((e.target || "").trim()) L.push("  target: " + q(e.target.trim()));
+      if ((e.reply_via || []).length) L.push("  reply_via: " + JSON.stringify(e.reply_via));
+    }
+    const sols = (d.solutions || []).filter(s => (s.id || "").trim());
+    L.push("");
+    L.push(sols.length ? "solutions:" : "solutions: []");
+    sols.forEach(s => L.push("  - " + q(path(s))));
+    return L.join("\n") + "\n";
+  }
+
+  function solution(s) {
+    const L = ["---", "id: " + q((s.id || "").trim()), "answers:",
+               "  problem_class: " + q((s.problem_class || "").trim())];
+    const when = (s.when || []).filter(c => (c.fact || "").trim() &&
+      (c.raw !== undefined || String(c.value || "").trim()));
+    if (when.length) {
+      L.push("  when:");
+      when.forEach(c => L.push("    " + q(c.fact.trim()) + ": " + condition(c)));
+    } else {
+      L.push("  when: {}");
+    }
+    kept(L, "  ", s.answersExtra);
+    if (SEVERITIES.includes(s.severity)) L.push("severity: " + s.severity);
+    if (s.proposesRaw !== undefined) {
+      L.push("proposes: " + JSON.stringify(s.proposesRaw));
+    } else {
+      L.push("proposes:");
+      L.push("  - action: " + q(s.action || "report_only"));
+      const params = Object.entries(s.params || {}).filter(([, v]) => String(v).trim() !== "");
+      L.push("    params: " + (params.length
+        ? JSON.stringify(Object.fromEntries(params.map(([k, v]) => [k, String(v).trim()]))) : "{}"));
+      if ((s.because || "").trim()) L.push("    because: " + q(s.because.trim()));
+      (s.moreProposes || []).forEach(p => L.push("  - " + JSON.stringify(p)));
+    }
+    const body = String(s.body || "").replace(/\s+$/, "");
+    // Another language than English, where the file had one: the texts go in
+    // `text_by_lang` together, since a body and a `text_by_lang` cannot both
+    // be read.
+    const other = s.langs || {};
+    if (Object.keys(other).length) {
+      L.push("text_by_lang: " + JSON.stringify(Object.assign({}, body ? {en: body} : {}, other)));
+      L.push("---");
+      return L.join("\n") + "\n";
+    }
+    L.push("---");
+    return L.join("\n") + "\n" + (body ? body + "\n" : "");
+  }
+
+  function files(d) {
+    const out = {"agent.yaml": manifest(d)};
+    (d.solutions || []).filter(s => (s.id || "").trim())
+      .forEach(s => { out[path(s)] = solution(s); });
+    return out;
+  }
+
+  /* A project's existing files, as ingest's own parser read them, turned into
+     the form. The rule is fidelity: a value the form would write back
+     differently — a condition written `>=3.13`, a choice with a comma in it, a
+     reading that also asks a question — is kept exactly as it was and written
+     back verbatim, rather than "tidied" into something that means something
+     else. `W20` loads engram's files and holds the written ones to parsing back
+     to the same thing. */
+  function fromParsed(m, sols) {
+    const lift = (obj, key, into, skip) => {
+      const v = obj[key];
+      if (typeof v === "string" && v.trim() === v && v !== "") { into[key] = v; skip.add(key); }
+    };
+    const rest = (obj, skip) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => !skip.has(k)));
+
+    const topKnown = new Set(["endpoint", "commit", "status", "langs", "problem_classes", "collect",
+                              "glossary", "escalate", "solutions"]);
+    const d = {anchor: "", endpoint: m.endpoint || "", commit: "", status: m.status || "active",
+               langs: (m.langs || []).join(", "), classes: (m.problem_classes || []).slice(),
+               probes: [], solutions: [], glossary: ((m.glossary || {}).keep || []).join(", "),
+               escalate: {on: false, reason: "", queue: "", target: "", reply_via: []},
+               extra: rest(m, topKnown)};
+    if (typeof m.commit === "string" && m.commit.trim() === m.commit) d.commit = m.commit;
+    else if (m.commit !== undefined) d.extra.commit = m.commit;
+    Object.keys(d.extra).forEach(k => { if (d.extra[k] === null) delete d.extra[k]; });
+
+    d.probes = (m.collect || []).map(p => {
+      const kind = p.kind === "human" ? "human" : "machine";
+      const out = {kind, id: p.id || "", describes: "", why: ""};
+      const skip = new Set(["id", "kind"]);
+      lift(p, "describes", out, skip);
+      lift(p, "why", out, skip);
+      if (kind === "machine" && p.read && typeof p.read === "object" && typeof p.read.op === "string") {
+        const {op, ...params} = p.read;
+        out.op = op; out.params = params; skip.add("read");
+      }
+      if (kind === "human") {
+        lift(p, "prompt", out, skip);
+        if (Array.isArray(p.choices) && p.choices.every(c => typeof c === "string" && c !== "" &&
+                                                        c.trim() === c && !c.includes("\n"))) {
+          out.choices = p.choices.join("\n"); skip.add("choices");
+        }
+        if (p.required === false) { out.optional = true; skip.add("required"); }
+      }
+      out.extra = rest(p, skip);
+      return out;
+    });
+
+    const e = m.escalate;
+    if (e && typeof e === "object") {
+      const simple = Object.keys(e).every(k => ["reason", "queue", "target", "reply_via"].includes(k)) &&
+        typeof e.reason === "string" && typeof e.queue === "string" &&
+        (e.target === undefined || typeof e.target === "string") &&
+        (e.reply_via === undefined || (Array.isArray(e.reply_via) && e.reply_via.length));
+      d.escalate = simple
+        ? {on: true, reason: e.reason, queue: e.queue, target: e.target || "", reply_via: e.reply_via || []}
+        : {on: true, raw: e, reason: "", queue: "", target: "", reply_via: []};
+      if (simple && (e.reason.trim() !== e.reason || e.queue.trim() !== e.queue ||
+                     (e.target || "").trim() !== (e.target || ""))) d.escalate.raw = e;
+    }
+
+    const order = m.solutions || [];
+    d.solutions = order.filter(rel => sols[rel]).map(rel => {
+      const s = sols[rel];
+      const answers = s.answers || {};
+      const out = {id: s.id, problem_class: answers.problem_class || "", when: [],
+                   severity: SEVERITIES.includes(s.severity) ? s.severity : "",
+                   action: "report_only", params: {}, because: "", body: "", langs: {}};
+      if (rel !== "solutions/" + s.id + ".md") out.path = rel;
+      out.when = Object.entries(answers.when || {}).map(([fact, v]) => {
+        let c = {fact, op: "=", value: ""};
+        if (Array.isArray(v)) c = {fact, op: "in", value: v.join(", ")};
+        else if (typeof v === "string") {
+          const op = OPS.find(o => v.startsWith(o));
+          c = op ? {fact, op, value: v.slice(op.length).trim()} : {fact, op: "=", value: v};
+        }
+        if (condition(c) !== JSON.stringify(v)) c.raw = v;
+        return c;
+      });
+      out.answersExtra = rest(answers, new Set(["problem_class", "when"]));
+      const proposes = s.proposes || [];
+      const first = proposes[0];
+      const firstSimple = first && typeof first === "object" && typeof first.action === "string" &&
+        Object.keys(first).every(k => ["action", "params", "because"].includes(k)) &&
+        (first.params === undefined || (first.params && typeof first.params === "object" &&
+          Object.values(first.params).every(v => typeof v === "string" && v.trim() === v && v !== ""))) &&
+        (first.because === undefined || (typeof first.because === "string" && first.because.trim() === first.because));
+      if (firstSimple && first.params !== undefined) {
+        out.action = first.action; out.params = Object.assign({}, first.params);
+        out.because = first.because || ""; out.moreProposes = proposes.slice(1);
+      } else {
+        out.proposesRaw = proposes;
+      }
+      const texts = Object.assign({}, s.text_by_lang || {});
+      if (typeof texts.en === "string") { out.body = texts.en; delete texts.en; }
+      out.langs = texts;
+      return out;
+    });
+    if (!d.classes.length) d.classes = [""];
+    return d;
+  }
+
+  return {manifest, solution, files, path, fromParsed};
+})();
+</script>
+
+<script>
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = String(text);
+  return n;
+};
+let uid = 0;
+const fieldId = () => "f" + (++uid);
+
+/* The draft, in this browser. Kept across a reload so an afternoon's work is
+   not one closed tab away from gone; nothing about it reaches the server until
+   the person presses Check. */
+const KEY = "podshl.build.draft";
+const blank = () => ({anchor: "", endpoint: "", commit: "", status: "active", langs: "en",
+  classes: [""], probes: [], solutions: [], glossary: "",
+  escalate: {on: false, reason: "", queue: "", target: "", reply_via: []}});
+let D = blank();
+try { const saved = JSON.parse(localStorage.getItem(KEY) || "null"); if (saved) D = Object.assign(blank(), saved); } catch (_) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (_) {} };
+
+let READS = {ops: [], catalogue: [], tools: [], roots: [], derived: [], programs: {}};
+let ACTIONS = [];
+
+/* A text input bound to one field of an object. Changing it redraws only the
+   preview, so the cursor stays where the person is typing. */
+function input(obj, key, label, opts) {
+  const o = opts || {};
+  const wrap = el("div");
+  const id = fieldId();
+  const l = el("label", null, label); l.htmlFor = id;
+  const i = el(o.multiline ? "textarea" : "input");
+  if (!o.multiline) i.type = "text";
+  if (o.rows) i.rows = o.rows;
+  i.id = id; i.autocomplete = "off";
+  if (o.placeholder) i.placeholder = o.placeholder;
+  i.value = obj[key] === undefined || obj[key] === null ? "" : obj[key];
+  i.addEventListener("input", () => { obj[key] = i.value; changed(o.redraw); });
+  wrap.appendChild(l); wrap.appendChild(i);
+  if (o.note) wrap.appendChild(el("p", "why", o.note));
+  return wrap;
+}
+
+/* `options` may be a function: the facts and classes a solution can choose
+   from are whatever the form says now, so the list is rebuilt each time the
+   select is entered rather than only when the form was last drawn. */
+function select(obj, key, label, options, opts) {
+  const o = opts || {};
+  const wrap = el("div");
+  const id = fieldId();
+  const l = el("label", null, label); l.htmlFor = id;
+  const s = el("select"); s.id = id;
+  const fill = () => {
+    const list = typeof options === "function" ? options() : options;
+    s.textContent = "";
+    const current = String(obj[key] ?? "");
+    if (current && !list.some(([v]) => String(v) === current)) list.push([current, current + " (no longer defined)"]);
+    list.forEach(([value, text]) => {
+      const op = el("option", null, text); op.value = value;
+      if (current === String(value)) op.selected = true;
+      s.appendChild(op);
+    });
+  };
+  fill();
+  if (typeof options === "function") s.addEventListener("focus", fill);
+  s.addEventListener("change", () => { obj[key] = s.value; changed(o.redraw); });
+  wrap.appendChild(l); wrap.appendChild(s);
+  if (o.note) wrap.appendChild(el("p", "why", o.note));
+  return wrap;
+}
+
+function removeButton(list, item, label) {
+  const b = el("button", "danger-ghost", label || "Remove");
+  b.type = "button";
+  b.addEventListener("click", () => { list.splice(list.indexOf(item), 1); changed(true); });
+  return b;
+}
+
+function changed(redraw) {
+  save();
+  if (redraw) render(); else preview();
+}
+
+/* ------------------------------------------------------------------ the form */
+
+function renderClasses() {
+  const box = $("classes"); box.textContent = "";
+  D.classes.forEach((c, i) => {
+    const row = el("div", "rowline");
+    const holder = {v: c};
+    const field = input(holder, "v", "Problem class " + (i + 1), {placeholder: "your-project.area.what-breaks"});
+    field.querySelector("input").addEventListener("input", () => { D.classes[i] = holder.v; save(); preview(); });
+    row.appendChild(field);
+    row.appendChild(removeButton(D.classes, c));
+    box.appendChild(row);
+  });
+}
+
+function opParams(p) {
+  const op = READS.ops.find(o => o.op === p.op);
+  const box = el("div", "grid2");
+  if (!op) return box;
+  p.params = p.params || {};
+  Object.entries(op.params || {}).forEach(([name, described]) => {
+    const text = String(described);
+    let options = null;
+    if (name === "tool") options = READS.tools.map(t => [t.tool, t.tool]);
+    else if (name === "root") options = READS.roots.map(r => [r.root, r.root + " — " + r.describes]);
+    else if (name === "flag") options = [["", "--version (the default)"]].concat(((READS.programs || {}).flags || []).map(f => [f, f]));
+    else if (/\S \| \S/.test(text)) options = text.split("|").map(s => [s.trim(), s.trim()]);
+    if (options) {
+      if (p.params[name] === undefined && name !== "flag") p.params[name] = options[0][0];
+      box.appendChild(select(p.params, name, name, options, {note: text}));
+    } else if (/array/.test(text)) {
+      const holder = {v: (p.params[name] || []).join(", ")};
+      const field = input(holder, "v", name + " (separated by commas)", {note: text});
+      field.querySelector("input").addEventListener("input", () => {
+        p.params[name] = holder.v.split(",").map(s => s.trim()).filter(Boolean); save(); preview();
+      });
+      box.appendChild(field);
+    } else {
+      box.appendChild(input(p.params, name, name, {note: text}));
+    }
+  });
+  return box;
+}
+
+/* What a loaded file carries that the form does not edit, said beside it —
+   kept, and written back exactly as it was. */
+function keptNote(names, what) {
+  const list = (names || []).filter(Boolean);
+  return list.length ? el("p", "why", (what || "Kept as you wrote it") + ": " + list.join(", ") +
+    ". This form does not edit it, and writes it back unchanged.") : null;
+}
+const append = (box, node) => { if (node) box.appendChild(node); };
+
+function renderProbes() {
+  const box = $("probes"); box.textContent = "";
+  D.probes.forEach((p, i) => {
+    const card = el("div", "card");
+    const head = el("div", "rowline");
+    head.appendChild(el("p", "lbl", (p.kind === "human" ? "Question " : "Reading ") + (i + 1)));
+    head.appendChild(removeButton(D.probes, p));
+    card.appendChild(head);
+    const grid = el("div", "grid2");
+    grid.appendChild(input(p, "id", "Fact id", {placeholder: "os.name", redraw: false,
+      note: "What your solutions will name. Lower case, dotted."}));
+    grid.appendChild(input(p, "describes", "What it is", {placeholder: "Operating system"}));
+    card.appendChild(grid);
+    card.appendChild(input(p, "why", "Why you need it", {placeholder: "There is one build per platform",
+      note: "Shown to the person before anything is read or asked. They decide on this sentence."}));
+    if (p.kind === "human") {
+      card.appendChild(input(p, "prompt", "The question", {placeholder: "Which of these is closest to what you see?"}));
+      card.appendChild(input(p, "choices", "Choices, one per line", {multiline: true, rows: 4,
+        note: "With choices, the answer may reach you. Without, it is free text, and free text never leaves the person's machine."}));
+      const opt = el("label", "inline");
+      const cb = el("input"); cb.type = "checkbox"; cb.checked = !!p.optional;
+      cb.addEventListener("change", () => { p.optional = cb.checked; changed(false); });
+      opt.appendChild(cb); opt.appendChild(document.createTextNode(" The person may skip it"));
+      card.appendChild(opt);
+    } else {
+      card.appendChild(select(p, "op", "How it is read",
+        READS.ops.map(o => [o.op, o.op + " — " + o.describes]), {redraw: true}));
+      card.appendChild(opParams(p));
+    }
+    append(card, keptNote(Object.keys(p.extra || {})));
+    box.appendChild(card);
+  });
+}
+
+function facts() {
+  const ids = D.probes.map(p => (p.id || "").trim()).filter(Boolean);
+  return ids.concat((READS.derived || []).map(d => d.id).filter(id => !ids.includes(id)));
+}
+
+function renderSolutions() {
+  const box = $("solutions"); box.textContent = "";
+  const classes = () => [["", "choose…"]].concat(D.classes.map(c => c.trim()).filter(Boolean).map(c => [c, c]));
+  const factOptions = () => [["", "choose…"]].concat(facts().map(f => [f, f]));
+  D.solutions.forEach((s, i) => {
+    const card = el("div", "card");
+    const head = el("div", "rowline");
+    head.appendChild(el("p", "lbl", "Solution " + (i + 1) + (s.id ? " — " + Emit.path(s) : "")));
+    head.appendChild(removeButton(D.solutions, s));
+    card.appendChild(head);
+    const grid = el("div", "grid2");
+    grid.appendChild(input(s, "id", "Id", {placeholder: "wheel-missing-for-python", redraw: false}));
+    grid.appendChild(select(s, "problem_class", "Answers the class", classes));
+    card.appendChild(grid);
+
+    card.appendChild(el("p", "lbl", "When all of these hold"));
+    s.when = s.when || [];
+    const ops = [["=", "is"], [">=", "is at least"], [">", "is above"], ["<=", "is at most"], ["<", "is below"], ["in", "is one of"]];
+    s.when.forEach(c => {
+      const row = el("div", "cond");
+      row.appendChild(select(c, "fact", "Fact", factOptions));
+      row.appendChild(select(c, "op", "Compared", ops));
+      const value = input(c, "value", "Value", {placeholder: c.op === "in" ? "linux, macos" : "linux"});
+      // A loaded condition the form would have written differently is kept as
+      // it was until the person changes it here.
+      value.querySelector("input").addEventListener("input", () => { delete c.raw; save(); preview(); });
+      row.appendChild(value);
+      row.appendChild(removeButton(s.when, c));
+      card.appendChild(row);
+      if (c.raw !== undefined) {
+        card.appendChild(el("p", "why", "Kept exactly as written: " + JSON.stringify(c.raw) +
+          ". Change the value above to replace it."));
+      }
+    });
+    const addCond = el("button", null, "Add a condition"); addCond.type = "button";
+    addCond.addEventListener("click", () => { s.when.push({fact: "", op: "=", value: ""}); changed(true); });
+    const b1 = el("div", "btns"); b1.appendChild(addCond); card.appendChild(b1);
+
+    append(card, keptNote(Object.keys(s.answersExtra || {}), "Also under answers, kept as you wrote it"));
+    const grid2 = el("div", "grid2");
+    grid2.appendChild(select(s, "severity", "Severity",
+      [["", "not given"], ["low", "low"], ["medium", "medium"], ["high", "high"]]));
+    if (s.proposesRaw === undefined) {
+      grid2.appendChild(select(s, "action", "What the client may do",
+        ACTIONS.map(a => [a.id, a.id + " — " + a.describes]), {redraw: true,
+        note: "Only actions the client implements. You select; you cannot ship a capability."}));
+    }
+    card.appendChild(grid2);
+    if (s.proposesRaw === undefined) {
+      const action = ACTIONS.find(a => a.id === (s.action || "report_only"));
+      s.params = s.params || {};
+      if (action && Object.keys(action.params || {}).length) {
+        const pg = el("div", "grid2");
+        Object.entries(action.params).forEach(([name, pattern]) =>
+          pg.appendChild(input(s.params, name, name, {note: "must match " + pattern})));
+        card.appendChild(pg);
+      }
+      card.appendChild(input(s, "because", "Why this is proposed", {placeholder: "The fix is to install a different Python, which the client will not do for you",
+        note: "Shown to the person before they decide. A plan without a reason they can weigh is not a request for consent."}));
+      if ((s.moreProposes || []).length) {
+        card.appendChild(el("p", "why", "And " + s.moreProposes.length + " more " +
+          (s.moreProposes.length === 1 ? "action" : "actions") + ", kept as you wrote them."));
+      }
+    } else {
+      card.appendChild(el("p", "why", "The actions this solution proposes are kept as you wrote them (" +
+        s.proposesRaw.length + "). This form does not edit them."));
+    }
+    card.appendChild(input(s, "body", "What the person reads (Markdown, English)", {multiline: true, rows: 6,
+      placeholder: "There is no wheel for your Python version yet, so pip fell back to building from source…"}));
+    append(card, keptNote(Object.keys(s.langs || {}), "Also written in"));
+    box.appendChild(card);
+  });
+}
+
+function renderTop() {
+  ["anchor", "endpoint", "commit", "langs", "glossary"].forEach(k => { $(k).value = D[k] || ""; });
+  $("status").value = D.status;
+  $("esc-on").checked = !!D.escalate.on;
+  $("esc").hidden = !D.escalate.on;
+  $("esc-queue").value = D.escalate.queue || "";
+  $("esc-target").value = D.escalate.target || "";
+  $("esc-reason").value = D.escalate.reason || "";
+  document.querySelectorAll(".esc-reply").forEach(cb => { cb.checked = (D.escalate.reply_via || []).includes(cb.value); });
+}
+
+function render() {
+  renderTop();
+  renderClasses();
+  renderProbes();
+  renderSolutions();
+  preview();
+}
+
+/* ------------------------------------------------------------------ the files */
+
+let FILES = {};
+function preview() {
+  FILES = Emit.files(D);
+  const sel = $("file"), current = sel.value;
+  sel.textContent = "";
+  Object.keys(FILES).forEach(name => {
+    const op = el("option", null, name); op.value = name;
+    if (name === current) op.selected = true;
+    sel.appendChild(op);
+  });
+  $("preview").textContent = FILES[sel.value] || FILES["agent.yaml"];
+  $("verdict").textContent = "";
+}
+
+$("file").addEventListener("change", () => { $("preview").textContent = FILES[$("file").value]; });
+
+$("copy").addEventListener("click", () => {
+  const name = $("file").value;
+  navigator.clipboard.writeText(FILES[name]).then(
+    () => { $("copied").textContent = name + " copied."; },
+    () => { $("copied").textContent = "Copying was not allowed here — select the text and copy it."; });
+});
+
+$("download").addEventListener("click", () => {
+  const name = $("file").value;
+  const a = el("a");
+  a.href = URL.createObjectURL(new Blob([FILES[name]], {type: "text/plain"}));
+  a.download = name.split("/").pop();
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $("copied").textContent = "Save it as .podshl/" + name + ".";
+});
+
+/* ------------------------------------------------------------------ checking */
+
+function verdict(v) {
+  const box = $("verdict"); box.textContent = "";
+  const panel = el("div", "panel " + (v.accepted ? "ok" : "stop"));
+  panel.appendChild(el("p", "lbl", v.accepted
+    ? "The mirror would take these files"
+    : "The mirror would refuse these files"));
+  Object.entries(v.refused || {}).forEach(([file, why]) => {
+    const p = el("p");
+    p.appendChild(el("strong", "mono", file));
+    // Ingest's own sentence often starts with the path already; say it once.
+    const said = String(why).startsWith(file + ":") ? String(why).slice(file.length + 1).trim() : why;
+    p.appendChild(document.createTextNode(" — " + said));
+    panel.appendChild(p);
+  });
+  if (v.accepted) {
+    panel.appendChild(el("p", "why", (v.trees || []).length
+      ? "A decision tree derives for: " + v.trees.join(", ") + "."
+      : "No decision tree derives from these solutions yet."));
+  }
+  box.appendChild(panel);
+  const noTree = Object.entries(v.no_tree || {});
+  if (noTree.length) {
+    const warn = el("div", "panel warn");
+    warn.appendChild(el("p", "lbl", "Accepted, but nothing can walk " + (noTree.length === 1 ? "this class" : "these classes")));
+    noTree.forEach(([cls, why]) => {
+      const p = el("p");
+      p.appendChild(el("strong", "mono", cls));
+      p.appendChild(el("span", "why", " — " + why));
+      warn.appendChild(p);
+    });
+    box.appendChild(warn);
+  }
+  if ((v.warnings || []).length) {
+    const warn = el("div", "panel warn");
+    warn.appendChild(el("p", "lbl", "The mirror accepts these today, and you would not want them"));
+    const ul = el("ul");
+    v.warnings.forEach(w => ul.appendChild(el("li", "why", w)));
+    warn.appendChild(ul);
+    box.appendChild(warn);
+  }
+  if ((v.notes || []).length) {
+    const note = el("div", "panel");
+    note.appendChild(el("p", "lbl", "Worth knowing"));
+    const ul = el("ul");
+    v.notes.forEach(n => ul.appendChild(el("li", "why", n)));
+    note.appendChild(ul);
+    box.appendChild(note);
+  }
+}
+
+$("check").addEventListener("click", () => {
+  const solutions = {};
+  Object.entries(FILES).forEach(([name, text]) => { if (name !== "agent.yaml") solutions[name] = text; });
+  $("verdict").textContent = "Checking …";
+  fetch("/validate", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({agent_yaml: FILES["agent.yaml"], solutions, anchor: (D.anchor || "").trim() || null})})
+    .then(r => r.json().then(o => ({ok: r.ok, o})))
+    .then(({ok, o}) => {
+      if (!ok) { verdict({accepted: false, refused: {"request": o.reason || o.code}}); return; }
+      verdict(o);
+    })
+    .catch(e => { $("verdict").textContent = "The mirror could not be reached: " + e; });
+});
+
+/* ------------------------------------------------------------------ wiring */
+
+["anchor", "endpoint", "commit", "langs", "glossary"].forEach(k =>
+  $(k).addEventListener("input", () => { D[k] = $(k).value; changed(false); }));
+$("status").addEventListener("change", () => { D.status = $("status").value; changed(false); });
+$("esc-on").addEventListener("change", () => { D.escalate.on = $("esc-on").checked; changed(true); });
+[["esc-queue", "queue"], ["esc-target", "target"], ["esc-reason", "reason"]].forEach(([id, k]) =>
+  $(id).addEventListener("input", () => { D.escalate[k] = $(id).value; changed(false); }));
+document.querySelectorAll(".esc-reply").forEach(cb => cb.addEventListener("change", () => {
+  D.escalate.reply_via = [...document.querySelectorAll(".esc-reply")].filter(x => x.checked).map(x => x.value);
+  changed(false);
+}));
+
+$("add-class").addEventListener("click", () => { D.classes.push(""); changed(true); });
+$("add-reading").addEventListener("click", () => {
+  D.probes.push({kind: "machine", id: "", describes: "", why: "", op: (READS.ops[0] || {}).op, params: {}});
+  changed(true);
+});
+$("add-question").addEventListener("click", () => {
+  D.probes.push({kind: "human", id: "", describes: "", why: "", prompt: "", choices: ""});
+  changed(true);
+});
+$("add-catalogue").addEventListener("click", () => {
+  const entry = READS.catalogue.find(c => c.id === $("catalogue").value);
+  if (!entry) return;
+  const {op, ...params} = entry.read;
+  D.probes.push({kind: "machine", id: entry.id, describes: "", why: "", op, params});
+  changed(true);
+});
+$("add-solution").addEventListener("click", () => {
+  D.solutions.push({id: "", problem_class: D.classes.find(c => c.trim()) || "", when: [],
+                    severity: "medium", action: "report_only", params: {}, body: ""});
+  changed(true);
+});
+$("reset").addEventListener("click", () => { D = blank(); save(); $("loaded").textContent = ""; render(); });
+
+/* Loading a project's existing files. Read in this browser, and parsed by the
+   mirror's own parser through `/validate` — which keeps nothing — so a file is
+   read here the way ingest will read it, not the way a second YAML parser in
+   this page would. The manifest goes first, because it says which paths the
+   solution files are listed under; each chosen file is matched to its path by
+   name. */
+$("load").addEventListener("change", async () => {
+  const chosen = [...$("load").files];
+  if (!chosen.length) return;
+  const read = f => f.text().then(text => ({name: f.name, text}));
+  const files = await Promise.all(chosen.map(read));
+  const agent = files.find(f => f.name === "agent.yaml") || files.find(f => /\.ya?ml$/.test(f.name));
+  if (!agent) { $("loaded").textContent = "Choose your agent.yaml together with the solution files."; return; }
+  const post = solutions => fetch("/validate", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({agent_yaml: agent.text, solutions, anchor: (D.anchor || "").trim() || null})})
+    .then(r => r.json().then(o => ({ok: r.ok, o})));
+  $("loaded").textContent = "Reading your files …";
+  try {
+    const first = await post({});
+    if (!first.ok || !first.o.parsed || !first.o.parsed.manifest) {
+      verdict(first.ok ? first.o : {accepted: false, refused: {request: first.o.reason || first.o.code}});
+      $("loaded").textContent = "Your agent.yaml could not be read, so nothing was loaded — the reason is under Your files.";
+      return;
+    }
+    const listed = first.o.parsed.manifest.solutions || [];
+    const byName = Object.fromEntries(files.filter(f => f !== agent).map(f => [f.name, f.text]));
+    const solutions = {};
+    const missing = [];
+    listed.forEach(rel => {
+      const name = rel.split("/").pop();
+      if (byName[name] !== undefined) { solutions[rel] = byName[name]; delete byName[name]; }
+      else missing.push(rel);
+    });
+    const second = await post(solutions);
+    // The address typed for an earlier draft is kept only if these files fit
+    // under it. Otherwise the check below measured them against somebody
+    // else's location, and refused them for it — which is how loading engram's
+    // files after trying the example read "the mirror would refuse these files".
+    const anchor = (D.anchor || "").trim();
+    const endpoint = (second.o.parsed.manifest.endpoint || "").trim();
+    const fits = anchor && endpoint.startsWith(anchor.endsWith("/") ? anchor : anchor + "/");
+    D = Object.assign(blank(), Emit.fromParsed(second.o.parsed.manifest, second.o.parsed.solutions));
+    D.anchor = fits ? anchor : "";
+    save();
+    render();
+    const checked = fits ? second.o : (await post(solutions)).o;
+    const kept = [...Object.keys(D.extra || {}), ...(D.escalate.raw !== undefined ? ["escalate"] : [])];
+    $("loaded").textContent = "Loaded agent.yaml and " + Object.keys(second.o.parsed.solutions).length +
+      " of " + listed.length + " listed solutions." +
+      (missing.length ? " Not chosen: " + missing.join(", ") + "." : "") +
+      (Object.keys(byName).length ? " Not listed in agent.yaml, so not loaded: " + Object.keys(byName).join(", ") + "." : "") +
+      (kept.length ? " Kept from agent.yaml as you wrote it: " + kept.join(", ") + "." : "") +
+      (D.anchor ? "" : " Fill in the address your files are served from, then check again.");
+    verdict(checked);
+  } catch (e) {
+    $("loaded").textContent = "Your files could not be checked: " + e;
+  }
+});
+$("example").addEventListener("click", () => {
+  D = Object.assign(blank(), {
+    anchor: "https://example.org/your-project/", commit: "v1.0.0", langs: "en",
+    classes: ["your-project.install.wrong-archive"],
+    probes: [
+      {kind: "machine", id: "os.name", describes: "Operating system",
+       why: "There is one release archive per platform", op: "os_fact", params: {name: "os"}},
+      {kind: "machine", id: "os.arch", describes: "Processor architecture",
+       why: "x86_64 and aarch64 archives are not interchangeable", op: "os_fact", params: {name: "arch"}},
+    ],
+    solutions: [{id: "wrong-archive", problem_class: "your-project.install.wrong-archive",
+      when: [{fact: "os.name", op: "=", value: "linux"}, {fact: "os.arch", op: "=", value: "aarch64"}],
+      severity: "high", action: "report_only", params: {},
+      body: "You downloaded the x86_64 archive on an ARM machine. Take the aarch64 one instead."}],
+    glossary: "",
+  });
+  save(); render();
+});
+
+Promise.all([
+  fetch("/vocabulary/reads.json").then(r => r.json()),
+  fetch("/vocabulary/actions.json").then(r => r.json()),
+]).then(([reads, actions]) => {
+  READS = reads;
+  ACTIONS = actions.actions || [];
+  (READS.catalogue || []).forEach(c => {
+    const op = el("option", null, c.id + " — " + c.read.op); op.value = c.id;
+    $("catalogue").appendChild(op);
+  });
+  render();
+}).catch(e => { $("verdict").textContent = "The vocabulary could not be loaded: " + e; render(); });
+</script>
+</body>
+</html>

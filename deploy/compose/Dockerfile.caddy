@@ -1,0 +1,7 @@
+# Caddy with the one plugin the proxy needs: `rate_limit` is not a stock
+# directive, and the write routes are what it stands in front of.
+FROM caddy:2.10-builder AS build
+RUN xcaddy build --with github.com/mholt/caddy-ratelimit
+
+FROM caddy:2.10
+COPY --from=build /usr/bin/caddy /usr/bin/caddy

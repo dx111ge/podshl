@@ -1,0 +1,26 @@
+The PODSHL protocol specification
+Copyright (C) 2026 Sven Andreas
+
+This directory is deliberately NOT under the AGPL that covers the rest of the
+repository. A specification has to be implementable without infecting the
+implementation; the reasoning is in ../LICENSING.md.
+
+Two licences apply here, by kind of file:
+
+  Apache-2.0            everything that is executed or parsed
+    schema/*.json         the JSON Schemas
+    vocabulary/*.json     the closed read and action vocabularies
+    example/**            the worked example manifest and its solutions
+    example-desktop/**    the second worked example: a project that repairs
+                          software it did not write
+    monitor/verify_log.py the reference log monitor
+                        Full text: LICENSE-APACHE-2.0
+
+  CC-BY-4.0             the prose
+    SPEC.md
+    INTEGRATING.md
+                        Full text: LICENSE-CC-BY-4.0
+
+Neither licence grants any right in the name PODSHL. Apache-2.0 says so in
+section 6; CC-BY-4.0 grants copyright and neighbouring rights and nothing
+else. Fork this freely. Do not present a fork as the operator.

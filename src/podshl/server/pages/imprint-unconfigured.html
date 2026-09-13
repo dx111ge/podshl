@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — no operator configured</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>This deployment has no operator identity</h1>
+
+<div class="panel stop">
+  <p><strong>It is not a public service.</strong> Running one here means a real
+  name and a postal address on the site — that is the address a letter arrives
+  at — and none has been configured. Rather than render an empty box that looks
+  like an imprint, this page refuses.</p>
+</div>
+
+<p>Set these and restart. All three are required; the register entry is
+optional and belongs there only if the operator is a registered company.</p>
+
+<pre><code>PODSHL_IMPRINT_NAME       the responsible legal or natural person
+PODSHL_IMPRINT_ADDRESS    a postal address that receives post
+PODSHL_IMPRINT_EMAIL      an address a person reads
+
+PODSHL_IMPRINT_REGISTER   optional: register number, VAT id
+PODSHL_SECURITY_CONTACT   where to report a finding
+PODSHL_SECURITY_EXPIRES   when that contact stops being valid (RFC 9116)
+PODSHL_NOTICE_CONTACT     where a notice-and-action complaint reaches a person</code></pre>
+
+<p class="why">Nothing here is guessed. Not the hostname, not the address this
+request arrived at, not a placeholder — a page that invents a legal identity is
+worse than a page that admits it has none.</p>
+
+<h2>Reporting a security finding</h2>
+<p>No security contact is configured either, so
+<code>/.well-known/security.txt</code> answers 404 rather than publishing an
+address nobody answers.</p>
+
+<footer>
+  <p>This deployment is unconfigured — not a public service.</p>
+</footer>
+</div>
+</body>
+</html>

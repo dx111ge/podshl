@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — file a notice</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>Notice and action</h1>
+
+<p>We mirror files that projects publish in their own repositories. If something
+we mirror should not be there, tell us here.</p>
+
+<h2>What a notice does, and does not do</h2>
+<div class="panel">
+  <p><strong>It reaches the mirror, never the source.</strong> Our copy is
+  withdrawn and the project returns to <code>unknown</code> — the state of one
+  that never registered. Everything in the developer's own repository is
+  untouched, because it was never ours.</p>
+  <p><strong>It degrades; it does not delete.</strong> Not death, un-enrolment.
+  We do not mark anyone as revoked, because somebody who published something
+  contested has not necessarily done anything wrong.</p>
+  <p><strong>Every removal is logged with a public reason code</strong>, and the
+  affected party is told why. That log entry <em>is</em> the statement of
+  reasons — if we could remove things quietly, the transparency would be
+  decorative.</p>
+  <p><strong>A notice aimed at a problem class is refused.</strong> There is no
+  such path. Otherwise whoever owns a name could forbid anyone from saying it
+  out loud, and naming other people's software is the whole open-source branch.</p>
+</div>
+
+<h2>File one</h2>
+<label for="anchor">The host we mirror</label>
+<input type="text" id="anchor" placeholder="example.org" autocomplete="off">
+
+<label for="reason">Reason</label>
+<select id="reason">
+  <option value="trademark_claim">Trademark claim</option>
+  <option value="copyright_claim">Copyright claim</option>
+  <option value="impersonation">Impersonation</option>
+  <option value="malware">Malware</option>
+  <option value="court_order">Court order</option>
+  <option value="other">Other</option>
+</select>
+
+<label for="name">Your name</label>
+<input type="text" id="name" autocomplete="off">
+
+<label for="contact">How to reach you</label>
+<input type="text" id="contact" placeholder="email or postal address" autocomplete="off">
+
+<label class="inline"><input type="checkbox" id="goodfaith">
+  I believe in good faith that the information in this notice is accurate.</label>
+<p class="why">Your name and how to reach you are stored with the notice and
+read by the operator, who decides on it. They are not published — the public
+statement of reasons carries neither — and nothing passes them on
+automatically; if the affected party has to be told who objected in order to
+answer, the operator does that by hand. A notice is not anonymous, because
+somebody has to be able to answer it. See <a href="/privacy">privacy</a>.</p>
+
+<div class="btns"><button class="primary" id="send">Send this notice</button></div>
+<p class="why" id="msg"></p>
+
+<div class="panel ok" id="done" hidden>
+  <p id="outcome"></p>
+  <p class="why">The statement of reasons is a public log entry:</p>
+  <pre id="sor"></pre>
+</div>
+
+<footer>
+  <p id="contactline"><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/log">The log</a></p>
+</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+$("send").addEventListener("click", () => {
+  if (!$("goodfaith").checked) {
+    $("msg").textContent = "The good-faith statement is required.";
+    return;
+  }
+  const body = {
+    anchor_host: $("anchor").value.trim(),
+    reason_code: $("reason").value,
+    notifier: {
+      name: $("name").value.trim(),
+      contact: $("contact").value.trim(),
+      statement_of_good_faith: true
+    }
+  };
+  $("msg").textContent = "sending…";
+  fetch("/notice", {method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(body)})
+    .then(r => r.json().then(o => ({status: r.status, o})))
+    .then(({status, o}) => {
+      $("msg").textContent = "";
+      if (o.code) {
+        $("msg").textContent = (o.reason || o.code)
+          + (o.notice ? " (recorded as notice " + o.notice + ")" : "");
+        return;
+      }
+      $("done").hidden = false;
+      $("outcome").textContent = o.why || o.action || ("recorded, status " + status);
+      $("sor").textContent = o.statement_of_reasons || "—";
+    })
+    .catch(e => { $("msg").textContent = "could not send: " + e; });
+});
+
+fetch("/operator", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    if (o.configured && o.notice_contact) {
+      $("contactline").textContent = "You can also write to " + o.notice_contact + ".";
+    }
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>

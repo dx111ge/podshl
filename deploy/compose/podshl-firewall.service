@@ -1,0 +1,20 @@
+# Applies firewall.sh at boot and whenever Docker (re)starts. Rules added with
+# iptables do not survive a reboot, and a wall that is there until the first
+# power cut is not one.
+#
+#   sudo cp podshl-firewall.service /etc/systemd/system/
+#   sudo systemctl enable --now podshl-firewall
+[Unit]
+Description=PODSHL: keep the operator's containers off the LAN and the host
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/podshl/deploy/compose/firewall.sh apply
+ExecStop=/opt/podshl/deploy/compose/firewall.sh remove
+
+[Install]
+WantedBy=multi-user.target docker.service

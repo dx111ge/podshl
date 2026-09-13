@@ -1,0 +1,37 @@
+# The crawler: fetches what projects publish, re-confirms their anchors on the
+# way, validates, stores, appends to the log and signs a new head. One cycle a
+# minute; each source is fetched only when it is due, with a conditional GET.
+#
+# It was a loop nobody supervised. A cycle that fails is retried by the loop
+# itself; this restarts the process if the loop dies anyway, and says so in the
+# journal rather than leaving mirrors silently going stale — which, from a
+# project's side, looks like us having stopped watching them.
+[Unit]
+Description=PODSHL ingest worker (crawl, verify, log)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=podshl
+Group=podshl
+EnvironmentFile=/etc/podshl/env
+WorkingDirectory=/opt/podshl
+ExecStart=/opt/podshl/venv/bin/python -m podshl.server.ingest.scheduler
+Restart=always
+RestartSec=30
+# It fetches strangers' URLs: everything it may touch on this machine is the
+# key and salt directory, and it may only speak IP and to the local database.
+ReadWritePaths=/var/lib/podshl
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

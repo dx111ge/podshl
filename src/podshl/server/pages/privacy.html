@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — Datenschutz / Privacy</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>Datenschutzerklärung <span class="why">Privacy notice</span></h1>
+<p class="why"><a href="#en">English version below.</a> Stand: 13. September 2026.</p>
+
+<div class="panel">
+  <p class="lbl">Verantwortlich / Controller</p>
+  <p id="name"></p>
+  <pre id="address"></pre>
+  <p id="email"></p>
+</div>
+
+<h2>Kurz gesagt</h2>
+<p>Keine Konten, keine Cookies, kein Tracking, keine Analyse-Werkzeuge, keine
+eingebundenen Inhalte Dritter. Der Dienst läuft auf eigener Hardware in
+Deutschland; es gibt keinen Auftragsverarbeiter. Was von einem Rechner kommt,
+kommt nur mit Zustimmung der Person an diesem Rechner, und Berichte sind nach
+Ablauf des Monats keiner Person mehr zuzuordnen — auch nicht für uns.</p>
+
+<h2>1. Beim Aufruf dieser Seiten</h2>
+<p>Der Webserver (Caddy) schreibt je Anfrage eine Zeile: Zeitpunkt, Methode,
+<strong>nur den ersten Teil des Pfads</strong> (etwa <code>/dashboard</code>,
+nie den Projektnamen dahinter und nie Parameter), Statuscode, Größe, Dauer,
+aufgerufener Hostname, Protokoll und die IP-Adresse <strong>gekürzt</strong>
+auf ihr Netz (IPv4 auf die ersten 16 Bit, IPv6 auf die ersten 32 Bit). Es werden
+<strong>keine</strong> Header gespeichert — kein Browser, kein Referrer, keine
+Zugangsdaten. Die Zeilen werden nach <strong>7 Tagen</strong> gelöscht, bei
+großem Aufkommen früher. Die ungekürzte Adresse hält der Server eine Minute
+lang nur im Arbeitsspeicher, um Schreibanfragen zu begrenzen (30 je Minute), und
+schreibt sie nirgends hin. Zweck: Betrieb und Schutz des Dienstes;
+Rechtsgrundlage Art. 6 Abs. 1 lit. f DSGVO.</p>
+
+<h2>2. Nachschlagen einer Antwort</h2>
+<p>Fragt der PODSHL-Client nach einer veröffentlichten Lösung, schickt er das
+Projekt, die Problemklasse und die Werte, denen die Person zugestimmt hat. Der
+Server wertet sie in einer schreibgeschützten Datenbanktransaktion aus und
+<strong>speichert nichts davon</strong>. Rechtsgrundlage: Art. 6 Abs. 1 lit. a
+DSGVO (die Zustimmung im Client vor dem Senden).</p>
+
+<h2>3. Berichte aus dem Client</h2>
+<p>Nur wenn die Person im Client ausdrücklich zustimmt, geht ein Bericht an
+diesen Server. Er enthält: das Projekt, die gelesenen und zuvor vergröberten
+Werte (etwa Versionen, Grafikkarte, Betriebssystem), die gewählten Antworten,
+ob die Lösung geholfen hat, fehlgeschlagene Schritte, die Art des verwendeten
+Modells und — nur mit einer <strong>zweiten, eigenen Zustimmung</strong> —
+einen Freitext, den der Client vorher auf dem Gerät anonymisiert (Adressen,
+Benutzernamen, Schlüssel und Zeitangaben werden ersetzt) und der Person zur
+Durchsicht zeigt.</p>
+<p><strong>Keine IP-Adresse</strong> wird mit einem Bericht gespeichert, kein
+Name, keine E-Mail. Der Client bildet aus einem zufälligen, nur lokal
+gespeicherten Geheimnis ein Pseudonym je Projekt und Monat. Der Server speichert
+nicht dieses Pseudonym, sondern nur einen daraus mit einem <strong>monatlichen
+Schlüssel</strong> abgeleiteten Wert, um dieselbe Person im selben Monat nicht
+doppelt zu zählen. Dieser Schlüssel wird nach Ablauf des Monats automatisch
+überschrieben und gelöscht; danach lässt sich ein Bericht keinem Pseudonym und
+keiner Person mehr zuordnen. Zeitangaben sind auf den Monat genau; nur der
+Zeitpunkt, zu dem eine bestimmte Konfiguration zum ersten Mal gemeldet wurde,
+ist genauer.</p>
+<p>Die Maintainer eines Projekts sehen eine Konfiguration erst, wenn
+<strong>mindestens fünf verschiedene</strong> Personen sie im selben Monat
+gemeldet haben, und dann zusätzlich bis zu drei der dazu freigegebenen
+Freitexte. Berichte werden ohne Frist aufbewahrt, weil sie nach Monatsende
+nicht mehr personenbeziehbar sind. Rechtsgrundlage: Art. 6 Abs. 1 lit. a DSGVO.
+Da der Server nicht weiß, von wem ein Bericht stammt, kann er einen einzelnen
+Bericht auch auf Wunsch nicht wiederfinden (Art. 11 DSGVO).</p>
+
+<h2>4. Registrierung eines Projekts</h2>
+<p>Wer ein Projekt registriert, gibt nur dessen Adresse an — keinen Namen, keine
+E-Mail. Gespeichert werden die Adresse, der Zeitpunkt, das Ergebnis der
+regelmäßigen Erreichbarkeitsprüfungen und die Zugangsschlüssel <strong>nur als
+Hash</strong>; der Klartext wird einmal angezeigt und nicht gespeichert. Ein
+Zugang läuft nach 365 Tagen ab. Die Adresse eines registrierten Projekts und
+seine Statuswechsel stehen dauerhaft im öffentlichen Transparenz-Log (Abschnitt
+6) — enthält die Adresse einen Personennamen, ist er damit öffentlich.
+Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO.</p>
+<p>Im Browser speichert diese Seite zwei Dinge im lokalen Speicher, und nur auf
+Veranlassung der Person: den Dashboard-Zugang, wenn „merken“ angehakt ist
+(„vergessen“ löscht ihn), und den Entwurf im Datei-Baukasten. Beides verlässt
+den Browser nur, wenn es benutzt wird (§ 25 Abs. 2 Nr. 2 TDDDG).</p>
+
+<h2>5. Meldungen (Notice and action)</h2>
+<p>Wer über <a href="/notice">das Meldeformular</a> einen Hinweis gibt, nennt
+Name und Kontakt, den Grund und das betroffene Projekt; der Eingangszeitpunkt
+wird gespeichert, auch bei abgelehnten Meldungen. Name und Kontakt sieht nur der
+Betreiber; sie werden nicht veröffentlicht und nicht automatisch weitergegeben.
+Muss die betroffene Seite erfahren, wer widersprochen hat, um antworten zu
+können, geschieht das im Einzelfall von Hand. Die Angaben bleiben gespeichert,
+damit Entscheidungen später belegt werden können; auf Anfrage werden Name und
+Kontakt gelöscht, soweit dem keine Nachweispflicht entgegensteht.
+Rechtsgrundlage: Art. 6 Abs. 1 lit. c und f DSGVO (Pflichten als
+Hosting-Dienst nach Art. 16 und 17 DSA).</p>
+
+<h2>6. Das öffentliche Transparenz-Log</h2>
+<p>Das <a href="/log">Log</a> ist öffentlich, signiert und kann nur ergänzt
+werden — ein Eintrag lässt sich absichtlich nicht löschen. Es enthält
+Projektadressen, deren Statuswechsel und bei Entfernungen einen Grund-Code. Es
+enthält <strong>nichts</strong> über Besucher, Berichtende oder Meldende.</p>
+
+<h2>7. Wen der Server selbst kontaktiert</h2>
+<p>Er lädt die Dateien, die Projekte selbst veröffentlichen, von deren eigenen
+Adressen; Namen löst er über Quad9 auf; Zertifikate kommen von Let's Encrypt.
+Dabei werden <strong>keine Daten von Besuchern oder Berichtenden</strong>
+übermittelt.</p>
+
+<h2>8. Der PODSHL-Client</h2>
+<p>Der Client liest auf dem eigenen Rechner nur, was die Person Punkt für Punkt
+freigibt, und sendet nur, was sie bestätigt. Seine Einstellungen und das
+Geheimnis für das Pseudonym liegen lokal (unter Windows in
+<code>%APPDATA%\podshl</code>); ein API-Schlüssel in der Windows-Anmeldeinformationsverwaltung.
+Richtet die Person ein Sprachmodell ein — lokal oder bei einem Anbieter —,
+spricht der Client direkt mit diesem; das läuft nicht über diesen Server.</p>
+
+<h2>9. Ihre Rechte</h2>
+<p>Sie haben das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der
+Verarbeitung, Datenübertragbarkeit und Widerspruch (Art. 15–21 DSGVO) sowie das
+Recht, eine Einwilligung jederzeit mit Wirkung für die Zukunft zu widerrufen.
+Schreiben Sie dazu an die oben genannte Adresse. Sie können sich außerdem bei
+einer Aufsichtsbehörde beschweren, etwa beim Thüringer Landesbeauftragten für den
+Datenschutz und die Informationsfreiheit (TLfDI) in Erfurt.</p>
+
+<hr id="en">
+
+<h1>Privacy notice</h1>
+
+<h2>In short</h2>
+<p>No accounts, no cookies, no tracking, no analytics, no third-party content.
+The service runs on the operator's own hardware in Germany, with no processor.
+Nothing leaves a machine without the consent of the person at it, and reports
+cannot be linked to anyone once their month is over — not even by us.</p>
+
+<h2>1. Visiting these pages</h2>
+<p>The web server (Caddy) writes one line per request: time, method,
+<strong>the first path segment only</strong> (never a project name after it,
+never parameters), status, size, duration, host, protocol, and the IP address
+<strong>truncated</strong> to its network (IPv4 to 16 bits, IPv6 to 32 bits).
+<strong>No</strong> headers are kept — no browser, no referrer, no credentials.
+Lines are deleted after <strong>7 days</strong>, earlier under load. The full
+address is held in memory for one minute to limit write requests (30 a minute)
+and written nowhere. Purpose: running and protecting the service; legal basis
+Art. 6(1)(f) GDPR.</p>
+
+<h2>2. Looking up an answer</h2>
+<p>When the PODSHL client asks for a published solution it sends the project,
+the problem class and the values the person agreed to send. The server
+evaluates them in a read-only database transaction and <strong>stores none of
+it</strong>. Legal basis: Art. 6(1)(a) GDPR.</p>
+
+<h2>3. Reports from the client</h2>
+<p>Sent only with the person's explicit consent in the client: the project, the
+coarsened readings, the answers chosen, whether the solution helped, failed
+steps, the kind of model used, and — only with a <strong>second, separate
+consent</strong> — free text the client anonymises on the device first and
+shows for review. <strong>No IP address</strong>, name or e-mail is stored with
+a report. The client derives a per-project, per-month pseudonym from a random
+secret kept on the device; the server stores only a value derived from it with
+a <strong>monthly key</strong>, so the same person is not counted twice in a
+month. That key is overwritten and deleted automatically once the month is
+over, after which a report cannot be linked to a pseudonym or a person. Times
+are to the month, except when a configuration was first reported. Maintainers
+see a configuration only once <strong>at least five different people</strong>
+reported it in the same month, together with up to three of the free texts
+released for it. Reports are kept without a time limit because they are no
+longer personal after their month; for the same reason a single report cannot
+be found again on request (Art. 11 GDPR). Legal basis: Art. 6(1)(a) GDPR.</p>
+
+<h2>4. Registering a project</h2>
+<p>Only the project's address is given — no name, no e-mail. Stored: the
+address, when, the results of regular reachability checks, and access keys
+<strong>as hashes only</strong>; the plain key is shown once. Access expires
+after 365 days. A registered project's address and status changes are
+permanently in the public log (section 6). The browser keeps two things in
+local storage, only when asked: the dashboard key if "remember" is ticked, and
+the file builder's draft. Legal basis: Art. 6(1)(b) GDPR.</p>
+
+<h2>5. Notices</h2>
+<p>A notice carries a name, a contact, the reason and the project; its time of
+receipt is stored, refused notices included. Only the operator sees name and
+contact; they are not published or passed on automatically, and if the
+affected party needs to know who objected in order to answer, that is done by
+hand. They are kept so decisions can be evidenced later, and deleted on request
+where no duty to keep them applies. Legal basis: Art. 6(1)(c) and (f) GDPR
+(Art. 16 and 17 DSA).</p>
+
+<h2>6. The public transparency log</h2>
+<p>Public, signed and append-only by design. It holds project addresses, their
+status changes and reason codes for removals — <strong>nothing</strong> about
+visitors, reporters or notifiers.</p>
+
+<h2>7. Whom the server contacts</h2>
+<p>Projects' own addresses, to fetch the files they publish; Quad9 for name
+resolution; Let's Encrypt for certificates. <strong>No data about visitors or
+reporters</strong> is passed to anyone.</p>
+
+<h2>8. The PODSHL client</h2>
+<p>It reads only what the person releases item by item and sends only what they
+confirm. Settings and the pseudonym secret stay on the device; an API key in
+the operating system's credential store. A language model the person sets up is
+contacted by the client directly, not through this server.</p>
+
+<h2>9. Your rights</h2>
+<p>Access, rectification, erasure, restriction, portability and objection
+(Art. 15–21 GDPR), and withdrawing consent at any time for the future. Write to
+the address above. You may also complain to a supervisory authority, such as
+the Thuringian commissioner for data protection (TLfDI) in Erfurt.</p>
+
+<footer>
+  <p><a href="/">PODSHL</a> · <a href="/imprint">Imprint / Impressum</a> · <a href="/security">What this does and does not do</a></p>
+</footer>
+</div>
+
+<script>
+/* The controller comes from the server's own answer, as on the imprint — a
+   notice reciting a copy of an identity can drift from the configuration. */
+const put = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v || ""; };
+fetch("/operator", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    put("name", o.name);
+    put("address", (o.address || []).join("\n"));
+    put("email", o.email);
+  })
+  .catch(e => put("name", "The operator's details could not be loaded: " + e));
+</script>
+</body>
+</html>

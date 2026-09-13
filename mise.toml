@@ -1,0 +1,198 @@
+# llmtraining — German helpdesk LLM finetuning
+# Hardware baseline: RTX 2070 SUPER (8 GB, sm_75 Turing) / Ryzen 9 3900X / 31 GB RAM
+# Storage: project lives on 2 TB WD SN770 NVMe (btrfs, LUKS) at /home/dx/Work
+#
+# Turing constraints that drive every choice in this project:
+#   - no hardware bf16  -> fp16 + GradScaler, never bf16
+#   - no FlashAttention-2 (needs sm_80+) -> SDPA / xformers
+#   - ~6 GB usable VRAM (desktop holds ~2 GB) -> QLoRA 4-bit only
+
+[tools]
+# 3.12, not the global 3.14: bitsandbytes / peft / trl / triton have no
+# reliable cp314 wheels yet.
+python = "3.12"
+uv = "latest"
+# The server's store. Managed here rather than by the system so a clean checkout
+# gets the same database the same way it gets Python — no root, no container
+# runtime, and the cluster lives in var/, which is already gitignored as
+# "runtime state".
+postgres = "18"
+
+[env]
+# mise creates and activates .venv automatically on cd into this dir
+_.python.venv = { path = ".venv", create = true }
+
+# keep model downloads on the 2 TB WD SN770 NVMe (mounted at /home/dx/Work, 1.9 TB free),
+# NOT in ~/.cache which lives on the smaller SATA SSD
+HF_HOME = "{{config_root}}/.hf"
+# hf_transfer is gone; Xet is the current fast-download path
+HF_XET_HIGH_PERFORMANCE = "1"
+# Turing: no bf16, and expandable segments reduce fragmentation OOMs on 8 GB
+PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+TOKENIZERS_PARALLELISM = "false"
+
+[tasks.baseline]
+description = "Re-check hardware/software baseline (GPU, precision, 4-bit, disk)"
+run = "python scripts/check_baseline.py"
+
+[tasks.fetch-corpus]
+description = "Download the ticket corpus into data/raw/ (~15 MB, gitignored)"
+run = "python scripts/fetch_corpus.py"
+
+[tasks.fetch-confusables]
+description = "Regenerate the UTS 39 subset used for homoglyph detection"
+run = "python scripts/fetch_confusables.py"
+
+[tasks.measure]
+description = "Re-measure the corpus numbers cited in FINDINGS.md"
+run = "python scripts/measure_corpus.py"
+
+[tasks.serve]
+description = "Run the vendor support agent (A2A) on 127.0.0.1:8721"
+run = "PYTHONPATH=src python -m uvicorn podshl.vendor.app:app --host 127.0.0.1 --port 8721"
+
+[tasks.client]
+description = "Run the native client (Rust/Tauri)"
+# The DMABUF workaround is required on NVIDIA + Wayland, so the launcher sets it
+# rather than leaving a protocol error to the user.
+run = "cd client-rs && WEBKIT_DISABLE_DMABUF_RENDERER=1 VS_ROOT=../var VS_TRUST=../var/ans_stub.json VS_DIRECTORY=../var/vendor_directory.json cargo run --release"
+
+[tasks.client-test]
+description = "The client suite — every client-side case, against the shipped binary"
+# Needs the counterparty: discovery, triage and the signed remedy are checked
+# against the real vendor rather than against a stub. `mise run services` first.
+run = "cd client-rs && cargo test"
+
+[tasks.testcases]
+description = "The server and counterparty suite, plus conformance to spec/"
+run = "python run_testcases.py"
+
+[tasks.doctor]
+description = "What the client can actually do on this machine"
+# The shipped binary answers for itself. This used to ask a second, Python
+# implementation of the client what *it* could do, which was a fact about code
+# nobody installs.
+run = "cd client-rs && cargo run --release --quiet -- doctor"
+
+[tasks.demo]
+description = "The whole argument in five acts, against live services"
+run = "cd client-rs && VS_ROOT=../var cargo run --release --quiet -- demo"
+
+[tasks.trust-stub]
+description = "Write var/ans_stub.json — the out-of-band key the client checks the card against"
+# var/ is gitignored, five places read this file and nothing wrote it, so a
+# fresh checkout failed ten client cases on a missing file.
+run = "python scripts/make_trust_stub.py"
+
+[tasks.services]
+description = "Start the counterparty: vendor, plain website, index, OSS project"
+run = """
+python scripts/make_trust_stub.py
+PYTHONPATH=src python -m uvicorn podshl.vendor.app:app --port 8721 --log-level warning &
+PYTHONPATH=src python -m uvicorn podshl.index_service.plain_vendor:app --port 8722 --log-level warning &
+PYTHONPATH=src python -m uvicorn podshl.index_service.app:app --port 8723 --log-level warning &
+PYTHONPATH=src python -m uvicorn podshl.index_service.oss_project:app --port 8727 --log-level warning &
+wait
+"""
+
+[tasks.vram]
+description = "Live VRAM usage"
+run = "nvidia-smi --query-gpu=memory.used,memory.free,utilization.gpu,temperature.gpu --format=csv -l 2"
+
+[tasks.free-vram]
+description = "Kill desktop VRAM hogs before a training run (frees ~1.6 GB)"
+run = "pkill -f voxtype || true; nvidia-smi --query-gpu=memory.free --format=csv"
+
+[tasks.db]
+description = "Create and start the server's Postgres cluster in var/pgdata"
+run = """
+test -d var/pgdata || initdb -D var/pgdata -U podshl --auth=trust -E UTF8 >/dev/null
+pg_ctl -D var/pgdata -o "-p 5433 -k $PWD/var -c listen_addresses=" -l var/pg.log status >/dev/null 2>&1 \
+  || pg_ctl -D var/pgdata -o "-p 5433 -k $PWD/var -c listen_addresses=" -l var/pg.log start
+psql -h "$PWD/var" -p 5433 -U podshl -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='podshl'" \
+  | grep -q 1 || createdb -h "$PWD/var" -p 5433 -U podshl podshl
+"""
+
+[tasks.db-stop]
+description = "Stop the server's Postgres cluster"
+run = "pg_ctl -D var/pgdata -l var/pg.log stop"
+
+[tasks.migrate]
+description = "Apply the server's schema migrations"
+run = "PYTHONPATH=src python -m podshl.server.migrate"
+
+[tasks.server]
+description = "Run the operator server on 127.0.0.1:8725"
+run = "PYTHONPATH=src python -m uvicorn podshl.server.app:app --host 127.0.0.1 --port 8725"
+
+[tasks.release]
+description = "Build the Linux release artefacts and checksum them"
+# Linux only, and that is not a configuration gap: Tauri release builds cannot be
+# cross-compiled, so Windows and macOS need machines running those systems.
+# RELEASING.md says so rather than leaving it to be discovered.
+run = """
+set -e
+V=$(grep -m1 '^version = ' client-rs/Cargo.toml | cut -d'"' -f2)
+OUT="var/release/$V"
+mkdir -p "$OUT"
+# A .deb declares the WebKitGTK dependency instead of bundling it. An AppImage
+# would hide 140-odd libraries inside a hundred-megabyte download, and this
+# product's argument includes being small enough to audit.
+# Honour CARGO_TARGET_DIR. Hardcoding client-rs/target meant the build
+# succeeded and the copy failed for anyone who redirects it — which the
+# container does, to keep the Linux build tree off a Windows bind mount.
+TARGET="${CARGO_TARGET_DIR:-client-rs/target}"
+(cd client-rs && cargo tauri build --bundles deb)
+cp "$TARGET/release/podshl-client" "$OUT/podshl-client-$V-linux-x86_64"
+find "$TARGET/release/bundle/deb" -name '*.deb' -exec cp {} "$OUT/" ';'
+cat > "$OUT/PLATFORM.md" <<'EOF'
+# podshl-client — Linux, x86_64
+
+## What this is
+
+The customer-side agent. It verifies a vendor, collects locally under per-item
+consent, and returns a conclusion. It never signs anything, and it can only
+perform operations it already implements.
+
+## What it needs
+
+Not self-contained, and deliberately so. The .deb declares its dependencies
+rather than bundling them — hiding 140-odd system libraries inside a
+hundred-megabyte download would cost the one property that makes this
+auditable.
+
+    libwebkit2gtk-4.1-0, libgtk-3-0
+
+On NVIDIA + Wayland the app needs WEBKIT_DISABLE_DMABUF_RENDERER=1. That is a
+common desktop rather than an exotic one, so the launcher sets it instead of
+leaving a Wayland protocol error to the user.
+
+## Which operator
+
+Built with PODSHL_BUILD_SERVER_URL, PODSHL_BUILD_INDEX_URL and
+PODSHL_BUILD_LOG_KEY compiled in when they were set (RELEASING.md); the
+environment variables PODSHL_SERVER_URL, PODSHL_INDEX_URL and VS_LOG_KEY
+override them at run time.
+
+## What is not here
+
+Windows and macOS. Tauri release builds do not cross-compile: the Windows
+installer is built on Windows (scripts/build_windows_installer.ps1) and the
+macOS app on GitHub's macOS runners (.github/workflows/macos.yml).
+
+## Provenance
+
+Not signed: a signature says who built it, and there is no key-management
+story here yet worth signing with.
+EOF
+printf '\nVersion %s, built from %s on %s\n' \
+  "$V" "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OUT/PLATFORM.md"
+(cd "$OUT" && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+echo
+echo "  artefacts in $OUT"
+echo "  Linux only. Windows and macOS need runners on those systems - see RELEASING.md"
+"""
+
+[tasks.sync]
+description = "Reinstall the exact locked environment"
+run = "uv pip install -r requirements.lock.txt"

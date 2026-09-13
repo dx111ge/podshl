@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podshl.example/spec/finding.json",
+  "title": "Finding",
+  "description": "What the vendor concluded, with the readings it concluded it from. `contradicts_kb` marks the case the whole design exists for: the vendor's own published documentation says something the machine contradicts.",
+  "type": "object",
+  "required": ["id", "severity", "summary"],
+  "properties": {
+    "id": { "type": "string" },
+    "severity": { "type": "string", "enum": ["info", "low", "medium", "high"] },
+    "summary": { "type": "string" },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "contradicts_kb": { "type": "boolean", "default": false }
+  }
+}

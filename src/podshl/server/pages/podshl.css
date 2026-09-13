@@ -1,0 +1,157 @@
+/* The operator's pages. The same palette as the client's window, copied rather
+   than shared: the two ship separately, and a file two artefacts both depend on
+   is a file neither owns. */
+:root{
+  --bg:#F5F8F7; --panel:#FFFFFF; --sub:#EBF0EE; --ink:#12181A; --soft:#3E4D4C;
+  --muted:#6C7B79; --rule:#D6DFDC; --ok:#0F6E5C; --okbg:#E4F0EC;
+  --warn:#9A5B2B; --warnbg:#F6EBE1; --stop:#8C2F2A; --stopbg:#F6E7E5;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0E1315; --panel:#161D1F; --sub:#1C2427; --ink:#E7EDEB; --soft:#BCC8C5;
+         --muted:#849693; --rule:#27312F; --ok:#5BC4A7; --okbg:#12302A;
+         --warn:#D9975F; --warnbg:#2A2018; --stop:#E0776F; --stopbg:#2B1A19; }
+}
+*{box-sizing:border-box}
+/* `hidden` has to win. The browser's own rule is `display:none` at the lowest
+   priority, so any class that sets `display` — `.btns` is flex — silently
+   showed an element the script had hidden. */
+[hidden]{display:none !important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+     font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:52rem;margin:0 auto;padding:1.5rem 1.25rem 4rem}
+
+header.top{border-bottom:1px solid var(--rule);background:var(--panel)}
+header.top .wrap{padding:.7rem 1.25rem;display:flex;gap:1rem;align-items:baseline;flex-wrap:wrap}
+header.top a{color:var(--soft);text-decoration:none;font-size:.9rem}
+header.top a:hover{color:var(--ink);text-decoration:underline}
+header.top .brand{font-weight:700;letter-spacing:.02em;color:var(--ink);margin-right:.4rem}
+
+h1{font-size:1.5rem;line-height:1.3;margin:1.6rem 0 .6rem}
+h2{font-size:1.1rem;margin:2rem 0 .5rem}
+h3{font-size:.95rem;margin:1.4rem 0 .4rem}
+p{margin:.6rem 0}
+a{color:var(--ok)}
+code,pre{font-family:var(--mono);font-size:.86rem}
+code{background:var(--sub);padding:.1rem .3rem;border-radius:4px}
+pre{background:var(--panel);border:1px solid var(--rule);border-radius:8px;
+    padding:.8rem .9rem;overflow-x:auto;line-height:1.5}
+pre code{background:none;padding:0}
+/* A stranger's excerpt inside a panel: set apart from the panel it sits on,
+   bounded in height so one long paste cannot push the page away, and wrapped
+   rather than scrolled sideways — a log line is read, not aligned. */
+pre.words{background:var(--sub);max-height:14rem;overflow:auto;
+          white-space:pre-wrap;word-break:break-word;font-size:.8rem;margin:.4rem 0}
+
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+       padding:1rem 1.1rem;margin:1rem 0}
+.panel.ok{border-color:var(--ok);background:var(--okbg)}
+.panel.warn{border-color:var(--warn);background:var(--warnbg)}
+.panel.stop{border-color:var(--stop);background:var(--stopbg)}
+.why{color:var(--muted);font-size:.9rem}
+.lbl{font-weight:600;font-size:.9rem}
+
+label{display:block;font-weight:600;font-size:.9rem;margin:.9rem 0 .25rem}
+input[type=text],input[type=email],input[type=password],textarea,select{
+  width:100%;font:inherit;padding:.5rem .6rem;border:1px solid var(--rule);
+  border-radius:6px;background:var(--bg);color:var(--ink)}
+textarea{resize:vertical;line-height:1.5}
+input[aria-invalid=true]{border-color:var(--stop);box-shadow:0 0 0 1px var(--stop)}
+.panel.stop .lbl{color:var(--stop);font-size:1rem}
+label.inline{display:flex;gap:.5rem;align-items:center;font-weight:400}
+label.inline input{width:auto}
+
+button{font:inherit;font-weight:600;padding:.45rem .9rem;border-radius:6px;
+       border:1px solid var(--rule);background:var(--sub);color:var(--soft);cursor:pointer}
+button:hover{filter:brightness(1.05)}
+button:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+button.primary{background:var(--ok);border-color:var(--ok);color:#fff}
+button.danger{background:var(--stop);border-color:var(--stop);color:#fff}
+.btns{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap}
+
+table{width:100%;border-collapse:collapse;margin:.8rem 0;font-size:.92rem}
+th,td{text-align:left;padding:.45rem .5rem;border-bottom:1px solid var(--rule);
+      vertical-align:top}
+th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+td.mono{font-family:var(--mono);font-size:.84rem}
+.mono{font-family:var(--mono);font-size:.92em}
+
+.lines{white-space:pre-wrap;overflow-wrap:anywhere}
+.tag{display:inline-block;font-family:var(--sans);font-size:.78rem;font-weight:600;padding:.1rem .45rem;
+     border-radius:999px;background:var(--sub);color:var(--soft);margin:0 .2rem .2rem 0}
+.tag.live{background:var(--okbg);color:var(--ok)}
+.tag.flag{background:var(--warnbg);color:var(--warn)}
+.tag.stop{background:var(--stopbg);color:var(--stop)}
+
+/* The dashboard at the size real projects have. Tabs keep the account's own
+   business away from what recurs; chips narrow the list to what needs work;
+   every row is a native <details>, so it opens from the keyboard and costs no
+   script to collapse. The chevron is drawn, not a glyph from a font. */
+.tabs{display:flex;gap:.2rem;border-bottom:1px solid var(--rule);margin:1rem 0;flex-wrap:wrap}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;
+             padding:.5rem .8rem;color:var(--muted)}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ok)}
+.tabs .tag{margin:0 0 0 .3rem}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.7rem 0}
+.chips button{font-weight:500;font-size:.85rem;padding:.2rem .75rem;border-radius:999px}
+.chips button[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
+.chips button:disabled{opacity:.45;cursor:default}
+details.group{background:var(--panel);border:1px solid var(--rule);border-radius:10px;margin:.55rem 0}
+details.group>summary,details.cfg>summary{cursor:pointer;list-style:none;display:flex;
+  flex-wrap:wrap;gap:.2rem .8rem;align-items:baseline}
+details.group>summary{padding:.7rem 1rem}
+details.group>summary::-webkit-details-marker,details.cfg>summary::-webkit-details-marker{display:none}
+details.group>summary::before,details.cfg>summary::before{content:"";width:.42rem;height:.42rem;
+  border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);
+  align-self:center;margin-right:.1rem;transition:transform .12s}
+details.group[open]>summary::before,details.cfg[open]>summary::before{transform:rotate(45deg)}
+details.group>.body{padding:.2rem 1rem .8rem;border-top:1px solid var(--rule)}
+details.cfg{border-bottom:1px solid var(--rule)}
+details.cfg:last-of-type{border-bottom:0}
+details.cfg>summary{padding:.5rem 0}
+details.cfg>.body{padding:0 0 .6rem 1.1rem}
+summary .grow{flex:1 1 12rem;min-width:0}
+summary .nowrap{white-space:nowrap}
+summary .facts{font-family:var(--mono);font-size:.8rem;color:var(--soft);flex-basis:100%;
+  padding-left:1rem;overflow-wrap:anywhere}
+/* The shared list (`list.js`): controls above, pages below, the same on every
+   page that has a list at all. */
+.plist-bar{display:flex;flex-wrap:wrap;gap:.4rem 1rem;align-items:flex-end;margin:.6rem 0}
+.plist-bar label{margin:0 0 .2rem;font-size:.8rem;color:var(--muted)}
+.plist-filter{flex:1 1 16rem;min-width:0}
+.plist-filter .why{margin:.3rem 0 0}
+.plist-select select{width:auto;padding:.4rem .5rem}
+.plist-scroll{overflow-x:auto}
+.plist-foot{display:flex;flex-wrap:wrap;gap:.4rem 1rem;align-items:center;justify-content:space-between}
+.plist-info{margin:.4rem 0}
+.plist-pages{display:flex;flex-wrap:wrap;gap:.25rem;align-items:center}
+.plist-pages button{font-weight:500;padding:.25rem .6rem;min-width:2.2rem}
+.plist-pages button.current{background:var(--ok);border-color:var(--ok);color:#fff}
+.plist-pages button:disabled{opacity:.45;cursor:default}
+.plist-gap{color:var(--muted);padding:0 .2rem}
+td.wrap{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);font-size:.8rem}
+details.help{margin:.6rem 0}
+
+/* The builder: the form beside the files it writes, stacked on a narrow
+   screen. */
+.wrap.wide{max-width:76rem}
+.builder{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,26rem);gap:1rem;align-items:start}
+@media (max-width:60rem){.builder{grid-template-columns:minmax(0,1fr)}}
+.builder .panel h2{margin-top:0}
+.builder-out{align-self:stretch}
+.sticky{position:sticky;top:1rem}
+.builder-out pre{max-height:55vh;overflow:auto;font-size:.8rem}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:0 1rem}
+.card{border:1px solid var(--rule);border-radius:8px;padding:.3rem .9rem .8rem;margin:.7rem 0;background:var(--bg)}
+.rowline{display:flex;gap:.6rem;align-items:flex-end;justify-content:space-between}
+.rowline>div{flex:1 1 auto;min-width:0}
+.cond{display:grid;grid-template-columns:minmax(8rem,1.2fr) minmax(7rem,.8fr) minmax(8rem,1.2fr) auto;gap:0 .6rem;align-items:end}
+@media (max-width:40rem){.cond{grid-template-columns:minmax(0,1fr)}}
+.btns.end{align-items:flex-end}
+button.danger-ghost{background:none;border-color:var(--rule);color:var(--stop);font-weight:500}
+details.help>summary{cursor:pointer;color:var(--muted);font-size:.9rem}
+
+footer{border-top:1px solid var(--rule);margin-top:3rem;padding-top:1rem;
+       color:var(--muted);font-size:.85rem}
+footer a{color:var(--muted)}

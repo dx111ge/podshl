@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — support knowledge that reaches the machine with the problem</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+<style>
+  .hero{padding:2.5rem 0 1rem}
+  .hero h1{font-size:2rem;line-height:1.25;margin:0 0 .8rem;max-width:34ch}
+  .hero .lead{font-size:1.08rem;color:var(--soft);max-width:62ch}
+  .kicker{font-size:.8rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+          color:var(--ok);margin-bottom:.5rem}
+  .doors{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));margin:1.5rem 0}
+  .door{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:1rem 1.1rem;
+        display:flex;flex-direction:column}
+  .door h3{margin:.1rem 0 .4rem;font-size:1rem}
+  .door p{font-size:.92rem;color:var(--soft);flex:1}
+  .door .go{margin-top:.7rem;font-weight:600}
+  .door.lead-door{border-color:var(--ok);background:var(--okbg)}
+  figure{margin:1.4rem 0;padding:0}
+  figure svg{width:100%;height:auto;display:block}
+  figcaption{color:var(--muted);font-size:.87rem;margin-top:.5rem}
+  .stat{display:flex;gap:1.2rem;flex-wrap:wrap;margin:1rem 0}
+  .stat div{background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+            padding:.7rem 1rem;min-width:9rem}
+  .stat b{display:block;font-size:1.6rem;line-height:1.2}
+  .stat span{font-size:.82rem;color:var(--muted)}
+  .two{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(17rem,1fr))}
+  .rule-list li{margin:.5rem 0}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+
+<section class="hero">
+  <p class="kicker">Support that runs where the problem is</p>
+  <h1>The answer arrives on the broken machine, not in a ticket queue</h1>
+  <p class="lead">A project writes down what it knows about its own failures.
+  The user's own agent reads it, checks <em>their</em> machine under
+  <em>their</em> consent, and acts — with a dry run and an undo. The readings
+  never leave the device. Only a conclusion does, and only if they say so.</p>
+</section>
+
+<div class="doors">
+  <div class="door lead-door">
+    <h3>You maintain a project</h3>
+    <p>Publish two static files on a host you already have. No server, no
+    signing key, no model, no inference bill, and nobody paging you at 2am.</p>
+    <p class="go"><a href="/publish">What to publish</a> ·
+       <a href="/register">Claim your domain</a></p>
+  </div>
+  <div class="door">
+    <h3>Something is broken</h3>
+    <p>Install the client. It tells you what it can read on this machine before
+    it reads anything, and it can be told no at every step.</p>
+    <p class="go"><a href="/projects">Who publishes</a> ·
+       <a href="/security">What it does to a machine</a></p>
+  </div>
+  <div class="door">
+    <h3>You want to check us</h3>
+    <p>Everything we assert is in a signed, append-only log that is fetched
+    whole — there is no per-domain lookup, by design.</p>
+    <p class="go"><a href="/log">Read the log</a></p>
+  </div>
+</div>
+
+<h2>Why this exists</h2>
+
+<p>Support knowledge fails in four ways at once, and none of them is fixed by
+writing more of it.</p>
+
+<h3>1. The knowledge is not in the tickets</h3>
+
+<p>We measured 20,321 resolved German helpdesk tickets, looking for the thing
+everyone assumes is in there: the repair step.</p>
+
+<figure>
+<svg viewBox="0 0 720 132" role="img"
+     aria-label="Of 20,321 resolved tickets, 82.4 per cent contain no actionable repair step.">
+  <text x="0" y="16" font-size="13" font-weight="700" fill="currentColor">20,321 resolved tickets</text>
+  <rect x="0" y="30" width="593" height="40" rx="4" fill="#9A5B2B" opacity="0.85"/>
+  <rect x="593" y="30" width="127" height="40" rx="4" fill="#0F6E5C" opacity="0.9"/>
+  <text x="12" y="55" font-size="14" font-weight="700" fill="#fff">82.4 %</text>
+  <text x="12" y="90" font-size="12.5" fill="currentColor">no repair step at all — an acknowledgement, a</text>
+  <text x="12" y="107" font-size="12.5" fill="currentColor">closing note, a polite sentence</text>
+  <text x="605" y="55" font-size="13" font-weight="700" fill="#fff">17.6</text>
+  <text x="470" y="90" font-size="12.5" fill="currentColor">something actionable</text>
+</svg>
+<figcaption>Measured, not assumed. Training a model on this corpus reproduces
+what it contains — fluent, polite acknowledgements. It would work, and it would
+be worthless. The knowledge lives in maintainers' heads and never reaches the
+person at the moment it would help.</figcaption>
+</figure>
+
+<h3>2. Written instructions rot, because they describe a path</h3>
+
+<p>An article says <em>"click Start → Settings → System → Display →
+Advanced"</em>. After the next OS update it is wrong. That is not an edge case,
+it is the steady state — and the cause is structural: an article describes a
+<strong>path</strong>, but what it means is an <strong>intent</strong>.</p>
+
+<figure>
+<svg viewBox="0 0 720 210" role="img"
+     aria-label="A click path breaks when the interface changes; the intent behind it does not.">
+  <rect x="0" y="8" width="345" height="192" rx="9" fill="none" stroke="currentColor" opacity=".28"/>
+  <rect x="375" y="8" width="345" height="192" rx="9" fill="none" stroke="currentColor" opacity=".28"/>
+  <text x="16" y="32" font-size="12.5" font-weight="700" fill="#9A5B2B">WHAT THE ARTICLE SAYS</text>
+  <text x="391" y="32" font-size="12.5" font-weight="700" fill="#0F6E5C">WHAT IT MEANS</text>
+
+  <text x="16" y="60" font-size="12.5" fill="currentColor" opacity=".75">Start → Settings → System →</text>
+  <text x="16" y="80" font-size="12.5" fill="currentColor" opacity=".75">Display → Advanced → uncheck</text>
+  <line x1="14" y1="56" x2="242" y2="56" stroke="#8C2F2A" stroke-width="1.8"/>
+  <line x1="14" y1="76" x2="256" y2="76" stroke="#8C2F2A" stroke-width="1.8"/>
+  <text x="16" y="108" font-size="12" fill="currentColor" opacity=".75">Windows moved the control panel.</text>
+  <text x="16" y="126" font-size="12" fill="currentColor" opacity=".75">The German UI is labelled differently.</text>
+  <text x="16" y="144" font-size="12" fill="currentColor" opacity=".75">It was written for driver 545;</text>
+  <text x="16" y="162" font-size="12" fill="currentColor" opacity=".75">the customer runs 580.</text>
+  <text x="16" y="186" font-size="12.5" font-weight="700" fill="#8C2F2A">Wrong, and it looks right.</text>
+
+  <text x="391" y="62" font-size="13" font-weight="700" fill="currentColor">“turn off hardware</text>
+  <text x="391" y="81" font-size="13" font-weight="700" fill="currentColor">acceleration in the browser”</text>
+  <text x="391" y="110" font-size="12" fill="currentColor" opacity=".75">Survives ten redesigns. The agent</text>
+  <text x="391" y="128" font-size="12" fill="currentColor" opacity=".75">resolves the <tspan font-style="italic">how</tspan> against the machine</text>
+  <text x="391" y="146" font-size="12" fill="currentColor" opacity=".75">in front of it — actual OS, version,</text>
+  <text x="391" y="164" font-size="12" fill="currentColor" opacity=".75">language, driver revision.</text>
+  <text x="391" y="186" font-size="12.5" font-weight="700" fill="#0F6E5C">Still true next year.</text>
+</svg>
+<figcaption>The publisher supplies the <em>what</em>. The agent resolves the
+<em>how</em> against the live system, instead of against whatever the author saw
+two years ago.</figcaption>
+</figure>
+
+<h3>3. And nobody knows what is on the machine</h3>
+
+<p>This is the largest one. Today it is answered by asking the user to run
+<code>dxdiag</code> or paste <code>journalctl</code> output, over a multi-day
+round trip, and answered wrong. Half of all failures are the person not being in
+the situation the article assumes — and static text cannot notice that.</p>
+
+<h3>4. And now the evidence is disappearing</h3>
+
+<p>Something changed in the last few years, and it works against open source
+specifically. A user who got stuck used to file an issue. Now they ask an
+assistant, get unstuck in ninety seconds, and <strong>close the tab</strong>.
+The problem was real, it happened to hundreds of people, and the maintainer
+never hears about a single one of them.</p>
+
+<figure>
+<svg viewBox="0 0 720 250" role="img"
+     aria-label="A user used to file an issue. Now a local model solves it silently and the maintainer learns nothing. This project counts it instead.">
+  <defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto">
+    <path d="M0,0 L7,3.2 L0,6.4 z" fill="currentColor" opacity=".55"/></marker></defs>
+
+  <text x="0" y="14" font-size="11.5" font-weight="700" fill="currentColor" opacity=".6">BEFORE</text>
+  <rect x="0" y="24" width="150" height="34" rx="5" fill="var(--sub)"/>
+  <text x="12" y="45" font-size="12" fill="currentColor">user gets stuck</text>
+  <line x1="154" y1="41" x2="212" y2="41" stroke="currentColor" opacity=".55" stroke-width="1.5" marker-end="url(#b)"/>
+  <rect x="216" y="24" width="150" height="34" rx="5" fill="var(--sub)"/>
+  <text x="228" y="45" font-size="12" fill="currentColor">files an issue</text>
+  <line x1="370" y1="41" x2="414" y2="41" stroke="currentColor" opacity=".55" stroke-width="1.5" marker-end="url(#b)"/>
+  <rect x="418" y="24" width="302" height="34" rx="5" fill="#E4F0EC"/>
+  <text x="430" y="45" font-size="12" font-weight="600" fill="#0F6E5C">the project learns, and improves</text>
+
+  <text x="0" y="98" font-size="11.5" font-weight="700" fill="#9A5B2B">NOW</text>
+  <rect x="0" y="108" width="150" height="34" rx="5" fill="var(--sub)"/>
+  <text x="12" y="129" font-size="12" fill="currentColor">user gets stuck</text>
+  <line x1="154" y1="125" x2="212" y2="125" stroke="currentColor" opacity=".55" stroke-width="1.5" marker-end="url(#b)"/>
+  <rect x="216" y="108" width="150" height="34" rx="5" fill="var(--sub)"/>
+  <text x="228" y="129" font-size="12" fill="currentColor">asks a model</text>
+  <line x1="370" y1="125" x2="414" y2="125" stroke="currentColor" opacity=".55" stroke-width="1.5" marker-end="url(#b)"/>
+  <rect x="418" y="108" width="302" height="34" rx="5" fill="#F6EBE1"/>
+  <text x="430" y="129" font-size="12" font-weight="600" fill="#9A5B2B">solved in 90 seconds — and silent</text>
+  <text x="418" y="160" font-size="11.5" fill="#9A5B2B">The project never hears about it. The bug</text>
+  <text x="418" y="176" font-size="11.5" fill="#9A5B2B">stays, and the next person hits it too.</text>
+
+  <text x="0" y="212" font-size="11.5" font-weight="700" fill="#0F6E5C">HERE</text>
+  <rect x="0" y="216" width="366" height="34" rx="5" fill="var(--sub)"/>
+  <text x="12" y="237" font-size="12" fill="currentColor">solved locally, in ninety seconds, and counted</text>
+  <line x1="370" y1="233" x2="414" y2="233" stroke="currentColor" opacity=".55" stroke-width="1.5" marker-end="url(#b)"/>
+  <rect x="418" y="216" width="302" height="34" rx="5" fill="#E4F0EC"/>
+  <text x="430" y="237" font-size="12" font-weight="600" fill="#0F6E5C">the project learns, and still improves</text>
+</svg>
+<figcaption>The user keeps the ninety seconds. The maintainer gets the signal
+back.</figcaption>
+</figure>
+
+<div class="panel ok">
+  <p><strong>And the signal is sharper than an issue report ever was.</strong>
+  Every report says which <em>size</em> of model was involved. A small model
+  running on somebody's own laptop, solving a problem out of public knowledge,
+  means the answer was already out there and your product simply failed to
+  convey it. That is a documentation or interface defect, precisely located —
+  not a knowledge gap, and not something you would ever have learned from
+  silence.</p>
+</div>
+
+<p>Open source is where this bites hardest, because it runs on the willingness
+of people to report things. Nothing is shown below five distinct reporters, so
+what reaches a maintainer is a pattern rather than an anecdote — and it arrives
+without anybody having to write a paragraph, wait for a triage, or be told their
+report is a duplicate.</p>
+
+<h2>How it works</h2>
+
+<figure>
+<svg viewBox="0 0 720 330" role="img"
+     aria-label="A maintainer publishes two files. The operator mirrors them with provenance. The user's client reads the machine locally, matches, and acts.">
+  <!-- lanes -->
+  <rect x="0"   y="26" width="212" height="248" rx="9" fill="none" stroke="currentColor" opacity=".22"/>
+  <rect x="254" y="26" width="212" height="248" rx="9" fill="none" stroke="currentColor" opacity=".22"/>
+  <rect x="508" y="26" width="212" height="248" rx="9" fill="none" stroke="currentColor" opacity=".22"/>
+
+  <text x="12"  y="18" font-size="12" font-weight="700" fill="currentColor">MAINTAINER</text>
+  <text x="266" y="18" font-size="12" font-weight="700" fill="currentColor">OPERATOR — us</text>
+  <text x="520" y="18" font-size="12" font-weight="700" fill="currentColor">THE BROKEN MACHINE</text>
+
+  <!-- maintainer -->
+  <rect x="16" y="46" width="180" height="66" rx="6" fill="var(--sub)"/>
+  <text x="28" y="68" font-size="12" font-family="monospace" fill="currentColor">.podshl/agent.yaml</text>
+  <text x="28" y="86" font-size="12" font-family="monospace" fill="currentColor">.podshl/solutions/</text>
+  <text x="28" y="104" font-size="11" fill="currentColor" opacity=".7">on any static host</text>
+  <text x="16" y="140" font-size="11.5" fill="currentColor" opacity=".8">No server. No key.</text>
+  <text x="16" y="158" font-size="11.5" fill="currentColor" opacity=".8">No model. No bill.</text>
+  <text x="16" y="188" font-size="11.5" fill="currentColor" opacity=".8">Control of the URL</text>
+  <text x="16" y="206" font-size="11.5" fill="currentColor" opacity=".8">is the whole proof.</text>
+
+  <!-- operator -->
+  <rect x="270" y="46" width="180" height="52" rx="6" fill="var(--sub)"/>
+  <text x="282" y="68" font-size="12" font-weight="600" fill="currentColor">mirror, with the</text>
+  <text x="282" y="86" font-size="12" font-weight="600" fill="currentColor">commit it came from</text>
+  <rect x="270" y="112" width="180" height="52" rx="6" fill="var(--sub)"/>
+  <text x="282" y="134" font-size="12" font-weight="600" fill="currentColor">signed, append-only</text>
+  <text x="282" y="152" font-size="12" font-weight="600" fill="currentColor">transparency log</text>
+  <text x="270" y="190" font-size="11.5" fill="currentColor" opacity=".8">Fetched whole. There is</text>
+  <text x="270" y="208" font-size="11.5" fill="currentColor" opacity=".8">no “who asked about</text>
+  <text x="270" y="226" font-size="11.5" fill="currentColor" opacity=".8">what” to be had here.</text>
+
+  <!-- client -->
+  <rect x="524" y="46" width="180" height="46" rx="6" fill="var(--okbg)"/>
+  <text x="536" y="66" font-size="12" font-weight="600" fill="var(--ok)">reads, per consent</text>
+  <text x="536" y="83" font-size="11" fill="var(--ok)">only what was declared</text>
+  <rect x="524" y="104" width="180" height="46" rx="6" fill="var(--okbg)"/>
+  <text x="536" y="124" font-size="12" font-weight="600" fill="var(--ok)">matches the rule</text>
+  <text x="536" y="141" font-size="11" fill="var(--ok)">no model involved</text>
+  <rect x="524" y="162" width="180" height="46" rx="6" fill="var(--okbg)"/>
+  <text x="536" y="182" font-size="12" font-weight="600" fill="var(--ok)">dry run, then act</text>
+  <text x="536" y="199" font-size="11" fill="var(--ok)">and it can be undone</text>
+  <text x="524" y="240" font-size="11.5" font-weight="700" fill="currentColor">The readings stay here.</text>
+
+  <!-- arrows -->
+  <defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto">
+    <path d="M0,0 L7,3.2 L0,6.4 z" fill="currentColor" opacity=".55"/></marker></defs>
+  <line x1="200" y1="79" x2="264" y2="79" stroke="currentColor" opacity=".55" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="204" y="70" font-size="10" fill="currentColor" opacity=".7">fetched</text>
+  <line x1="456" y1="79" x2="518" y2="79" stroke="currentColor" opacity=".55" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="462" y="70" font-size="10" fill="currentColor" opacity=".7">served</text>
+  <line x1="614" y1="284" x2="614" y2="302" stroke="currentColor" opacity=".45" stroke-width="1.6" stroke-dasharray="4 3"/>
+  <line x1="614" y1="302" x2="366" y2="302" stroke="currentColor" opacity=".45" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#a)"/>
+  <text x="112" y="306" font-size="11.5" fill="currentColor" opacity=".8">optional report — a pseudonym, and no free text unless it was asked for</text>
+</svg>
+<figcaption>Matching is rule evaluation over closed lists, not generation. That
+is why a maintainer needs no model, and why a user who has configured none still
+gets the whole path.</figcaption>
+</figure>
+
+<h2>Why it is safe to let this near a machine</h2>
+
+<div class="two">
+  <div class="panel">
+    <h3>A publisher may only choose, never invent</h3>
+    <p>The list of what can be read, and the list of what can be changed, both
+    live in the client. A publisher names an operation and fills in declared
+    parameters. A careless or compromised one can mis-parameterise something
+    tested — validation and the dry run catch that — but cannot introduce a
+    capability. Extending either list is a client release people choose to
+    install.</p>
+  </div>
+  <div class="panel">
+    <h3>Nothing happens without being shown</h3>
+    <ul class="rule-list">
+      <li>Read, transmit and change are three separate consents.</li>
+      <li>The <em>refusing</em> button holds focus, so a stray Return never grants.</li>
+      <li>Whatever is withheld becomes a question, not a dead end.</li>
+      <li>Every change is dry-run first, and reversible.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="panel warn">
+  <p><strong>Unknown is not untrusted.</strong> A project that publishes a
+  perfectly good agent without ever hearing of us still works. Anything else
+  would make this a chokepoint rather than a participant — and a project absent
+  from our list has done nothing wrong.</p>
+</div>
+
+<h2>What this server holds</h2>
+<p class="why">Read live from the server's own answer, so this section cannot
+drift from what it actually does.</p>
+<div class="two">
+  <div class="panel">
+    <p class="lbl">Holds</p>
+    <ul id="holds"></ul>
+  </div>
+  <div class="panel">
+    <p class="lbl">Never holds</p>
+    <ul id="never"></ul>
+  </div>
+</div>
+<p class="why" id="loopback"></p>
+
+<h2>Two lines that are never crossed</h2>
+<div class="panel stop">
+  <p><strong>One project's figures are never shown to anyone else.</strong> Not
+  to a competitor, not in a pitch, not anonymised-but-guessable.</p>
+  <p><strong>No public ranking, ever.</strong> <em>"These projects are the
+  worst"</em> is an extortion suspicion in a chart. The dashboard about a project
+  belongs to whoever proved they control it, and to nobody else.</p>
+</div>
+
+<h2>The whole ecosystem, in two integers</h2>
+<p class="why">The only public figures there are. They show the size of the gap
+without naming anybody, which is the only version of this number that helps
+rather than threatens.</p>
+<div class="stat">
+  <div><b id="observed">—</b><span>products observed</span></div>
+  <div><b id="agents">—</b><span>with a connected agent</span></div>
+</div>
+
+<div class="panel lead-door" style="border-color:var(--ok)">
+  <h3 style="margin-top:0">If you maintain something people file bugs about</h3>
+  <p>The half hour it takes to write down the three failures you are tired of
+  explaining is the whole ask. <a href="/publish">See what to publish</a>, then
+  <a href="/register">claim your domain</a>.</p>
+</div>
+
+<h2>This is open source too</h2>
+<p>It would be a poor argument otherwise. The client is the thing that reads
+somebody's machine, so it has to be inspectable by the people it reads — and the
+protocol, both vocabularies and the log monitor are published so that a third
+party can check us rather than take our word.</p>
+<p id="source" class="why">The repository is not linked here yet.</p>
+
+<footer>
+  <p><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/notice">Notice and action</a> ·
+     <a href="/security">Security</a> · <a href="/log">Transparency log</a>
+     <span id="source-foot"></span></p>
+</footer>
+</div>
+
+<script>
+/* Everything below is read from the server. Nothing on this page recites a
+   promise it holds a copy of — a copy drifts, an answer cannot. */
+const li = (parent, text) => {
+  const n = document.createElement("li");
+  n.textContent = text;                      /* text, never markup */
+  document.getElementById(parent).appendChild(n);
+};
+const put = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v; };
+
+fetch("/", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    (o.holds || []).forEach(x => li("holds", x));
+    (o.never_holds || []).forEach(x => li("never", x));
+    put("loopback", o.loopback_fetching_enabled
+      ? "Loopback fetching is ON — this is a development deployment, not a public one."
+      : "Loopback fetching is off, as it must be outside a demo.");
+  })
+  .catch(e => li("holds", "could not be loaded: " + e));
+
+fetch("/operator", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    if (!o.source_url) return;
+    put("source", "The source is at " + o.source_url + ".");
+    const a = document.createElement("a");
+    a.href = o.source_url;
+    a.textContent = "Source";
+    const foot = document.getElementById("source-foot");
+    foot.textContent = " · ";
+    foot.appendChild(a);
+  })
+  .catch(() => {});
+
+fetch("/stats", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(s => {
+    put("observed", s.products_observed);
+    put("agents", s.products_with_an_agent);
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — the transparency log</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>The log</h1>
+
+<p>Everything asserted here is an entry in an append-only, signed log. This page
+is a convenience; it proves nothing by itself. What proves something is a
+<strong>second</strong> reader checking the same root.</p>
+
+<div class="panel">
+  <p class="lbl">Signed tree head</p>
+  <p class="mono lines" id="sth">loading…</p>
+  <p class="why">Pin the log id. A different key is a different log, whatever
+  the URL says — and publish the root somewhere others can see it, because two
+  monitors comparing roots at the same size is what detects a split view.
+  Consistency proofs alone only prove the log is self-consistent for you.</p>
+</div>
+
+<div class="panel warn">
+  <p><strong>There is no search box, deliberately.</strong> The whole log is
+  fetched and read here. A per-domain query would tell us which software you
+  care about — exactly the profile this design refuses to let anyone build —
+  so filtering happens in your browser, on what you already downloaded.</p>
+</div>
+
+<p class="why" id="count"></p>
+<div id="entries"></div>
+
+<footer>
+  <p>A third party can check this without us: the monitor that ships with the
+  specification, <code>spec/monitor/verify_log.py</code>, fetches
+  <code>/log/sth</code>, <code>/log/entries</code> and the consistency proofs and
+  verifies them against a key you pinned.</p>
+  <p><a href="/">PODSHL</a> · <a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a></p>
+</footer>
+</div>
+
+<script src="/list.js"></script>
+<script>
+/* Log entries carry values a stranger chose — anyone may start a claim on any
+   host — so every one of them lands as text. Nothing here writes markup. */
+const cell = (row, text, cls) => {
+  const td = document.createElement("td");
+  td.textContent = text;
+  if (cls) td.className = cls;
+  row.appendChild(td);
+  return td;
+};
+const kindOf = r => r.entry && r.entry.kind ? r.entry.kind : "?";
+const WATCH = new Set(["attestation_issued", "key_changed"]);
+
+const list = PodshlList(document.getElementById("entries"), {
+  table: ["Seq", "Kind", "Entry"],
+  noun: {one: "entry", many: "entries"},
+  filter: {
+    label: "Filter, on your machine",
+    placeholder: "a domain you control…",
+    note: "If you control a domain, look for entries naming it. An attestation_issued or " +
+          "key_changed you did not expect is the thing this log exists to make visible — " +
+          "including one we should not have issued.",
+    text: r => kindOf(r) + " " + JSON.stringify(r.entry),
+  },
+  sorts: [
+    {id: "new", label: "Newest first", compare: (a, b) => b.seq - a.seq},
+    {id: "old", label: "Oldest first", compare: (a, b) => a.seq - b.seq},
+  ],
+  empty: "Nothing in the log yet.",
+  render: r => {
+    const tr = document.createElement("tr");
+    cell(tr, String(r.seq), "mono");
+    const kind = cell(tr, kindOf(r), "mono");
+    if (WATCH.has(kindOf(r))) {
+      const tag = document.createElement("span");
+      tag.className = "tag flag";
+      tag.textContent = "check this was you";
+      kind.appendChild(document.createElement("br"));
+      kind.appendChild(tag);
+    }
+    cell(tr, JSON.stringify(r.entry), "wrap");
+    return tr;
+  },
+});
+
+/* **All of it, newest first, up to a stated number.** This asked for the first
+   thousand entries once and showed them as the log: at 2,501 entries the
+   newest 1,501 — the ones a maintainer checking for an attestation they did
+   not expect is looking for — were not on the page, and nothing said so.
+   Pages below the signed size never change and are cached as such. */
+const PAGE = 1000;
+const MAX_ENTRIES = 20000;
+const say = t => { document.getElementById("count").textContent = t; };
+const ACCEPT = {headers: {"Accept": "application/json"}};
+
+/* Both fetches are written out rather than wrapped: `W7` holds each page to an
+   allow-list of what it may reach, and reads it from the literal calls. */
+fetch("/log/sth", ACCEPT)
+  .then(r => r.json())
+  .then(async d => {
+    const s = d.sth || {};
+    document.getElementById("sth").textContent =
+      "log id " + s.log_id + "\nsize   " + s.tree_size + "\nroot   " + s.root_hash;
+    const size = Number(s.tree_size) || 0;
+    const rows = [];
+    for (let end = size; end > 0 && rows.length < MAX_ENTRIES; end -= PAGE) {
+      const start = Math.max(0, end - PAGE);
+      say("Reading entries " + (start + 1) + "–" + end + " of " + size + " …");
+      const page = await fetch("/log/entries?start=" + start + "&end=" + end + "&limit=" + PAGE, ACCEPT)
+        .then(r => r.json());
+      rows.push(...(page.entries || []));
+    }
+    list.set(rows);
+    say(rows.length >= size
+      ? "All " + size + " entries of the signed head, read in your browser."
+      : "The newest " + rows.length + " of " + size + " entries, read in your browser. " +
+        "The monitor in the specification reads every one of them.");
+  })
+  .catch(e => { document.getElementById("sth").textContent = "the log could not be read: " + e; });
+</script>
+</body>
+</html>

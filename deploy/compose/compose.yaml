@@ -1,0 +1,147 @@
+# The operator on one host, with Docker Compose.
+#
+#   cd deploy/compose
+#   docker compose --env-file .env up -d --build
+#
+# Five services. Two ports reach the network, 80 and 443, and both are Caddy's.
+# The ops view is published on the host's loopback only and reached with
+# `ssh -L 8726:127.0.0.1:8726 <host>`. Nothing else is published at all.
+#
+# What must survive the machine (deploy/README.md): the `state` volume — the
+# log's signing key — and the database. `backup.sh` beside this file copies both.
+name: podshl
+
+x-operator: &operator
+  build:
+    context: ../..
+    dockerfile: deploy/compose/Dockerfile
+  image: podshl-operator:local
+  restart: unless-stopped
+  env_file: .env
+  environment: &operator-env
+    PODSHL_DSN: "host=db port=5432 dbname=podshl user=podshl password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+    # Never PODSHL_ALLOW_LOOPBACK and never PODSHL_LOG_KEY_CREATE here: the one
+    # lets the crawler reach this machine, the other forks the log on a start
+    # that lost its key. Set empty here, which wins over anything in .env.
+    PODSHL_ALLOW_LOOPBACK: ""
+    PODSHL_LOG_KEY_CREATE: ""
+  volumes:
+    - state:/var/lib/podshl
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+  networks: [inside]
+  # Public resolvers rather than the host's, which at home is the router on the
+  # LAN — an address `firewall.sh` refuses to every container here. Quad9: no
+  # logging of addresses, and a foundation under Swiss law.
+  dns: &public-dns [9.9.9.9, 149.112.112.112]
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  db:
+    image: postgres:18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: podshl
+      POSTGRES_DB: podshl
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      # scram, not trust: the network is private, but every container on it
+      # would otherwise be the database's owner.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U podshl -d podshl"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [inside]
+    shm_size: 128m
+
+  # Applies the SQL migrations and exits; the three processes wait for it.
+  migrate:
+    <<: *operator
+    restart: "no"
+    command: ["python", "-m", "podshl.server.migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  server:
+    <<: *operator
+    command: ["python", "-m", "uvicorn", "podshl.server.app:app",
+              "--host", "0.0.0.0", "--port", "8725",
+              # Caddy is the only thing on `inside` that talks to this port;
+              # nothing publishes it.
+              "--proxy-headers", "--forwarded-allow-ips=*",
+              "--log-level", "warning"]
+    # Out as well: a claim is checked by fetching the project's challenge file.
+    # The same address guard applies.
+    networks: [inside, outside]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8725/', timeout=3).raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  ingest:
+    <<: *operator
+    command: ["python", "-m", "podshl.server.ingest.scheduler"]
+    # It fetches strangers' URLs, so it gets the internet as well — the crawler
+    # itself refuses private and loopback addresses before it connects.
+    networks: [inside, outside]
+
+  ops:
+    <<: *operator
+    # The operator's credential is in the environment of this one process
+    # only — not in .env, which the public server and the crawler also read.
+    env_file: [.env, ops.env]
+    command: ["python", "-m", "uvicorn", "podshl.server.ops_app:ops",
+              "--host", "0.0.0.0", "--port", "8726", "--log-level", "warning"]
+    ports:
+      - "127.0.0.1:8726:8726"
+    # Published ports need a network Docker may forward to; `inside` is
+    # internal, so this one joins `outside` too. It opens no connections.
+    networks: [inside, outside]
+
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    image: podshl-caddy:local
+    restart: unless-stopped
+    environment:
+      PODSHL_SITE: "${PODSHL_SITE:-:80}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    depends_on: [server]
+    networks: [inside, outside]
+    dns: *public-dns
+
+# Fixed ranges, so `firewall.sh` can name them. Change both together.
+networks:
+  # No route out. The database and the migration live only here.
+  inside:
+    internal: true
+    ipam:
+      config: [{subnet: 172.30.1.0/24}]
+  outside:
+    ipam:
+      config: [{subnet: 172.30.0.0/24}]
+
+volumes:
+  pgdata:
+  state:
+  caddy-data:
+  caddy-config:
+  caddy-logs:

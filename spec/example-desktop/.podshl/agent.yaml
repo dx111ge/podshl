@@ -1,0 +1,128 @@
+# A second worked example: a project publishing fixes for software it did not
+# write.
+#
+# The first example is a Python project answering for its own package. This one
+# is the case the open-source branch actually lives on, and the one that reads
+# as a legal question until you look at it: a **desktop environment** answering
+# for how the **NVIDIA proprietary driver** behaves under **Wayland**. The
+# publisher is neither of them. It does not own either name and does not claim
+# to — it is the project users blame when their windows go black, because it is
+# the thing they can see.
+#
+# That is nominative use, and it is deliberate rather than tolerated:
+#
+#   * `problem_classes` names other people's software. A project that repairs
+#     `nvidia.driver` behaviour has to be able to write `nvidia.driver`, or it
+#     cannot describe what it fixes.
+#   * The display name is the **verified anchor**, never a field in this file.
+#     There is nowhere here to type somebody else's name, so this manifest can
+#     say what it repairs without ever being able to claim who it is.
+#   * A notice aimed at a *problem class* is refused by the operator, and the
+#     refusal is written down. If a takedown could reach a class, a vendor could
+#     forbid anyone from naming their software out loud — which would end this
+#     branch, because every project on it fixes something it did not write.
+#
+# The technical shape is worth reading too. The decisive fact is one environment
+# variable — whether this is a Wayland session at all — and everything else is a
+# refinement of it. That is normal: most cross-vendor problems turn on one
+# reading that nobody thinks to ask for.
+
+endpoint: https://example.net/podshl/
+commit: 9d3e71b
+status: active
+
+langs: [en, de]
+
+# Named for what breaks, not for who is at fault. `nvidia.driver.*` is a
+# description of the subject, and `severity` in a solution is about the user's
+# day rather than about anybody's engineering.
+problem_classes:
+  - nvidia.driver.wayland-black-windows
+  - nvidia.driver.wayland-cursor-flicker
+  - wayland.session.app-falls-back-to-xwayland
+
+collect:
+  # The one that decides everything. An X11 session with the same driver and the
+  # same application does not have this problem at all, so a solution that
+  # matched without reading this would be advice given to the wrong half of the
+  # users.
+  - id: session.type
+    kind: machine
+    describes: Whether this is a Wayland or an X11 session
+    why: The whole class exists only under Wayland; under X11 the same
+         setup is fine
+    read: { op: env_var, name: XDG_SESSION_TYPE }
+
+  - id: gpu.name
+    kind: machine
+    describes: The graphics card
+    why: Separates the proprietary NVIDIA stack from an AMD or Intel one,
+         where none of this applies
+    read:
+      op: run_tool
+      tool: nvidia-smi
+      args: ["--query-gpu=name", "--format=csv,noheader"]
+
+  # Version readings are coarsened to major.minor before they may travel, by
+  # the generalisation policy keyed off the reading id. Nothing here has to ask
+  # for that; naming it `..._version` is what selects it.
+  - id: gpu.driver_version
+    kind: machine
+    describes: NVIDIA driver version
+    why: Explicit sync landed in 555; before it, frames and their fences
+         arrive out of order
+    read:
+      op: run_tool
+      tool: nvidia-smi
+      args: ["--query-gpu=driver_version", "--format=csv,noheader"]
+
+  - id: os.kernel
+    kind: machine
+    describes: Kernel version
+    why: The DRM modesetting path this depends on differs across kernel series
+    read: { op: run_tool, tool: uname, args: ["-r"] }
+
+  # A reading with a question attached. `nvidia_drm.modeset` is a kernel module
+  # parameter, and there is no op in the read vocabulary that can read one —
+  # correctly, because an op that could read an arbitrary path under /sys is an
+  # op that could read a great deal else. So the reading tried here is the
+  # observable *consequence* of it, and the question is the fallback.
+  #
+  # The report says which of the two answered. A solution that matched on the
+  # read value and failed is a defect in this rule and worth a maintainer's
+  # afternoon; one that matched on the answered value may simply be somebody
+  # who guessed.
+  - id: nvidia.drm_modeset
+    kind: machine
+    describes: Whether the DRM kernel modesetting path is active
+    why: Without it a Wayland compositor never gets a working buffer, and
+         every window is black
+    read: { op: env_var, name: __GLX_VENDOR_LIBRARY_NAME }
+    prompt: Does `cat /sys/module/nvidia_drm/parameters/modeset` print Y?
+    choices: ["Y", "N", "no such file", "I would rather not run that"]
+
+  # Asked of a person, because no reading can answer it. `choices` is what makes
+  # this fact able to reach the maintainer at all: a bounded answer may travel,
+  # free text never does.
+  - id: app.toolkit
+    kind: human
+    describes: What the affected application is built with
+    why: Electron, GTK and Qt take three different paths to the screen,
+         and break differently
+    prompt: Which of these describes the application that goes black?
+    choices:
+      - an Electron or Chromium app
+      - a GTK app
+      - a Qt app
+      - everything, including the desktop itself
+
+escalate:
+  reason: Nothing published matches these readings, and this may be a
+          driver bug rather than ours
+  queue: github-issues
+  target: https://example.net/desktop/issues
+  reply_via: [ticket_url, none]
+
+solutions:
+  - solutions/nvidia-wayland-black-windows.md
+  - solutions/nvidia-wayland-cursor-flicker.md

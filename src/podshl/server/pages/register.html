@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — claim your domain</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>Claim your domain</h1>
+
+<p>Proving you control a host unlocks the dashboard about your own project —
+free, private, and conditional on nothing. It is also how you replace a token
+you have lost: <strong>the same first three steps</strong>, because control of
+the domain is the only credential this system has. Step four says where your
+files are, and a project that has already been fetched does not repeat it.</p>
+
+<p>Proving control means <strong>publishing something you were just given</strong>,
+not pointing at something already published. Anyone can read a public file, so a
+file alone would let any passer-by claim any host that followed the
+instructions.</p>
+
+<div class="panel warn">
+  <p>There is no password, no email and no session. We store only the hash of
+  your token, so we cannot show it to you again and we cannot recover it for
+  you. That is deliberate — an account we could recover is an account somebody
+  could talk us into recovering for them.</p>
+</div>
+
+<h2>1 — the domain</h2>
+<label for="host">Your project's host</label>
+<input type="text" id="host" placeholder="example.org" autocomplete="off">
+<div class="btns"><button class="primary" id="start">Get my challenge</button></div>
+<p class="why" id="start-msg"></p>
+
+<h2>2 — publish this file</h2>
+<div class="panel" id="step2" hidden>
+  <p class="lbl">Put exactly this text at:</p>
+  <pre id="where"></pre>
+  <p class="lbl">Contents:</p>
+  <pre id="nonce"></pre>
+  <p class="why">Not a secret — it has to be readable by anyone, which is what
+  makes it proof of control. Leave it published: it is also how we re-confirm
+  later that you still control the host.</p>
+  <p class="lbl">And keep this. It is shown once and never published.</p>
+  <pre id="proof"></pre>
+  <p class="why">A public file shows that <em>somebody</em> controls this host.
+  It cannot show that the somebody is you — anyone can read it, and on a forge
+  anyone can read the repository it lives in. This second half is what makes the
+  claim yours: it is the value the published one is a hash of, we never publish
+  it, and step three will not finish without it. Nothing else on this page is
+  secret.</p>
+</div>
+
+<h2>3 — verify</h2>
+<div class="btns"><button class="primary" id="verify" disabled>I have published it</button></div>
+<p class="why" id="verify-msg"></p>
+
+<div class="panel ok" id="result" hidden>
+  <p class="lbl">Your token. This is shown once.</p>
+  <pre id="token"></pre>
+  <p id="superseded"></p>
+  <label class="inline"><input type="checkbox" id="remember">
+    Remember it in this browser (this device only)</label>
+  <p class="why">Storing it here is a convenience, not a backup. Clearing your
+  browser data clears it, and forgetting it is not the same as revoking it.</p>
+</div>
+
+<div id="step4" hidden>
+<h2>4 — where your files are</h2>
+<p>The three steps above prove you control the host. They do not say where your
+<code>.podshl/</code> is, and until you do, nothing is fetched — a token on its
+own is an account with no project attached to it.</p>
+<label for="prefix">The directory your <code>.podshl/</code> sits in</label>
+<input type="text" id="prefix" placeholder="https://example.org/" autocomplete="off">
+<p class="why">Leave it as the bare host if <code>.podshl/</code> is at the top.
+On shared hosting — a forge's pages, one project among several — give the path,
+and nothing outside it is ever fetched.</p>
+<div class="btns"><button class="primary" id="enrol">Fetch my files</button></div>
+<p class="why" id="enrol-msg"></p>
+<div class="btns"><a href="/dashboard" id="to-dash"><button>Open my dashboard</button></a></div>
+</div>
+
+<h2>If you lose it</h2>
+<p>Run these same three steps again. The new token works immediately and
+<strong>every token issued for this domain before it stops working</strong>.
+Anyone who can publish the challenge file already controls the domain, which is
+the only thing this system was ever checking.</p>
+
+<h2>If you still have it and think it leaked</h2>
+<p>Revoke it from your dashboard. That stops <em>every</em> token for the domain
+— including the one you are holding — and then you re-prove. It revokes all of
+them because they are indistinguishable to you: you saw each one exactly once,
+so "revoke the one that leaked" is not an instruction anybody could follow.</p>
+
+<h2>If you no longer want to take part</h2>
+<p>Withdraw from your dashboard. The mirror stops, the attestation is withdrawn,
+and your anchor goes back to <code>unknown</code> — where every project starts,
+and which says nothing about anybody. Nothing in your repository is touched, and
+you can come back whenever you like.</p>
+
+<footer>
+  <p><a href="/publish">What to publish</a> · <a href="/security">What this does to a machine</a>
+     · <a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a></p>
+</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const say = (id, t) => { $(id).textContent = t; };
+let HOST = "";
+
+$("start").addEventListener("click", () => {
+  HOST = $("host").value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!HOST) { say("start-msg", "Enter the host your project is served from."); return; }
+  say("start-msg", "asking…");
+  fetch("/claim/" + encodeURIComponent(HOST), {method: "POST"})
+    .then(r => r.json())
+    .then(o => {
+      if (o.code) { say("start-msg", o.reason || o.code); return; }
+      say("where", o.put_this_at);
+      say("nonce", o.publish);
+      /* Held in the page, never in localStorage. It is spent on the next
+         request and a copy that outlives the claim is a copy that can leak. */
+      say("proof", o.proof);
+      $("step2").hidden = false;
+      $("verify").disabled = false;
+      say("start-msg", o.note || "");
+    })
+    .catch(e => say("start-msg", "could not start: " + e));
+});
+
+$("verify").addEventListener("click", () => {
+  say("verify-msg", "fetching your file…");
+  fetch("/claim/" + encodeURIComponent(HOST) + "/verify", {
+    method: "POST",
+    headers: {"X-Podshl-Claim-Proof": $("proof").textContent.trim()},
+    credentials: "omit",
+  })
+    .then(r => r.json())
+    .then(o => {
+      if (o.code) {
+        say("verify-msg", (o.reason || o.code) + (o.detail ? " — " + o.detail : "")
+          + (o.note ? "  " + o.note : ""));
+        return;
+      }
+      say("verify-msg", "");
+      say("token", o.token);
+      say("superseded", o.superseded
+        ? o.previous
+        : "No token existed for this domain before now.");
+      $("result").hidden = false;
+      $("step4").hidden = false;
+      $("prefix").value = "https://" + HOST + "/";
+      $("to-dash").setAttribute("href", "/dashboard#" + HOST);
+      if ($("remember").checked) {
+        try { localStorage.setItem("podshl.claim." + HOST, o.token); } catch (_) {}
+      }
+    })
+    .catch(e => say("verify-msg", "could not verify: " + e));
+});
+
+/* The token goes in a header and never in the form or the URL, the same rule
+   the dashboard obeys. It is read back off the panel rather than held in a
+   variable so that there is one place it lives on this page. */
+$("enrol").addEventListener("click", () => {
+  const token = $("token").textContent.trim();
+  if (!HOST || !token) { say("enrol-msg", "verify first."); return; }
+  say("enrol-msg", "enrolling…");
+  fetch("/claim/" + encodeURIComponent(HOST) + "/source", {
+    method: "POST",
+    headers: {"X-Podshl-Claim": token, "Content-Type": "application/json"},
+    credentials: "omit",
+    body: JSON.stringify({prefix: $("prefix").value.trim()}),
+  })
+    .then(r => r.json())
+    .then(o => {
+      if (o.code) { say("enrol-msg", o.reason || o.code); return; }
+      say("enrol-msg", o.manifest_url + " — " + o.note);
+    })
+    .catch(e => say("enrol-msg", "could not enrol: " + e));
+});
+
+/* Ticking the box after the token is on screen still stores it — the checkbox
+   is about this device, not about timing. */
+$("remember").addEventListener("change", ev => {
+  if (!HOST) return;
+  try {
+    if (ev.target.checked) localStorage.setItem("podshl.claim." + HOST, $("token").textContent);
+    else localStorage.removeItem("podshl.claim." + HOST);
+  } catch (_) {}
+});
+</script>
+</body>
+</html>

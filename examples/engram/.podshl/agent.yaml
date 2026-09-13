@@ -1,0 +1,194 @@
+# engram — what a user's own agent should read when engram will not start,
+# will not find anything, or will not talk to a model.
+#
+# Three files on a host engram already controls — this one, the solutions it
+# lists, and the challenge file. No server, no signing key, no model, no
+# inference bill. Everything below is matched against readings taken on the
+# user's own machine under their consent and sent, after a second consent that
+# names the operator and shows the values, to the operator's endpoint, which
+# walks these rules and stores nothing; nothing here is generated.
+#
+# Note what is not here: a name. The display name is the verified anchor, so
+# there is nowhere to type somebody else's. `problem_classes` names Ollama on
+# purpose — engram is the thing the user can see when the model endpoint is
+# down, so it has to be able to say `ollama`. That is nominative use.
+
+endpoint: https://dx111ge.github.io/engram/
+commit: v1.2.0
+status: active
+
+# English is the obligation. German is here because the maintainer speaks it;
+# a user whose language is missing gets English rather than nothing.
+langs: [en, de]
+
+problem_classes:
+  - engram.install.no-build-for-this-platform
+  - engram.install.wrong-architecture-zip
+  - engram.search.empty-after-embedding-change
+  - engram.ingest.ner-slow-without-gpu
+  - ollama.endpoint.unreachable
+
+collect:
+  # engram ships four zips and no source build. Which one applies is decided by
+  # exactly these two readings, and one combination has no zip at all — which
+  # is a definitive answer rather than a guess, and the reason this is first.
+  - id: os.name
+    kind: machine
+    describes: Operating system
+    why: There is one release archive per platform and picking the wrong one is
+         the most common way engram never starts at all
+    read: { op: os_fact, name: os }
+
+  - id: os.arch
+    kind: machine
+    describes: Processor architecture
+    why: engram is a single native binary. x86_64 and aarch64 archives are not
+         interchangeable, and there is no build for one platform at all
+    read: { op: os_fact, name: arch }
+
+  - id: os.kernel
+    kind: machine
+    describes: Kernel version
+    why: The Linux archives are built against a minimum glibc, which tracks the
+         distribution rather than the kernel — but the kernel is what a user can
+         read without installing anything
+    read: { op: run_tool, tool: uname, args: ["-r"] }
+
+  # NER runs on GLiNER2 via ONNX and is GPU-accelerated when there is a GPU.
+  # Without one, ingest still works and is simply slow — so this reading turns
+  # "engram is broken" into "engram is doing what it said it would".
+  - id: gpu.name
+    kind: machine
+    describes: The graphics card
+    why: Entity extraction is GPU-accelerated. On a machine without one, ingest
+         is slow rather than broken, and that is worth knowing before anybody
+         files a bug
+    read:
+      op: run_tool
+      tool: nvidia-smi
+      args: ["--query-gpu=name", "--format=csv,noheader"]
+
+  # Coarsened to a bucket before it may travel, because the id ends in `_mib`.
+  # Nothing here asks for that; the name is what selects it.
+  - id: gpu.vram_total_mib
+    kind: machine
+    describes: Video memory
+    why: The embedding and NER models have to fit beside whatever the user is
+         already running on the card
+    read:
+      op: run_tool
+      tool: nvidia-smi
+      args: ["--query-gpu=memory.total", "--format=csv,noheader"]
+
+  # A reading with a question attached. The reading is tried first; the question
+  # is asked only if it comes back empty. One fact, written once, able to arrive
+  # either way — and the report says which happened, so a rule that matched on a
+  # read value and failed is a defect worth an afternoon, and one that matched on
+  # an answered value may simply be somebody who guessed.
+  - id: ollama.host
+    kind: machine
+    describes: Where the local model endpoint is expected
+    why: engram talks to any OpenAI-compatible endpoint. Almost every "the chat
+         does nothing" report is that endpoint not being there
+    read: { op: env_var, name: OLLAMA_HOST }
+    prompt: Is Ollama running, and on which address?
+    choices:
+      - "http://localhost:11434 — the default"
+      - "somewhere else, I set OLLAMA_HOST"
+      - "OLLAMA_HOST is not set and I am not running Ollama"
+      - "I use a different OpenAI-compatible endpoint"
+
+  # Asked of a person, because nothing on the machine can answer it. `choices`
+  # is what makes this fact able to reach the maintainer at all: a bounded
+  # answer may travel, free text never does.
+  - id: engram.symptom
+    kind: human
+    describes: What actually went wrong
+    why: The four failures below look identical from the outside — nothing
+         happens — and are fixed in four different places
+    prompt: Which of these is closest to what you are seeing?
+    choices:
+      - "the binary will not start at all"
+      - "search returns nothing, and it used to work"
+      - "document ingest is extremely slow"
+      - "the chat or debate never answers"
+      - "something else"
+
+  # Asked of engram itself, not of the person. This used to be a question —
+  # "which release are you running?" with five choices — so every report carried
+  # a version somebody picked from memory, and the dashboard filed it under
+  # facts people typed. engram prints its version on the first line of its
+  # usage, which is what any argument it does not know produces, so `--version`
+  # answers even though engram has no such flag. If engram is not on the search
+  # path the client asks where it is; nothing is searched for. It travels
+  # exactly — 1.2.2, not 1.2.x — because it is engram's own version, and the
+  # last component is the fix that shipped.
+  - id: engram.version
+    kind: machine
+    describes: Which engram
+    why: The .brain format and the embedding defaults changed between releases,
+         and a brain written by one is not always read the same way by the next
+    read: { op: program_version, program: engram }
+
+  # The same question of Ollama, asked two ways, because it is installed two
+  # ways: as a program, and — very often — as a container, where the host has
+  # no `ollama` at all. Docker is asked which version of the image is running;
+  # nothing is executed inside the container.
+  - id: ollama.version
+    kind: machine
+    describes: Which Ollama, if it is installed as a program
+    why: Model names and the API changed between Ollama releases, and a model
+         engram asks for may not exist in an older one
+    read: { op: program_version, program: ollama }
+
+  - id: ollama.container_version
+    kind: machine
+    describes: Which Ollama, if it runs in Docker
+    why: Many people run Ollama as a container, and then the host has no ollama
+         program to ask
+    read: { op: container_image_version, image: ollama/ollama }
+
+  # The lines Ollama wrote when the chat failed — which name the model it could
+  # not find, or the address it is bound to, in its own words. Offered, never
+  # read on our say-so: the client can load the container's output, or the file
+  # the person points at, for them to cut down; what they keep is anonymised,
+  # shown again, and sent only if they agree.
+  - id: ollama.log
+    kind: human
+    describes: What Ollama logged when the chat failed
+    why: A model that was never pulled and an address engram is not asking are
+         both one line in Ollama's log, and indistinguishable from outside it
+    prompt: Copy the lines Ollama wrote around the failure, if you can
+    log: { container: ollama/ollama, file: server.log }
+    required: false
+
+  # A free-text question, withheld by default. The user is shown the exact text
+  # that would be sent, can edit it, is told who receives it, and the refusing
+  # button holds focus. If they decline it still arrives as a null in `stated`,
+  # so the question is known to have been asked and gone unanswered.
+  - id: error.text
+    kind: human
+    describes: The error you saw
+    why: The exact wording usually names the failing step. A paraphrase rarely
+         does, and no policy can generalise a stack trace
+    prompt: Paste the error message, if you have one
+    required: false
+
+# engram's own words. A reader in French met "a brain written by one release" as
+# "un cerveau" — an organ — because their model translated a product's term as
+# the ordinary word it resembles. Listed here, it reaches them as written.
+glossary:
+  keep: [brain]
+
+escalate:
+  reason: Neither the readings nor a published solution explain this
+  queue: github-issues
+  target: https://github.com/dx111ge/engram/issues
+  reply_via: [ticket_url, none]
+
+solutions:
+  - solutions/no-build-for-intel-mac.md
+  - solutions/wrong-architecture-zip.md
+  - solutions/search-empty-after-embedding-change.md
+  - solutions/ingest-slow-without-gpu.md
+  - solutions/model-endpoint-not-reachable.md

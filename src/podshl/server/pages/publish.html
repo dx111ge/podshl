@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PODSHL — what to publish</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/podshl.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">PODSHL</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/projects">Projects</a><a href="/log">Log</a>
+  <a href="/security">Security</a><a href="/notice">Notice</a>
+</div></header>
+
+<div class="wrap">
+<h1>What an open-source project publishes</h1>
+
+<p>Two files, on a host you already control. A forge, a bare nginx and a static
+host all serve them identically, because they are fetched as plain HTTPS and no
+forge API is involved.</p>
+
+<pre><code>your-project/
+  .podshl/
+    agent.yaml
+    solutions/
+      wheel-missing-for-python.md</code></pre>
+
+<div class="panel ok">
+  <p><strong>Rather not write YAML?</strong> <a href="/publish/build">The builder</a>
+  writes both files from a form, and checks them with the same code that ingests
+  them before you publish anything.</p>
+</div>
+
+<h2>What it costs you</h2>
+<table>
+  <tr><td>A server</td><td>No — we mirror your files and serve from our copy</td></tr>
+  <tr><td>A model, or an inference bill</td><td>No — your file is <em>matched</em>, never generated</td></tr>
+  <tr><td>A signing key</td><td>No — control of the URL is the proof</td></tr>
+  <tr><td>A domain</td><td>No — whatever already serves your repository is enough</td></tr>
+  <tr><td>Answering support at 2am</td><td>No — the user's client does the reading and the acting</td></tr>
+</table>
+
+<h2><code>agent.yaml</code></h2>
+<p class="why">This is the worked example the specification ships, served here as
+the same bytes rather than retyped — so this page cannot drift from the format it
+describes. <a href="/example/agent.yaml">Download it</a>.</p>
+<pre><code id="example">loading…</code></pre>
+
+<h2>If you fix software you did not write</h2>
+<p>Most projects that would use this are in that position. A desktop
+environment gets the bug report when NVIDIA's driver and Wayland disagree and
+every window goes black — not because it is at fault, but because it is the
+thing the user can see. The question that stops people is not <em>how do I
+write the file</em>, it is <em>am I allowed to name them</em>.</p>
+
+<div class="panel ok">
+  <p><strong>Yes, and the format is built so that you cannot do anything
+  else.</strong></p>
+  <ul>
+    <li><code>problem_classes</code> names other people's software on purpose.
+        A project that repairs <code>nvidia.driver</code> behaviour has to be
+        able to write <code>nvidia.driver</code>, or it cannot say what it
+        fixes.</li>
+    <li><strong>There is no name field.</strong> Your display name is the
+        anchor you proved control of, so there is nowhere in this file to type
+        somebody else's. You can describe what you repair without ever being
+        able to claim who you are.</li>
+    <li><strong>A notice cannot reach a problem class.</strong> Aimed at one, it
+        is refused and the refusal is recorded. If a takedown could reach a
+        class, whoever owns a name could forbid anyone from saying it — and
+        every project here fixes something it did not write.</li>
+  </ul>
+</div>
+
+<p class="why">The second worked example, served as its own bytes like the
+first. A desktop project answering for a driver and a display protocol, owning
+neither. <a href="/example/desktop/agent.yaml">Download it</a>.</p>
+<pre><code id="example-desktop">loading…</code></pre>
+
+<p>Note the shape as well as the licence question: the decisive fact is a single
+environment variable — whether this is a Wayland session at all — and everything
+else refines it. Under X11 the same driver and the same application are fine, so
+a solution that matched without reading it would be advice given to the wrong
+half of the users. Cross-vendor problems usually turn on one reading nobody
+thinks to ask for.</p>
+
+<h2>A reading with a question attached</h2>
+<p>A probe may carry both a <code>read</code> and a question. The reading is
+tried first; the question is asked only if it comes back empty. One fact,
+written once, able to arrive either way — and the report tells you which
+happened, so an outcome that turned on an answer is not counted against a rule
+it never tested.</p>
+
+<div class="panel warn">
+  <p><strong>Attach <code>choices</code> whenever you attach a question.</strong>
+  A bounded answer may travel to you; free text never does. Without them that
+  fact simply never reaches you.</p>
+</div>
+
+<h2>What you may ask to be read</h2>
+<p>Only what the read vocabulary already contains. An op or a tool outside it is
+refused <em>when your file is fetched</em>, not when a user is waiting — and the
+refusal names what would have been permitted.</p>
+<p><a href="/vocabulary/reads.json">The read vocabulary</a> ·
+   <a href="/vocabulary/actions.json">The action vocabulary</a> — both the same
+   bytes the specification publishes.</p>
+<p class="why">Extending them is a client release, not a field you can set. That
+is the whole safety property: a publisher chooses an operation, it cannot ship
+one.</p>
+
+<h2>Why bother at all</h2>
+
+<div class="panel ok">
+  <p><strong>You are losing bug reports you never knew you had.</strong> Someone
+  who got stuck used to file an issue. Now they ask an assistant, get unstuck in
+  ninety seconds and close the tab. The problem was real and it happened to
+  hundreds of people, and you hear about none of them — so the bug stays, and
+  the next person hits it too.</p>
+  <p>This keeps the ninety seconds and gives you the signal back. Nothing
+  reaches you below five distinct reporters, so what arrives is a pattern rather
+  than an anecdote, and nobody had to write a paragraph or wait for triage.</p>
+  <p><strong>It is a sharper signal than an issue ever was.</strong> Every
+  report says which <em>size</em> of model was involved. A small one running on
+  somebody's own laptop, solving your problem out of public knowledge, means the
+  answer was already out there and your documentation or your interface failed
+  to convey it — a defect you can locate, rather than a knowledge gap.</p>
+</div>
+
+<h2>What you get back</h2>
+<table>
+  <tr><td class="mono">observed</td><td>Read from the machine. A solution that matched on one of these and failed is a defect in your rule, and worth your time</td></tr>
+  <tr><td class="mono">stated</td><td>The person told us. A failure here may be nothing of the sort — they may simply have answered wrong</td></tr>
+  <tr><td class="mono">decided_on</td><td>The facts the answer actually turned on. Read this against <code>stated</code> first: that intersection is the whole question</td></tr>
+  <tr><td class="mono">dropped</td><td>Withheld. Anything identifying never travels, whoever supplied it</td></tr>
+  <tr><td class="mono">description</td><td>Free text the user read and agreed to send — usually the error message, which is the one thing no policy can generalise for you</td></tr>
+</table>
+
+<h2>Getting it wrong is cheap</h2>
+<p>You cannot break a user's machine from here. The client owns both
+vocabularies, every action is dry-run and reversible, and the user consents per
+item with the refusing button holding focus. The worst outcome of a bad
+<code>agent.yaml</code> is that it is refused when fetched and you are told why.</p>
+
+<div class="btns">
+  <a href="/register"><button class="primary">Claim your domain</button></a>
+  <a href="/security"><button>What this does to a user's machine</button></a>
+</div>
+
+<footer>
+  <p><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/notice">Notices</a></p>
+</footer>
+</div>
+
+<script>
+/* The example is fetched, not embedded, so this page cannot teach a format the
+   specification has stopped shipping. */
+const example = (url, into) =>
+  fetch(url)
+    .then(r => r.ok ? r.text() : Promise.reject(r.status))
+    .then(t => { document.getElementById(into).textContent = t; })
+    .catch(e => { document.getElementById(into).textContent =
+      "the worked example could not be loaded: " + e; });
+
+example("/example/agent.yaml", "example");
+example("/example/desktop/agent.yaml", "example-desktop");
+</script>
+</body>
+</html>

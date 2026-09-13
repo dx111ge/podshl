@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podshl.example/spec/solution.json",
+  "title": "Solution",
+  "description": "One solution: YAML front matter and a human body, so that one solution is one pull request. The `answers` block is applicability metadata, not a rule engine — nothing is downloaded and evaluated on the client, and matching happens on the server against the signature. The body is what a person reads; `proposes` is what the client may be asked to do, and every entry must exist in the client's action vocabulary.",
+  "type": "object",
+  "required": ["id", "answers", "text_by_lang"],
+  "properties": {
+    "id": { "type": "string" },
+    "answers": {
+      "type": "object",
+      "required": ["problem_class"],
+      "properties": {
+        "problem_class": { "type": "string" },
+        "when": {
+          "type": "object",
+          "description": "Applicability conditions on collected readings. Compared exactly, along the path actually walked — a wrong guess would reach a user."
+        }
+      }
+    },
+    "severity": { "type": "string", "enum": ["info", "low", "medium", "high"] },
+    "proposes": { "type": "array", "items": { "$ref": "action-call.json" } },
+    "text_by_lang": {
+      "type": "object",
+      "description": "The human part, by language. Must contain `en`.",
+      "required": ["en"]
+    }
+  }
+}

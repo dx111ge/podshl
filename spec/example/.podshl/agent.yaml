@@ -1,0 +1,88 @@
+# A worked example: what an open-source Python project publishes.
+#
+# This is the whole of it. No domain, no server, no signing key, and no model —
+# a static file at a location the project already controls, plus the solutions
+# it lists. A forge, a bare nginx and a static host all serve it identically,
+# because it is fetched as plain HTTPS and there is no forge API involved.
+#
+# Nothing here is generated. `problem_classes` is a closed list, every `read:`
+# names an op from the client's read vocabulary, and a solution matches on
+# `answers.when` over what was actually read. The matching happens on the
+# operator's endpoint: the user's client takes the readings under consent,
+# asks again before sending them — naming the operator, showing the values —
+# and the operator walks these rules against them and keeps nothing. So this
+# works for a user with no model configured and for one on a provider's free
+# tier in exactly the same way — the maintainer is never asked to host
+# inference or pay for tokens.
+#
+# Note what is *not* here: a name. The display name is the verified anchor, so
+# there is nowhere to type somebody else's. And `problem_classes` names other
+# people's software on purpose — a project that repairs `pip` behaviour has to
+# be able to say `pip`. That is nominative use, and it is the entire open-source
+# branch: projects that fix software they did not write.
+
+endpoint: https://example.org/podshl/
+commit: 4f2c1a9
+status: active
+
+# English is the one obligation. German is here because the maintainers speak
+# it; a user whose language is missing gets English rather than nothing, and
+# their own client translates locally and says that it did.
+langs: [en, de]
+
+problem_classes:
+  - pip.install.wheel-missing
+  - pip.install.version-conflict
+  - python.runtime.import-error
+
+# What to read, and why. Every instruction here is checked against the client's
+# published read vocabulary at ingest: an op or a tool that is not on that list
+# is refused when this file arrives, not when a user has already agreed to it.
+collect:
+  - id: python.version
+    kind: machine
+    describes: Python version
+    why: Wheels are published per Python minor version; most install failures are this
+    read: { op: run_tool, tool: python3, args: ["--version"] }
+
+  # A reading with a question attached. The reading is tried first; the question
+  # is asked only if it comes back empty — one fact, written once, able to
+  # arrive either way. The report says which happened, so a solution that
+  # matched on the read value and failed is a defect worth fixing, and one that
+  # matched on the answered value may be nothing of the sort.
+  #
+  # The choices are the point: a bounded answer may travel, free text never
+  # does. Without them this fact would simply never reach you.
+  - id: pip.version
+    kind: machine
+    describes: pip version
+    why: Resolver behaviour changed in 20.3 and again in 23.1
+    read: { op: run_tool, tool: pip, args: ["--version"] }
+    prompt: Which pip version does `pip --version` print?
+    choices: ["20.x or older", "21.x or 22.x", "23.x or newer", "pip is not installed"]
+
+  - id: os.kernel
+    kind: machine
+    describes: Kernel version
+    why: manylinux wheels declare a minimum glibc, which tracks the distribution
+    read: { op: run_tool, tool: uname, args: ["-r"] }
+
+  # Asked of a person only when the machine could not answer. Nobody should be
+  # typing what a command could have read.
+  - id: install.command
+    kind: human
+    describes: The exact command you ran
+    why: pip, pipx, uv and poetry fail differently, and the message rarely says which
+    prompt: Which command did you run?
+    choices: [pip install, uv pip install, pipx install, poetry add, something else]
+    when_missing: pip.version
+
+escalate:
+  reason: Neither the readings nor a published solution explain this
+  queue: github-issues
+  target: https://example.org/project/issues
+  reply_via: [ticket_url, none]
+
+solutions:
+  - solutions/wheel-missing-for-python.md
+  - solutions/resolver-backtracking.md

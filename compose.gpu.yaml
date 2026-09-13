@@ -1,0 +1,23 @@
+# The GPU, passed through.
+#
+# Separate from compose.yaml because a machine without an NVIDIA device cannot
+# start a service that reserves one, and the rest of the stack has nothing to
+# do with the GPU.
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml up
+#
+# One case needs it. C1 — "what is not consented to is not read" — proves the
+# consented path differs from the withheld one by actually reading `gpu.name`
+# through `nvidia-smi`. Without a GPU the read fails, the two paths look alike,
+# and the case reports a defect it has not found. The measured target hardware
+# is a consumer NVIDIA card, so this reproduces that rather than working around
+# it.
+services:
+  podshl:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

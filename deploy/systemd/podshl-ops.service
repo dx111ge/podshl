@@ -1,0 +1,37 @@
+# The operator's own view. A different application on a different listener, so
+# "one project's figures are not served to anybody else" is true because no
+# route to them exists on the public one. Loopback only, and never behind the
+# public proxy: reach it with `ssh -L 8726:127.0.0.1:8726 <host>`.
+[Unit]
+Description=PODSHL operator view (loopback only, never public)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=podshl
+Group=podshl
+EnvironmentFile=/etc/podshl/env
+# The bearer token every route here requires (PODSHL_OPS_TOKEN), in a file of
+# its own rather than in /etc/podshl/env: that file is read by the public
+# server and the crawler too, and the operator's credential belongs in the
+# environment of exactly one process. Unset, the listener answers 503 to
+# everything — loopback is a wall, not a person.
+EnvironmentFile=/etc/podshl/ops.env
+WorkingDirectory=/opt/podshl
+ExecStart=/opt/podshl/venv/bin/python -m uvicorn podshl.server.ops_app:ops --host 127.0.0.1 --port 8726 --log-level warning
+Restart=always
+RestartSec=5
+
+ReadWritePaths=/var/lib/podshl
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
