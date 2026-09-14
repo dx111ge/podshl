@@ -157,7 +157,7 @@ installer.
 
 | | |
 |---|---|
-| Update | `git archive` the new tree over `/opt/podshl`, then `sudo docker compose up -d --build`. Migrations run first; the key volume is untouched |
+| Update | `deploy/compose/update.sh <user@host>` — backs up, `git archive`s **HEAD** (not the working tree, so a deployment is always a commit somebody can name) over `/opt/podshl`, then `sudo docker compose up -d --build`. Migrations run first; the key volume is untouched. It refuses to deploy if the backup fails, because a migration without a way back is not a deployment |
 | Back up | `backup.sh` from cron, daily, copied off the machine. Salts are excluded on purpose |
 | Operator view | `ssh -L 8726:127.0.0.1:8726 <host>`, then `http://127.0.0.1:8726/` with the token |
 | Logs | `sudo docker compose logs -f server ingest`; the access log is in the `caddy-logs` volume |

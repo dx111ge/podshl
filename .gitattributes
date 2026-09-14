@@ -17,6 +17,14 @@ mise.toml       text eol=lf
 # Copied to .env and read by Docker, which keeps a CR as part of the value — a
 # password that ends in an invisible character nobody typed.
 *.example       text eol=lf
+# Migrations are hash-pinned, and a hash is over bytes. A Windows checkout
+# rewrote these with CRLF, `git archive` carried that to the server, and the
+# recorded pin was the CRLF one — so the next deployment from Linux presented
+# the LF hash of a file nobody had edited, the runner refused to continue, and
+# the operator was down until somebody read the message closely enough to
+# disbelieve it. The runner now pins content rather than bytes, and this line
+# means it never has to.
+*.sql           text eol=lf
 
 # Licence texts are verbatim by definition. A checkout that rewrites their line
 # endings changes the bytes of a document nobody is allowed to alter.

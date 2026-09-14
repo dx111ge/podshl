@@ -1820,6 +1820,26 @@ def _():
     sv("sv_both_worked_examples_are_served_as_their_own_bytes")
 
 
+@case("SV112", "A repository URL collapses to one identity, and a deep link to none")
+def _():
+    sv("sv_a_repository_url_collapses_to_one_identity")
+
+
+@case("SV113", "A repository is anchored by repository, not by forge")
+def _():
+    sv("sv_a_repository_is_anchored_by_repo_and_not_by_forge")
+
+
+@case("SV114", "A redirect is followed only while the host is the same")
+def _():
+    sv("sv_a_redirect_is_followed_only_while_the_host_is_the_same")
+
+
+@case("SV115", "A repository goes from claim to served card")
+def _():
+    sv("sv_a_repository_goes_from_claim_to_served_card")
+
+
 @case("SV84", "A read instruction cannot walk out of a granted root")
 def _():
     sv("sv_a_read_cannot_walk_out_of_a_granted_root")
@@ -2385,6 +2405,76 @@ def _():
         src = f.read_text(encoding="utf-8")
         for name in internal:
             assert name not in src, f"{f.name} names {name}"
+
+
+@case("P8", "Nothing published names an internal document or this machine")
+def _():
+    """`W9` checks the served *pages*. It does not check the tree those pages
+    ship inside, and that is where this went wrong twice in one day: four
+    published files — a migration, a route's docstring, `SERVER.md` and
+    `SECURITY.md` — ended a paragraph with "see HANDOVER.md", which the public
+    repository does not contain, and the maintainer's own home path sat in
+    `mise.toml`, `scripts/check_baseline.py` and a comment in the anonymiser.
+    The anonymiser exists to take exactly that out of other people's logs.
+
+    `PUBLISHING.md`'s checklist says to scan "every time, not once". A checklist
+    item nobody can run is a wish, so this is the item.
+
+    Scoped to what is published: the working repository's own notes may name
+    each other freely, and `run_testcases.py` holds the list."""
+    internal = ("DIRECTION.md", "BENEFITS.md", "OUTREACH.md", "HANDOVER.md",
+                "BASELINE.md", "DISCOVERY.md")
+    #: Named, with the reason, rather than exempting a directory. An applied
+    #: migration is hash-pinned and cannot be edited — the runner refused this
+    #: one when the reference was tidied out of a comment, which is the guard
+    #: working. So the reference stays and reads as a dangling pointer to
+    #: anybody outside, and the fix is forward-only: later migrations do not
+    #: name an internal document, and this list must not grow.
+    allowed = {
+        "src/podshl/server/sql/0018_an_anchor_may_be_a_repository.sql":
+            "applied and hash-pinned before the reference was noticed",
+    }
+    #: Walked rather than asked of git. The first version of this case called
+    #: `git ls-files`, which inside the container answers `fatal: detected
+    #: dubious ownership` and exits 128 — so the list was empty, every loop ran
+    #: zero times, and the case passed while proving nothing. It was shown that
+    #: way: a violation added to SERVER.md on purpose did not turn it red.
+    skip_dirs = {".git", "target", "out", "var", "__pycache__", "node_modules",
+                 ".venv", "data", "release"}
+    suffixes = {".md", ".py", ".rs", ".sql", ".toml", ".sh", ".yaml", ".yml",
+                ".json", ".html", ".mjs", ".ps1"}
+    published: list[Path] = []
+    for path in Path(".").rglob("*"):
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        if not path.is_file() or path.suffix not in suffixes:
+            continue
+        rel = str(path)
+        if rel in internal or rel == "run_testcases.py":
+            continue
+        published.append(path)
+
+    # A count, not a hope. The exact number moves with the tree; an order of
+    # magnitude does not, and zero is the answer this case used to get.
+    assert len(published) > 100, (
+        f"only {len(published)} files to check — this case cannot enumerate the "
+        f"tree and would pass over an empty list, which is worse than failing")
+
+    home = "/home/" + "dx"          # split so this line is not its own violation
+    offenders: list[str] = []
+    for f in published:
+        try:
+            src = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for name in internal:
+            if name in src and str(f) not in allowed:
+                offenders.append(f"{f} names {name}")
+        if home in src:
+            offenders.append(f"{f} carries the maintainer's home path")
+    assert not offenders, (
+        "published files reach for something the public tree does not have, or "
+        "name this machine:\n  " + "\n  ".join(offenders[:10]))
 
 
 @case("W17", "A refused token is said as one, where it cannot be missed")

@@ -58,9 +58,21 @@ chmod +x podshl-client-0.1.0-linux-x86_64
 ./podshl-client-0.1.0-linux-x86_64
 ```
 
-**On NVIDIA + Wayland** set `WEBKIT_DISABLE_DMABUF_RENDERER=1` before starting
-it, or the window fails with a Wayland protocol error. The package does not set
-it for you yet.
+**On Wayland the client turns WebKitGTK's DMA-BUF renderer off for itself**, by
+setting `WEBKIT_DISABLE_DMABUF_RENDERER=1` in its own process before the window
+is created. You do not have to do anything, and nothing outside this program is
+affected. Without it the client does not merely draw a black window — it exits
+before any window exists, with one line on standard error that a desktop icon
+throws away, so clicking it appears to do nothing at all.
+
+If you would rather have the accelerated path, set the variable yourself to any
+value and the client leaves your choice alone:
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=0 podshl-client
+```
+
+If the window then fails to appear, that is the failure this default exists for.
 
 ### What it needs on the machine
 
@@ -70,6 +82,33 @@ without one the model settings cannot store a key. Readings that name a program
 need that program: `docker` for anything about a running container,
 `nvidia-smi` for the graphics card, `lspci` for the PCI list. `doctor` says
 which of these are missing here and what that leaves unreadable.
+
+## Arch, and Omarchy
+
+Omarchy is the desktop this client is aimed at first, and the one the workaround
+above was measured on. There is **no AUR package yet** — until there is, use the
+bare binary from the release with `webkit2gtk-4.1` and `gtk3` installed:
+
+```bash
+sudo pacman -S --needed webkit2gtk-4.1 gtk3
+chmod +x podshl-client-0.1.0-linux-x86_64
+./podshl-client-0.1.0-linux-x86_64
+```
+
+**If you are running a client older than this one and nothing happens when you
+start it**, that is the bug above and not a broken download. Start it from a
+terminal to see the line the icon discards, and then:
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=1 ./podshl-client-0.1.0-linux-x86_64
+```
+
+Measured 2026-09-14 on Omarchy 4.0.2 — Hyprland 0.56.2, webkit2gtk 2.52.6,
+NVIDIA 610.57.04 — where the client exits with `Gdk-Message: Error 71 (Protocol
+error) dispatching to Wayland display.` unless the renderer is off. Note the
+driver version: support content in the wild, including our own worked example in
+`spec/example-desktop/`, says this stopped happening after NVIDIA 555. On this
+machine it did not, which is why the client no longer decides it by version.
 
 ## Which operator it talks to
 

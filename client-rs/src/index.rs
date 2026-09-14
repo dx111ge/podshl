@@ -318,13 +318,21 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                reqwest::get("http://127.0.0.1:8725/index").await?.json::<Value>().await
+                let base = crate::http::operator_base();
+                reqwest::get(format!("{base}/index")).await?.json::<Value>().await
             })
             .expect(
-                "the operator server is not answering on :8725 — start it with `mise run server`. This test must never pass without a real signed index.",
+                "the operator is not answering — start it with `mise run server`, or set PODSHL_SERVER_URL to one that is. This test must never pass without a real signed index.",
             );
         let idx = verify(&doc).expect("the server's index did not verify against the pinned key");
-        assert!(idx.tree_size > 0, "a signed index over an empty log");
+        assert!(
+            idx.tree_size > 0,
+            "{} signs a correct index over an empty log: nothing has been \
+             registered there, so there is no entry for this case to verify. \
+             Not a client defect — claim an anchor on that operator, or point \
+             PODSHL_SERVER_URL at one that has entries.",
+            crate::http::operator_base()
+        );
     }
 
     /// An index whose entries the signed head cannot prove is refused whole.

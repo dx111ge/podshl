@@ -780,6 +780,34 @@ fn run_subcommand(name: &str) -> Result<(), String> {
     }
 }
 
+/// What `WEBKIT_DISABLE_DMABUF_RENDERER` should become, given whether somebody
+/// already chose a value. Separated from `main` so the decision can be tested
+/// without setting a process-wide variable from inside a threaded test run.
+///
+/// Nobody chose means we choose, because the failure we are avoiding is silent.
+/// Somebody chose means we leave it alone, whatever they chose — `0` included,
+/// which is a person asking for the accelerated path back and being given it.
+#[cfg(target_os = "linux")]
+fn dmabuf_renderer_setting(already_set: bool) -> Option<&'static str> {
+    if already_set { None } else { Some("1") }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod dmabuf_tests {
+    use super::dmabuf_renderer_setting;
+
+    /// L2: the client turns the DMA-BUF renderer off for itself, and stops if
+    /// the person said otherwise. The part that matters — that the window then
+    /// opens at all — needs a Wayland session and is walked rather than run
+    /// here; this only holds the override from being quietly dropped, which is
+    /// what would turn a per-application default into one nobody can undo.
+    #[test]
+    fn it_chooses_only_when_nobody_else_did() {
+        assert_eq!(dmabuf_renderer_setting(false), Some("1"), "left the window to fail");
+        assert_eq!(dmabuf_renderer_setting(true), None, "overrode the person's own value");
+    }
+}
+
 fn main() {
     if let Some(arg) = std::env::args().nth(1) {
         if let Err(e) = run_subcommand(&arg) {
@@ -810,6 +838,30 @@ fn main() {
     } else {
         trust::Resolver::Pinned(PathBuf::from(trust_env))
     };
+
+    // The window does not open on Wayland unless WebKitGTK's DMA-BUF renderer
+    // is off. Measured on this project's own target desktop — Omarchy 4.0.2,
+    // Hyprland 0.56.2, webkit2gtk 2.52.6, NVIDIA 610.57.04 — where without it
+    // the process dies before any window exists, with one line on stderr:
+    // "Gdk-Message: Error 71 (Protocol error) dispatching to Wayland display."
+    // The desktop entry is Terminal=false, so that line goes nowhere a person
+    // will read it: they click the icon and nothing happens at all. A support
+    // tool that looks broken on first contact is worse than one that is slow.
+    //
+    // Set unconditionally for this process, which is what the published answer
+    // for this class recommends — "both are per-application on purpose" — and
+    // deliberately not decided by driver version. That answer names "< 555" as
+    // the boundary and 610 fails here, so the boundary is not known; encoding a
+    // guess would fail invisibly for whoever falls outside it. What it costs
+    // when it was not needed is the software path in one window of text and
+    // forms. Set the variable yourself to anything to override this.
+    #[cfg(target_os = "linux")]
+    {
+        let var = "WEBKIT_DISABLE_DMABUF_RENDERER";
+        if let Some(v) = dmabuf_renderer_setting(std::env::var_os(var).is_some()) {
+            std::env::set_var(var, v);
+        }
+    }
 
     tauri::Builder::default()
         .setup(move |app| {

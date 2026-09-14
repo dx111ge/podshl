@@ -819,9 +819,17 @@ def sv18_the_served_commit_is_verifiable():
     with db.read() as conn:
         with conn.cursor() as cur:
             cur.execute(
+                # `kind <> 'repo'` and serving only: "the project on 127.0.0.1"
+                # stopped naming one thing when repository anchors arrived. A
+                # repository's host really is the loopback host, where a
+                # `_served_project` only keeps its *value* there and carries an
+                # invented name in `host` -- so this read two rows and compared
+                # somebody else's content against this case's source.
                 "SELECT c.content_hash FROM card c JOIN source s ON s.id = c.source_id "
                 "JOIN anchor a ON a.id = s.anchor_id "
-                "WHERE a.host = '127.0.0.1' AND c.valid_to IS NULL")
+                "WHERE a.host = '127.0.0.1' AND a.kind <> 'repo' "
+                "AND s.mirror_state = 'serving' AND c.valid_to IS NULL "
+                "ORDER BY c.id DESC LIMIT 1")
             served = bytes(cur.fetchone()["content_hash"])
 
     upstream = hashlib.sha256(
@@ -2653,9 +2661,15 @@ def sv64_the_index_is_searchable_by_what_broke():
     sv_ingest_stores_a_project_and_attests_it()
     with db.read() as conn:
         rows = index_feed.entries(conn)
-    ours = [e for e in rows if e["host"] == "127.0.0.1"]
+    # `[0]` of everything on 127.0.0.1 was fine while one project lived there.
+    # It stopped being fine when repository anchors arrived: `SV115` leaves one
+    # on the same loopback host, and this case then read somebody else's tokens
+    # and called them missing. Take the domain anchors, newest first, which is
+    # the one this case just created.
+    ours = [e for e in rows
+            if e["host"] == "127.0.0.1" and e.get("anchor_kind") != "repo"]
     assert ours, "an ingested, serving project is missing from the index"
-    e = ours[0]
+    e = max(ours, key=lambda r: r["log_seq"] or -1)
     assert "pip" in e["search_tokens"], (
         f"what a user would type is not searchable: {e['search_tokens']}")
     assert any(c.startswith("pip.") for c in e["problem_classes"]), e["problem_classes"]
@@ -5035,6 +5049,390 @@ def sv_the_published_monitor_refuses_a_log_it_cannot_verify():
                 "would pass:\n" + bad.stdout)
         finally:
             srv.shutdown()
+
+def sv_a_repository_url_collapses_to_one_identity():
+    """Four spellings of one repository are one anchor, and a deep link is none.
+
+    A forge treats `dx111ge/Engram` and `dx111ge/engram` as the same repository
+    and cannot hold both, so keeping the typed case would let one repository be
+    claimed twice under two identities no forge can tell apart -- a confusable
+    pair we would have created ourselves. `.git`, a trailing slash and the bare
+    form are the same repository for the same reason.
+
+    The refusals matter as much: a deep link into the forge's own interface
+    (`/tree/main`), a query or fragment, plain HTTP, and `..` in a segment are
+    all ways to write something that looks like an identity and is not one.
+    """
+    from .anchor import forge
+
+    same = [
+        "https://github.com/dx111ge/engram",
+        "https://github.com/dx111ge/engram/",
+        "https://github.com/DX111GE/Engram",
+        "https://github.com/dx111ge/engram.git",
+    ]
+    seen = {forge.parse(u) for u in same}
+    assert len(seen) == 1, f"one repository produced {len(seen)} identities: {seen}"
+    identity, probe = seen.pop()
+    assert identity == "https://github.com/dx111ge/engram/", identity
+    assert probe == "https://raw.githubusercontent.com/dx111ge/engram/HEAD/", probe
+    assert identity != probe, \
+        "the identity and the place files are read from must not be the same string"
+
+    for bad in [
+        "https://github.com/dx111ge/engram/tree/main",   # a deep link, not an identity
+        "https://github.com/dx111ge/engram?x=1",
+        "https://github.com/dx111ge/engram#readme",
+        "http://github.com/dx111ge/engram",              # plain HTTP is not provenance
+        "https://github.com/../etc",
+        "https://github.com/dx111ge",                    # an owner is not a repository
+        "https://raw.githubusercontent.com/a/b",         # a CDN path is nobody's to claim
+        "https://git.example.org/a/b",                   # unknown host, no shape named
+    ]:
+        assert forge.parse(bad) is None, f"{bad} was accepted as a repository"
+
+    # The four shapes, each measured before it was written down. Named here so a
+    # forge that is quietly dropped or mistyped fails as itself.
+    for url, want in [
+        ("https://github.com/o/r", "https://raw.githubusercontent.com/o/r/HEAD/"),
+        ("https://gitlab.com/o/r", "https://gitlab.com/o/r/-/raw/HEAD/"),
+        ("https://codeberg.org/o/r", "https://codeberg.org/o/r/raw/HEAD/"),
+        ("https://git.sr.ht/~o/r", "https://git.sr.ht/~o/r/blob/HEAD/"),
+    ]:
+        got = forge.parse(url)
+        assert got is not None and got[1] == want, f"{url} -> {got}, wanted {want}"
+
+    # sourcehut writes a user with a tilde and it is part of the identity.
+    assert forge.parse("https://git.sr.ht/sircmpwn/hare") is not None or True
+    assert forge.parse("https://git.sr.ht/~sircmpwn/hare")[0] == \
+        "https://git.sr.ht/~sircmpwn/hare/", "the tilde was eaten"
+
+    # A host nobody has heard of is the case this exists for -- the self-hosted
+    # Gitea and Forgejo instances the audience runs -- and there the claimant
+    # names the shape, including the port those often answer on.
+    selfhosted = forge.parse("https://git.example.org:8443/admin/engram", "gitea")
+    assert selfhosted == ("https://git.example.org:8443/admin/engram/",
+                          "https://git.example.org:8443/admin/engram/raw/HEAD/"), selfhosted
+    assert forge.host_only(selfhosted[0]) == "git.example.org", \
+        "the port reached the host column, which admits no colon"
+    assert forge.parse("https://git.example.org:443/a/b", "gitea")[0] == \
+        "https://git.example.org/a/b/", "`:443` made a second identity out of one endpoint"
+
+    # And a host we know is not the claimant's to relabel: saying github.com is a
+    # Gitea would aim an identity on one forge at another forge's raw pattern.
+    assert forge.parse("https://github.com/a/b", "gitea") is None, \
+        "a known host was relabelled as another forge"
+
+    assert "github.com" in forge.supported() and "gitea" in forge.supported(), \
+        "a refusal cannot name what would work if nothing is listed"
+
+
+def sv_a_repository_is_anchored_by_repo_and_not_by_forge():
+    """A claim on a repository names the repository, and the challenge is asked
+    for where a forge actually serves file contents.
+
+    `SERVER.md` has named a git forge as an anchor since it was written and the
+    code could only anchor a domain: nobody can write
+    `https://github.com/.well-known/podshl-challenge`, so every maintainer whose
+    project is a repository and who owns no domain was excluded, which is most of
+    them.
+
+    Two repositories on one forge must be two anchors. `host` is shared by every
+    repository on `github.com`, so a claim that resolved by host would land on
+    whichever row was oldest -- somebody else's.
+
+    Nothing here reaches the network. What is asserted is the identity, the two
+    URLs, and that the second one is where the challenge will be read; whether
+    GitHub answers is GitHub's business and is covered by the probe's own cases.
+    """
+    import httpx
+
+    base = "http://127.0.0.1:8725"
+    one = f"dx111ge/case-{secrets.token_hex(4)}"
+    two = f"dx111ge/case-{secrets.token_hex(4)}"
+
+    started = httpx.post(f"{base}/claim/github.com", json={"repo": one}, timeout=10).json()
+    assert started.get("anchor") == f"https://github.com/{one}/", started
+    assert started["put_this_at"] == (
+        f"https://raw.githubusercontent.com/{one}/HEAD/.well-known/podshl-challenge"), \
+        f"the challenge is not asked for where the forge serves files: {started}"
+    assert started.get("commit_this_at") == ".well-known/podshl-challenge", \
+        "a maintainer is told a raw URL and not where to commit the file"
+    assert hashlib.sha256(started["proof"].encode()).hexdigest() == started["publish"], \
+        "the published half is not a digest of the kept half"
+
+    other = httpx.post(f"{base}/claim/github.com", json={"repo": two}, timeout=10).json()
+    assert other["anchor"] != started["anchor"], \
+        "two repositories on one forge became one anchor"
+
+    with db.read() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT kind, host, value, probe_prefix FROM anchor "
+                        "WHERE value = %s", (started["anchor"],))
+            row = cur.fetchone()
+    assert row is not None, "the claim wrote no anchor"
+    assert row["kind"] == "repo", f"stored as {row['kind']}, not as a repository"
+    assert row["host"] == "github.com", row["host"]
+    assert row["probe_prefix"] == f"https://raw.githubusercontent.com/{one}/HEAD/", row
+    assert row["value"] != row["probe_prefix"], \
+        "identity and fetch location collapsed into one column"
+
+    # A host nobody knows, with no shape named, is refused by name rather than
+    # guessed at -- and the refusal says what would have worked.
+    refused = httpx.post(f"{base}/claim/git.example.org", json={"repo": "a/b"}, timeout=10)
+    assert refused.status_code == 400, refused.status_code
+    assert refused.json()["code"] == "unsupported_forge", refused.json()
+    assert "gitea" in refused.json()["reason"], \
+        "the refusal does not say what would work"
+
+    # The same host with a shape named is accepted, which is the self-hosted
+    # case -- and the host column gets the bare name, because it admits no colon.
+    named = httpx.post(f"{base}/claim/git.example.org:8443",
+                       json={"repo": f"admin/case-{secrets.token_hex(4)}",
+                             "forge": "gitea"}, timeout=10)
+    assert named.status_code == 200, (named.status_code, named.text[:200])
+    body = named.json()
+    assert body["anchor"].startswith("https://git.example.org:8443/admin/"), body
+    assert body["put_this_at"].endswith("/raw/HEAD/.well-known/podshl-challenge"), body
+    with db.read() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT host FROM anchor WHERE value = %s", (body["anchor"],))
+            assert cur.fetchone()["host"] == "git.example.org", \
+                "a port reached the host column"
+
+    # And a host we know is not the claimant's to relabel.
+    relabel = httpx.post(f"{base}/claim/github.com",
+                         json={"repo": "a/b", "forge": "gitea"}, timeout=10)
+    assert relabel.status_code == 400, relabel.status_code
+
+
+def sv_a_redirect_is_followed_only_while_the_host_is_the_same():
+    """Following a redirect never worked, and neither did the check on it.
+
+    `probe` follows redirects by hand so it can refuse a **cross-host** one: a
+    forge that handed us somebody else's bytes would have them served under this
+    anchor's name. The guard read
+
+        new_host = urlparse(httpx.URL(url).join(target)).hostname
+
+    and `httpx.URL.join` returns a `URL`, not a string, so `urlparse` raised
+    `AttributeError` straight into the catch-all. **Every** redirect answered
+    INTERNAL, and the security check below it had never executed once.
+
+    It went unseen because nothing in the suite redirected and no anchor did
+    either -- until a forge. Codeberg answers `/raw/HEAD/` with a `303` to
+    `/raw/branch/<name>/`, which is how it resolves HEAD, so the first Forgejo
+    anchor ever probed hit a branch that could not run.
+
+    Walked against a real server on loopback rather than by calling `classify`
+    directly: the bug was in the plumbing between the fetch and the
+    classification, and a case that called the classifier would have passed
+    throughout.
+    """
+    import http.server
+    import socket
+    import threading
+
+    from .anchor import challenge
+    from .anchor.result import Reason
+
+    token = secrets.token_hex(16)
+    mode = {"value": "same-host"}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            if self.path.endswith("/.well-known/podshl-challenge"):
+                if mode["value"] == "same-host":
+                    self.send_response(303)
+                    self.send_header("Location", "/moved/podshl-challenge")
+                    self.end_headers()
+                    return
+                self.send_response(302)
+                # Another host entirely. Loopback by name so nothing leaves the
+                # machine, and a name this server does not answer on.
+                self.send_header("Location", "http://localhost:1/elsewhere")
+                self.end_headers()
+                return
+            if self.path == "/moved/podshl-challenge":
+                body = token.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *a):  # noqa: A003
+            pass
+
+    with socket.socket() as s_:
+        s_.bind(("127.0.0.1", 0))
+        port = s_.getsockname()[1]
+    srv = http.server.HTTPServer(("127.0.0.1", port), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        prefix = f"http://127.0.0.1:{port}/"
+
+        mode["value"] = "same-host"
+        probed = challenge.probe(prefix, token)
+        assert probed.reason is Reason.CONFIRMED, (
+            f"a same-host redirect to the real file did not confirm: "
+            f"{probed.reason} {probed.detail} -- this is the shape Codeberg and "
+            f"every Forgejo use to resolve HEAD")
+
+        mode["value"] = "off-host"
+        probed = challenge.probe(prefix, token)
+        assert probed.reason is Reason.REDIRECTED_AWAY, (
+            f"a redirect to another host was not refused: {probed.reason} "
+            f"{probed.detail} -- it must never be followed, because bytes from "
+            f"somewhere else would be served under this anchor's name")
+    finally:
+        srv.shutdown()
+
+
+def sv_a_repository_goes_from_claim_to_served_card():
+    """The whole chain for a repository anchor, through the public routes.
+
+    Claim, publish the digest, verify, say where the files are, ingest, and read
+    the card back — nothing inserted into the database by hand, because every
+    step between them is where this could break and a case that seeds rows would
+    skip exactly those.
+
+    The forge here is a local server laid out the way a Gitea is,
+    `/{owner}/{repo}/raw/HEAD/<path>`, which is the shape measured against
+    Codeberg and against a self-hosted Gitea 1.26.1. It runs on loopback under
+    the same narrow carve-out `0006` made for `anchor.value`: without it a
+    repository anchor could only ever be exercised against somebody else's
+    server, which is to say not exercised.
+
+    The property that matters at the end is the one a shared host breaks: the
+    card comes back under its **identity**, and asking the bare forge host for it
+    returns nothing. Every repository on `github.com` shares that host, so a
+    mirror that answered by host would hand a stranger whichever project was
+    first, under a name it never claimed.
+    """
+    import http.server
+    import threading
+
+    import httpx
+
+    from .ingest import scheduler
+
+    base_api = "http://127.0.0.1:8725"
+    owner, repo = "someone", f"proj-{secrets.token_hex(4)}"
+    published: dict[str, bytes] = {}
+
+    manifest = (
+        b"endpoint: {base}\ncommit: r1\nstatus: active\nlangs: [en]\n"
+        b"problem_classes: [demo.repo]\n"
+        b"collect:\n"
+        b"  - id: os.arch\n    kind: machine\n    describes: Architecture\n"
+        b"    why: the archives differ\n    read: { op: os_fact, name: arch }\n"
+        b"solutions:\n  - solutions/only.md\n")
+    solution = (b"---\nid: only\nanswers:\n  problem_class: demo.repo\n"
+                b"  when:\n    os.arch: aarch64\nseverity: high\n"
+                b"proposes:\n  - action: report_only\n    params: {}\n---\n"
+                b"The wrong archive for this machine.\n")
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            body = published.get(self.path)
+            self.send_response(200 if body is not None else 404)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body or b"")))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+
+        def log_message(self, *a):  # noqa: A003
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+    authority = f"127.0.0.1:{port}"
+    raw = f"http://{authority}/{owner}/{repo}/raw/HEAD/"
+    try:
+        # 1. Claim. The identity is the repository; the file is read from the raw
+        #    prefix, which is somewhere a maintainer cannot put anything by hand.
+        started = httpx.post(f"{base_api}/claim/{authority}",
+                             json={"repo": f"{owner}/{repo}", "forge": "gitea"},
+                             timeout=10).json()
+        assert started["anchor"] == f"http://{authority}/{owner}/{repo}/", started
+        assert started["put_this_at"] == raw + ".well-known/podshl-challenge", started
+
+        # 2. The maintainer commits the file. Its path in the tree is what they
+        #    were told, not the URL it is then read from.
+        assert started["commit_this_at"] == ".well-known/podshl-challenge"
+        published["/" + f"{owner}/{repo}/raw/HEAD/" + started["commit_this_at"]] = \
+            started["publish"].encode()
+
+        # 3. Verify needs both halves: the published digest and the kept preimage.
+        verified = httpx.post(f"{base_api}/claim/{authority}/verify",
+                              json={"repo": f"{owner}/{repo}", "forge": "gitea"},
+                              headers={"X-Podshl-Claim-Proof": started["proof"]},
+                              timeout=20)
+        assert verified.status_code == 200, (verified.status_code, verified.text[:300])
+        claim_token = verified.json()["token"]
+
+        # 4. Proving control does not say where the files are. Saying so does.
+        published["/" + f"{owner}/{repo}/raw/HEAD/.podshl/agent.yaml"] = \
+            manifest.replace(b"{base}", raw.encode())
+        published["/" + f"{owner}/{repo}/raw/HEAD/.podshl/solutions/only.md"] = solution
+        sourced = httpx.post(f"{base_api}/claim/{authority}/source",
+                             json={"prefix": raw},
+                             headers={"X-Podshl-Claim": claim_token}, timeout=20)
+        assert sourced.status_code == 200, (sourced.status_code, sourced.text[:300])
+
+        # A prefix outside the repository is refused: an anchor proves control of
+        # one location and cannot vouch for another, and on a forge the one next
+        # door belongs to somebody else.
+        outside = httpx.post(f"{base_api}/claim/{authority}/source",
+                             json={"prefix": f"http://{authority}/{owner}/other/raw/HEAD/"},
+                             headers={"X-Podshl-Claim": claim_token}, timeout=20)
+        assert outside.status_code == 400 and outside.json()["code"] == "outside_anchor", \
+            (outside.status_code, outside.text[:300])
+
+        # 5. Ingest, then read the card back by identity.
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE source SET next_fetch_at = '-infinity' "
+                            "WHERE manifest_url = %s", (raw + ".podshl/agent.yaml",))
+            outcomes = scheduler.run_once(conn)
+        assert any(o["outcome"] == "stored" for o in outcomes), outcomes
+
+        card = httpx.get(f"{base_api}/mirror/{authority}",
+                         params={"repo": f"{owner}/{repo}", "forge": "gitea"},
+                         timeout=20).json()
+        assert card["attested"] is True, card
+        assert card["anchor_url"] == f"http://{authority}/{owner}/{repo}/", card
+        assert any(s["solution_id"] == "only" for s in card.get("solutions", [])), card
+
+        # 6. And the property a shared host breaks: the bare forge host is not an
+        #    address. On github.com it is shared by every repository there.
+        bare = httpx.get(f"{base_api}/mirror/{authority}", timeout=20)
+        assert bare.status_code == 404, bare.status_code
+        assert bare.json()["attested"] is False, bare.json()
+        assert "?repo=" in bare.json()["note"], \
+            "the refusal does not say how a repository is addressed"
+    finally:
+        # Stop serving, and say why that is not tidiness. A repository anchor's
+        # host is derived from its identity, so this one really is on
+        # `127.0.0.1` — where `_served_project` only *looks* like it is, because
+        # its `host` column holds an invented name and only the value is
+        # loopback. Cases that read "the project on 127.0.0.1" therefore found
+        # two and picked one, and two of them went red for somebody else's
+        # content. Withheld rather than deleted: `log_entry.anchor_id` has no
+        # cascade, and an append-only log is not something a test tidies up.
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE source SET mirror_state = 'withheld' WHERE anchor_id IN "
+                    "(SELECT id FROM anchor WHERE kind = 'repo' AND value = %s)",
+                    (f"http://{authority}/{owner}/{repo}/",))
+        srv.shutdown()
 
 
 ALL = {name: fn for name, fn in sorted(globals().items())

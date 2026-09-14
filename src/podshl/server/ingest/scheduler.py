@@ -26,7 +26,7 @@ import json
 import httpx
 
 from .. import log_store, sth
-from ..anchor import challenge, sweep
+from ..anchor import challenge, forge, sweep
 from ..anchor.result import Reason
 from ..errors import IngestRefused
 from . import fetch, manifest, store
@@ -79,12 +79,17 @@ def ingest_one(conn, source: dict, *, client: httpx.Client | None = None) -> dic
     client = client or fetch.pinned_client()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, kind, value, host, challenge_token FROM anchor WHERE id = %s",
+            cur.execute("SELECT id, kind, value, host, probe_prefix, challenge_token "
+                        "FROM anchor WHERE id = %s",
                         (source["anchor_id"],))
             anchor = cur.fetchone()
 
         # The challenge rides along in the same pass. One extra request.
-        probed = challenge.probe(anchor["value"], anchor["challenge_token"], client=client)
+        # `fetch_root`, not `value`: a repository's files come from the forge's
+        # raw prefix, and re-verification has to read the same place the claim
+        # was proved at or an anchor would go stale for being a repository.
+        probed = challenge.probe(forge.fetch_root(anchor), anchor["challenge_token"],
+                                 client=client)
         sweep.record(conn, anchor["id"], probed)
 
         fetched = fetch.get(source["manifest_url"], prefix=source["fetch_prefix"],

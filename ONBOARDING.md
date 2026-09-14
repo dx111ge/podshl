@@ -18,6 +18,24 @@ A forge, a bare nginx and a static host all serve this identically: it is
 fetched as plain HTTPS — the anchor is `https://<host>/`, and nothing is
 fetched over plain HTTP — and there is no forge API involved.
 
+> **Not yet true for a forge, and that is the honest state of it — 2026-09-14.**
+> The challenge has to sit at the **root of a host you control**, and a
+> repository on GitHub, GitLab or Codeberg does not give you one: nobody can
+> write `https://github.com/.well-known/podshl-challenge`. Today that leaves a
+> maintainer two ways in — a domain, or a user site such as
+> `<you>.github.io`, which works but binds a project to a person and is not a
+> path we would recommend to anybody else.
+>
+> Anchoring a repository directly is being built: the challenge file goes
+> **into the repository**, and the anchor is your `owner/repo`. Note what it
+> will and will not give you. It will not give you a **name** — "engram" is a
+> word 1872 repositories on GitHub already use, and no mechanism here decides
+> which of them is the real one, because none of them is. Your project appears
+> as `you/your-project`, next to the others, and the person picking is the
+> person who installed it and recognises where they got it. A domain, a
+> distribution package or a registry entry, where you have one, weighs your row
+> up — it is never what lets you in.
+
 > **The short form.** Publish the three files above. The challenge file lives
 > at `https://<host>/.well-known/podshl-challenge` and contains exactly the
 > digest, nothing else, on a single line. Then four calls, which `/register`

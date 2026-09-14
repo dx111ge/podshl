@@ -72,7 +72,7 @@ setup (`L3`, `L9`, `L10`).
 
 | | |
 |---|---|
-| **Linux** | WebKitGTK is a genuine packaging dependency (143 shared libs). **On NVIDIA + Wayland the app fails with a Wayland protocol error unless `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set** — not exotic, that is a common desktop. `mise run client` sets it; the packaged launcher does not yet, so a user of the `.deb` sets it by hand, and that belongs in the launcher rather than in `INSTALL.md`. |
+| **Linux** | WebKitGTK is a genuine packaging dependency (143 shared libs). **On Wayland the app exits with `Gdk-Message: Error 71 (Protocol error)` and creates no window at all unless `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set** — measured on Omarchy 4.0.2 / NVIDIA 610.57.04, so not a legacy-driver case. The binary now sets it for its own process before the window is created and honours a value the person set, because a desktop entry is `Terminal=false` and that error reaches nobody: the icon simply does nothing. Not a launcher — a launcher would miss the bare binary, which `INSTALL.md` offers. |
 | **Windows** | WebView2 ships with Windows 10+/11. The elevated helper must be a **separate binary**: an app able to elevate itself in-process cannot honestly claim bounded effect. |
 | **macOS** | WKWebView is part of the OS. TCC can refuse a probe *after* the user consented in our own UI, and that divergence has to reach the user rather than looking like a failed read. |
 

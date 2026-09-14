@@ -1,0 +1,33 @@
+-- An anchor may be a repository, not only a domain.
+--
+-- `SERVER.md` has always named a git forge first among the things an anchor can
+-- be. The code could not do it: a claim stored `https://<host>/` and asked for
+-- the challenge at that host's root, so the only anchor that could exist was a
+-- domain -- and nobody can write `https://github.com/.well-known/podshl-challenge`.
+-- That excluded most of the branch's audience, who own a repository and no
+-- domain.
+--
+-- Two columns rather than one, because for a repository the place a human
+-- recognises and the place the bytes come from are genuinely different:
+--
+--   value        https://github.com/dx111ge/engram/                     the identity
+--   probe_prefix https://raw.githubusercontent.com/dx111ge/engram/HEAD/ the files
+--
+-- `value` stays the identity and stays what `under_prefix` contains fetches to,
+-- so a claim on one repository can never reach another. `host` stays a bare
+-- punycode hostname and keeps its CHECK -- for a repository it is the identity's
+-- host (`github.com`), which is shared with every other repository there, and
+-- that is exactly why `host` stops being the identity. Anything comparing
+-- anchors compares `value`.
+--
+-- What this deliberately does NOT add is a name. A name is a word in common use
+-- rather than property -- GitHub holds 1872 repositories with `engram` in the
+-- name -- so there is no column for one, and nothing here decides which of them
+-- is the real one, because none of them is. See HANDOVER.md.
+
+ALTER TYPE anchor_kind ADD VALUE IF NOT EXISTS 'repo';
+
+-- Alone in this file on purpose. PostgreSQL refuses to *use* a new enum value in
+-- the transaction that adds it -- "New enum values must be committed before they
+-- can be used" -- and the constraints below name 'repo', so they live in 0019.
+-- Each migration here commits on its own, which is what makes the split work.

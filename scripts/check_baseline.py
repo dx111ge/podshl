@@ -2,6 +2,7 @@
 
 Run:  mise exec -- python scripts/check_baseline.py
 """
+from pathlib import Path
 import shutil, subprocess, sys, time
 import torch
 
@@ -57,7 +58,7 @@ bitsandbytes.optim.PagedAdamW8bit([torch.nn.Parameter(torch.randn(4, device="cud
 print("  PagedAdamW8bit  OK")
 
 rule("Storage")
-for path in ("/home/dx/Work", "/"):
+for path in (str(Path.home() / "Work"), "/"):
     u = shutil.disk_usage(path)
     print(f"  {path:16s} {u.free / 1024**3:6.0f} GiB free / {u.total / 1024**3:.0f} GiB")
 

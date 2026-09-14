@@ -171,11 +171,32 @@ fn ipv6(text: &str, counts: &mut BTreeMap<&'static str, usize>) -> String {
 /// This machine's own names — the account and the host — wherever they occur,
 /// not only inside a path. Short names are left alone: replacing every "dx" or
 /// "pc" in a log would destroy it and protect nobody.
+/// The shortest account or host name that is still removed.
+///
+/// It was three, and three is one too many. This machine's account is `dx`, so
+/// the name was simply never found — and nothing said so: the panel counts what
+/// it replaced, and a name it never looked for is counted zero, which reads
+/// exactly like a log that did not contain one. A person with a short account
+/// got no anonymising and no warning that they had none.
+///
+/// Three was guarding against a short name matching inside longer words, and
+/// that guard is already somewhere else: the replacement is anchored on word
+/// boundaries, so a two-letter account is taken inside a path and left
+/// alone inside a longer word — measured, not assumed. What is left below two is a single
+/// letter, where `\ba\b` would strike every stray `a` in a sentence, and that
+/// stays out.
+///
+/// Which way to fail is the whole question, and this product answers it the
+/// same way everywhere else: too much removed is visible in the panel before
+/// anything is sent and can be edited back; too little is invisible and
+/// permanent.
+const SHORTEST_OWN_NAME: usize = 2;
+
 fn own_names() -> Vec<(&'static str, String, &'static str)> {
     let mut out = Vec::new();
     for k in ["USERNAME", "USER", "LOGNAME"] {
         if let Ok(v) = std::env::var(k) {
-            if v.chars().count() >= 3 {
+            if v.chars().count() >= SHORTEST_OWN_NAME {
                 out.push(("user", v, "<user>"));
             }
         }
@@ -185,7 +206,7 @@ fn own_names() -> Vec<(&'static str, String, &'static str)> {
         .ok()
         .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
         .map(|h| h.trim().to_string());
-    if let Some(h) = host.filter(|h| h.chars().count() >= 3) {
+    if let Some(h) = host.filter(|h| h.chars().count() >= SHORTEST_OWN_NAME) {
         out.push(("host", h, "<host>"));
     }
     out
@@ -318,9 +339,12 @@ mod tests {
         let Some(user) = user else {
             // Said rather than skipped. A suite that quietly tests nothing
             // where the environment is thin is worse than one that is red.
-            assert!(std::env::var("USERNAME").is_err() && std::env::var("USER").is_err()
-                        && std::env::var("LOGNAME").is_err(),
-                    "the environment names an account and `own_names` did not find it");
+            let named = ["USERNAME", "USER", "LOGNAME"].iter()
+                .filter_map(|k| std::env::var(k).ok())
+                .find(|v| v.chars().count() >= SHORTEST_OWN_NAME);
+            assert!(named.is_none(),
+                    "the environment names an account of at least {SHORTEST_OWN_NAME} \
+                     characters and `own_names` did not find it");
             return;
         };
 

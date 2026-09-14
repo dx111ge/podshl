@@ -23,9 +23,9 @@ XVFB=$!
 trap 'kill $XVFB 2>/dev/null || true' EXIT
 for _ in $(seq 1 40); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.25; done
 
-# NVIDIA + Wayland needs this and a bare Xvfb does not care, so it is set once
-# rather than in two places that can disagree.
-WEBKIT_DISABLE_DMABUF_RENDERER=1 \
+# The DMABUF workaround is the binary's own (`L2`) and is not set here. Note
+# what this script cannot show: Xvfb is X11, so the failure L2 is about cannot
+# happen under it, and every screenshot ever taken here ran past it.
 VS_ROOT=../var VS_TRUST=../var/ans_stub.json VS_LOG_KEY=../var/log_key.json \
   bash -c "cd client-rs && exec '$BIN'" &
 APP=$!

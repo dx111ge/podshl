@@ -29,7 +29,7 @@ import hashlib
 import json
 import secrets
 
-from fastapi import FastAPI, Header, Request, Response
+from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import JSONResponse as _JSONResponse
 # A handler that must await the request body cannot itself be `def`, so the
 # blocking half goes to a worker explicitly. Measured, on this machine: two
@@ -40,7 +40,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (cluster_tree, clusters, counting, db, explain, index_feed, log_store,
                pages, repartition, sth, takedown)
-from .anchor import challenge
+from .anchor import challenge, forge
 from . import config
 from .config import K_REPORTERS
 from .errors import NotClaimed, ServerError
@@ -614,9 +614,14 @@ def diagnose(body: dict):
     with db.read() as conn:
         with conn.cursor() as cur:
             cur.execute(
+                # `kind <> 'repo'`: a repository's host is shared with every
+                # other repository on the forge, so a bare host would resolve to
+                # whichever one happened to be first — somebody else's project,
+                # answering for a subject it never claimed. A repository is
+                # reached by its identity or not at all.
                 "SELECT s.id AS source_id FROM anchor a "
                 "JOIN source s ON s.anchor_id = a.id AND s.mirror_state = 'serving' "
-                "WHERE a.host = %s", (subject,))
+                "WHERE a.host = %s AND a.kind <> 'repo'", (subject,))
             row = cur.fetchone()
         if not row:
             # Nobody published here. Not an accusation, and not an error.
@@ -812,8 +817,92 @@ def report(body: dict):
 CHALLENGE_LIVE = "1 hour"
 
 
+
+def _host_and_port(raw: str) -> tuple[str, str] | None:
+    """Normalise a host that may carry a port, keeping the port.
+
+    `normalise_host` is a host *name* check -- IDNA, punycode, length -- and a
+    colon is not part of a name, so it refuses one. A self-hosted forge often
+    answers on a port (the Gitea the `gitea` shape was measured against is on
+    3141), and refusing those would exclude the case repository anchors exist
+    for. So the port is split off, the name is normalised as a name, and the two
+    are handed back separately. `None` means the name is not usable.
+    """
+    bare, _, port = raw.partition(":")
+    if port and not (port.isdigit() and 1 <= int(port) <= 65535):
+        return None
+    try:
+        bare, _ = normalise_host(bare)
+    except ValueError:
+        return None
+    if not bare or len(bare) > 253:
+        return None
+    return bare, port
+
+
+def _repo_url(authority: str, repo: str) -> str:
+    """The candidate identity for a repository, before `forge.parse` judges it.
+
+    `https` except on loopback, which is the same narrow carve-out `0006` made
+    for `anchor.value` and for the same reason: without it the suite cannot
+    stand up a forge of its own and the repository path could only be exercised
+    against somebody else's server. `forge.parse` refuses plain HTTP anywhere
+    else, so this cannot widen anything.
+    """
+    scheme = "http://" if authority.split(":", 1)[0] == "127.0.0.1" else "https://"
+    return f"{scheme}{authority}/{repo.strip('/')}"
+
+
+def _claim_target(host: str, body: dict | None):
+    """Which anchor a claim names: a domain, or a repository on a forge.
+
+    Returns `(kind, value, probe_prefix)`, or a `JSONResponse` refusing.
+
+    A repository is named by the forge's host in the path and `repo` in the
+    body — `POST /claim/github.com` with `{"repo": "dx111ge/engram"}` — rather
+    than by pressing a path into a path parameter. The existing route shapes are
+    untouched, nothing has to be encoded twice, and a caller who sends no `repo`
+    gets exactly the domain claim they always got.
+
+    `SERVER.md` has named a git forge as an anchor since it was written, and
+    until now the code could only anchor a domain: nobody can write
+    `https://github.com/.well-known/podshl-challenge`, so every maintainer whose
+    project is a repository and who owns no domain was excluded — which is most
+    of them. This is that gap, and nothing more: a repository anchor buys the
+    right to publish. **It buys no name**: a name here is a word in common
+    use rather than property, and nothing decides which project owns one.
+    """
+    repo = (body or {}).get("repo")
+    if repo is None:
+        return "url", f"https://{host}/", None
+    if not isinstance(repo, str) or len(repo) > 220:
+        return _bad("bad_repo", "repo must be a string like 'owner/name'")
+    shape = (body or {}).get("forge")
+    if shape is not None and not isinstance(shape, str):
+        return _bad("bad_forge", "forge must be the name of a forge's URL shape")
+    authority = host
+    parsed = forge.parse(_repo_url(authority, repo), shape)
+    if parsed is None:
+        return JSONResponse(
+            {"code": "unsupported_forge",
+             "reason": f"{authority}/{repo} is not a repository this can anchor"
+                       + (f" as forge={shape!r}" if shape else "")
+                       + f". {forge.supported()}. A forge's shape goes in when somebody "
+                       f"has measured it, not when its documentation has been read — "
+                       f"and a host we know is not yours to relabel."},
+            status_code=400)
+    identity, probe_prefix = parsed
+    return "repo", identity, probe_prefix
+
 @app.post("/claim/{host}")
-def claim_start(host: str):
+async def claim_start_route(host: str, request: Request):
+    body = await read_json_object(request, MAX_BODY)
+    if isinstance(body, JSONResponse):
+        return body
+    return await run_in_threadpool(claim_start, host, body)
+
+
+def claim_start(host: str, body: dict | None = None):
     """Begin a claim. Two halves, and only one of them is published.
 
     **A published file proves that somebody controls this host. It does not
@@ -858,12 +947,17 @@ def claim_start(host: str):
     that does not round-trip through IDNA is refused rather than stored, since
     the database would refuse it anyway and its message would name a CHECK.
     """
-    try:
-        host, _ = normalise_host(host)
-    except ValueError:
+    split = _host_and_port(host)
+    if split is None:
         return _bad("bad_host", "not a usable host name")
-    if not host or len(host) > 253:
-        return _bad("bad_host", "not a usable host name")
+    host, port = split
+    authority = f"{host}:{port}" if port else host
+
+    target = _claim_target(authority, body)
+    if isinstance(target, JSONResponse):
+        return target
+    kind, value, probe_prefix = target
+    root = probe_prefix or value
 
     proof = secrets.token_urlsafe(32)
     digest = hashlib.sha256(proof.encode()).hexdigest()
@@ -873,16 +967,29 @@ def claim_start(host: str):
             # The anchor row is found by host, oldest first, and only created
             # when there is none — the same row `verify` will read, so a claim
             # cannot start on one row and be checked against another.
-            cur.execute("SELECT id FROM anchor WHERE host = %s AND kind = 'url' "
-                        "ORDER BY id LIMIT 1", (host,))
+            # A domain is still found by host, not by value: a loopback anchor's
+            # value carries a port (`http://127.0.0.1:8721/`) and would never
+            # match a value built from the host alone. A repository has no such
+            # spread — its value *is* its identity and is unique — and host is
+            # shared by every repository on the forge, so there it has to be the
+            # value or a claim would land on somebody else's row.
+            if kind == "repo":
+                cur.execute("SELECT id FROM anchor WHERE kind = 'repo' AND value = %s",
+                            (value,))
+            else:
+                cur.execute("SELECT id FROM anchor WHERE host = %s AND kind = 'url' "
+                            "ORDER BY id LIMIT 1", (host,))
             row = cur.fetchone()
             if row is None:
                 cur.execute(
-                    "INSERT INTO anchor (kind, value, host, challenge_token) "
-                    "VALUES ('url', %s, %s, %s) "
-                    "ON CONFLICT (kind, value) DO UPDATE SET host = EXCLUDED.host "
+                    "INSERT INTO anchor (kind, value, host, probe_prefix, challenge_token) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON CONFLICT (kind, value) DO UPDATE SET host = EXCLUDED.host, "
+                    "  probe_prefix = EXCLUDED.probe_prefix "
                     "RETURNING id",
-                    (f"https://{host}/", host, digest))
+                    (kind, value,
+                     forge.host_only(value) if kind == "repo" else host,
+                     probe_prefix, digest))
                 row = cur.fetchone()
             # Claims nobody finished expire on their own; the sweep is the
             # next insert, which costs nothing and needs no timer.
@@ -893,10 +1000,23 @@ def claim_start(host: str):
     return JSONResponse(
         {
             "host": host,
-            "put_this_at": challenge.challenge_url(f"https://{host}/"),
+            "anchor": value,
+            # Where it is *read* from. For a domain that is the host root and the
+            # two sentences are one; for a repository the file is committed into
+            # the tree and the forge serves it from somewhere else entirely, so
+            # both are said rather than leaving the maintainer to work out that a
+            # raw URL is not somewhere they can put anything.
+            "put_this_at": challenge.challenge_url(root),
+            **({} if kind != "repo" else {
+                "commit_this_at": ".well-known/podshl-challenge",
+                "note_repo": "commit that file at that path in the repository's "
+                             "default branch; the URL above is where it is then read "
+                             "from, and there is nothing to configure on the forge.",
+            }),
             "publish": digest,
             "proof": proof,
-            "then": f"POST /claim/{host}/verify, presenting the proof",
+            "then": f"POST /claim/{host}/verify, presenting the proof"
+                    + ("" if kind != "repo" else " and the same repo"),
             "note": "publish the first value; keep the second. The published half is "
                     "not a secret - it has to be readable by anyone, which is what "
                     "makes it proof of control, and leaving it there is what keeps "
@@ -927,10 +1047,14 @@ def claim_verify(host: str, body: dict | None = None,
     preimage alone is what a stranger cannot obtain, and requiring both is the
     whole of the fix.
     """
-    try:
-        host, _ = normalise_host(host)
-    except ValueError:
+    split = _host_and_port(host)
+    if split is None:
         return _bad("bad_host", "not a usable host name")
+    host, port = split
+    target = _claim_target(f"{host}:{port}" if port else host, body)
+    if isinstance(target, JSONResponse):
+        return target
+    kind, value, _ = target
     proof = x_podshl_claim_proof or (body or {}).get("proof") or ""
     if not isinstance(proof, str) or len(proof) > 256:
         proof = ""
@@ -941,9 +1065,13 @@ def claim_verify(host: str, body: dict | None = None,
             # their values differ — and an unordered SELECT would then pick a
             # row at random, which is how a claim lands on one anchor and a
             # verify reads another. Deterministic, oldest first.
-            cur.execute("SELECT id, value, challenge_token, taken_down_at, taken_down_seq "
-                        "FROM anchor WHERE host = %s AND kind = 'url' "
-                        "ORDER BY id LIMIT 1", (host,))
+            cols = ("SELECT id, value, probe_prefix, challenge_token, taken_down_at, "
+                    "       taken_down_seq FROM anchor ")
+            if kind == "repo":
+                cur.execute(cols + "WHERE kind = 'repo' AND value = %s", (value,))
+            else:
+                cur.execute(cols + "WHERE host = %s AND kind = 'url' "
+                                   "ORDER BY id LIMIT 1", (host,))
             anchor = cur.fetchone()
         if not anchor:
             return JSONResponse({"code": "no_claim", "reason": "start one first"}, status_code=404)
@@ -977,7 +1105,10 @@ def claim_verify(host: str, body: dict | None = None,
                 status_code=403)
 
         expected = hashlib.sha256(proof.encode()).hexdigest()
-        probed = challenge.probe(anchor["value"], expected)
+        # `fetch_root`, not `value`: for a repository the identity a person
+        # recognises and the place a file can be read are different, and control
+        # is proved at the second one.
+        probed = challenge.probe(forge.fetch_root(anchor), expected)
         from .anchor import sweep
         sweep.record(conn, anchor["id"], probed)
         if not probed.confirmed:
@@ -1091,7 +1222,7 @@ def claim_source(host: str, body: dict | None = None,
         with db.tx() as conn:
             anchor_id = _claimed_anchor(conn, host, x_podshl_claim)
             with conn.cursor() as cur:
-                cur.execute("SELECT value, taken_down_at FROM anchor WHERE id = %s",
+                cur.execute("SELECT value, probe_prefix, taken_down_at FROM anchor WHERE id = %s",
                             (anchor_id,))
                 anchor = cur.fetchone()
             if anchor["taken_down_at"]:
@@ -1101,14 +1232,15 @@ def claim_source(host: str, body: dict | None = None,
                                "Enrolling it again is not something a republished file can "
                                "do — see /notice."}, status_code=409)
 
-            prefix = prefix or anchor["value"]
+            root = forge.fetch_root(anchor)
+            prefix = prefix or root
             if not isinstance(prefix, str) or not prefix.startswith(("https://", "http://")):
                 return JSONResponse(
                     {"code": "bad_prefix", "reason": "prefix must be an http(s) URL"},
                     status_code=400)
             if not prefix.endswith("/"):
                 prefix += "/"
-            if not under_prefix(prefix, anchor["value"]):
+            if not under_prefix(prefix, root):
                 # The same rule the manifest's own endpoint obeys. An anchor
                 # proves control of a location and cannot vouch for another one,
                 # and that has to be true of what we agree to fetch as well as
@@ -1116,7 +1248,10 @@ def claim_source(host: str, body: dict | None = None,
                 return JSONResponse(
                     {"code": "outside_anchor",
                      "reason": f"{prefix!r} does not lie under the verified anchor "
-                               f"{anchor['value']!r}"}, status_code=400)
+                               f"{anchor['value']!r}"
+                               + ("" if root == anchor["value"]
+                                  else f", whose files are served from {root!r}")},
+                    status_code=400)
 
             manifest_url = prefix + ".podshl/agent.yaml"
             with conn.cursor() as cur:
@@ -1194,11 +1329,21 @@ def _claimed_anchor(conn, host: str, token: str | None) -> int:
     """
     if not token:
         raise NotClaimed("this dashboard is private to whoever controls the domain")
+    # A self-hosted forge answers on a port and the caller addresses it with one;
+    # `host` holds the bare name, because its CHECK admits no colon. Split here
+    # rather than in each caller, so source, dashboard, revoke and withdraw
+    # cannot disagree about what an address is.
+    host = host.split(":", 1)[0]
     with conn.cursor() as cur:
         cur.execute(
+            # No `kind` filter here, and that is deliberate: the token names
+            # exactly one anchor and is the credential, so the host is a second
+            # check rather than the address. Excluding repositories locked them
+            # out of their own dashboard — the guard belongs where there is no
+            # token to pin the row, which is `/diagnose` and `/mirror`.
             "SELECT a.id FROM dashboard_claim c JOIN anchor a ON a.id = c.anchor_id "
-            "WHERE a.host = %s AND c.token_hash = %s AND c.revoked_at IS NULL "
-            "AND c.expires_at > now()",
+            "WHERE a.host = %s AND c.token_hash = %s "
+            "AND c.revoked_at IS NULL AND c.expires_at > now()",
             (host, hashlib.sha256(token.encode()).digest()),
         )
         row = cur.fetchone()
@@ -1490,7 +1635,9 @@ def discovery_index(response: Response, request: Request):
 # their outage our outage.
 
 @app.get("/mirror/{host}")
-def mirror(host: str, response: Response):
+def mirror(host: str, response: Response,
+           repo: str | None = Query(default=None),
+           forge_shape: str | None = Query(default=None, alias="forge")):
     """What we serve for an anchor, and the commit it came from.
 
     **Publishing the commit is what makes the mirror checkable.** Anyone can
@@ -1498,17 +1645,38 @@ def mirror(host: str, response: Response):
     provenance cannot be checked is just a copy somebody asks you to trust.
     """
     response.headers["Cache-Control"] = "public, max-age=60"
+
+    # A repository is addressed by identity, not by host: `github.com` is shared
+    # by every repository there, so a bare host would answer with whichever row
+    # was first — somebody else's project, under a name they never claimed. The
+    # query string rather than the path, because this is a GET and the identity
+    # carries slashes; `forge` is needed only for a host the table does not know,
+    # which is the self-hosted case.
+    identity = None
+    if repo is not None:
+        parsed = forge.parse(_repo_url(host, repo), forge_shape)
+        if parsed is None:
+            return JSONResponse(
+                {"host": host, "attested": False,
+                 "note": f"{host}/{repo} is not a repository this can address. "
+                         f"{forge.supported()}."},
+                status_code=404, headers={"Cache-Control": "public, max-age=60"})
+        identity = parsed[0]
+
     with db.read() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT a.host, a.status AS anchor_status, a.last_confirmed, "
+                "SELECT a.host, a.value AS anchor_url, a.kind AS anchor_kind, "
+                "       a.status AS anchor_status, a.last_confirmed, "
                 "       s.id AS source_id, s.manifest_url, s.declared_status, "
                 "       s.successor_url, s.forge_archived, s.forge_last_commit_at, "
                 "       c.json, c.commit, c.content_hash, c.langs, c.log_seq "
                 "FROM anchor a "
                 "JOIN source s ON s.anchor_id = a.id AND s.mirror_state = 'serving' "
                 "JOIN card c ON c.source_id = s.id AND c.valid_to IS NULL "
-                "WHERE a.host = %s", (host,))
+                + ("WHERE a.kind = 'repo' AND a.value = %s"
+                   if identity else "WHERE a.host = %s AND a.kind <> 'repo'"),
+                (identity or host,))
             row = cur.fetchone()
             if not row:
                 # Not an accusation. `unknown` is the state of everyone who never
@@ -1517,10 +1685,15 @@ def mirror(host: str, response: Response):
                 # `Cache-Control` is re-asked on every look, and "not here" is
                 # the most common answer this route gives.
                 return JSONResponse(
-                    {"host": host, "attested": False,
+                    {"host": host, **({"anchor": identity} if identity else {}),
+                     "attested": False,
                      "note": "not attested here. That says nothing about them — "
                              "discovery works without us, and a vendor who never "
-                             "heard of us still works."},
+                             "heard of us still works."
+                             + ("" if identity else
+                                " A repository is addressed as "
+                                "?repo=owner/name, because a forge's host is "
+                                "shared by everything on it.")},
                     status_code=404, headers={"Cache-Control": "public, max-age=60"})
 
             cur.execute(
@@ -1534,6 +1707,9 @@ def mirror(host: str, response: Response):
     # What the user needs is the age, not a refusal.
     return {
         "host": row["host"],
+        # What was verified, in full. For a domain the two say the same thing;
+        # for a repository the host is shared and only this identifies it.
+        "anchor_url": row["anchor_url"],
         "attested": True,
         "anchor": {
             "status": row["anchor_status"],

@@ -148,7 +148,14 @@ def probe(prefix: str, token: str, *, client: httpx.Client | None = None) -> Pro
         hops = 0
         while resp.status_code in (301, 302, 303, 307, 308) and hops < 3:
             target = resp.headers.get("location", "")
-            new_host = urlparse(httpx.URL(url).join(target)).hostname
+            # `str(...)`, and that is the whole of a bug that made this branch
+            # unreachable: `httpx.URL.join` returns a `URL`, `urlparse` wants a
+            # string, and it raised `AttributeError` into the catch-all below —
+            # so every redirect answered INTERNAL, and the cross-host guard two
+            # lines down, which is a security check, had never run at all.
+            # Nothing redirected until a forge did: Codeberg answers `/raw/HEAD/`
+            # with a 303 to `/raw/branch/<name>/`, which is how it resolves HEAD.
+            new_host = urlparse(str(httpx.URL(url).join(target))).hostname
             if new_host != host:
                 return classify(resp.status_code, "", token, redirected_off_host=True)
             url = str(httpx.URL(url).join(target))

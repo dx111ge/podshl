@@ -321,12 +321,39 @@ fn find_in(paths: &std::ffi::OsStr, program: &str) -> Option<PathBuf> {
     None
 }
 
+/// Where every program on the machine lives, the operating system's own and
+/// everybody else's alike. A directory that resolves to one of these has
+/// stopped telling the two apart, whatever it is called.
+fn is_shared_bin(d: &Path) -> bool {
+    ["/usr/bin", "/bin", "/usr/local/bin"].iter().any(|g| {
+        let g = PathBuf::from(g);
+        d == g.canonicalize().unwrap_or(g).as_path()
+    })
+}
+
 /// Is this file one of the operating system's own?
 ///
 /// The long tail that `PROGRAM_DENY` cannot name lives here: on Windows every
 /// GUI program in the system directory ignores an argument it does not know and
 /// opens a window, and on every platform the administrative tools are in the
 /// `sbin` directories. None of them is somebody's project.
+///
+/// **Except that on a merged `/usr` they are not.** `/sbin` and `/usr/sbin` are
+/// symbolic links to `/usr/bin` on Arch, Debian 12, Ubuntu 21 and later, Fedora
+/// and openSUSE — so canonicalising them, which this did in order to see through
+/// exactly such links, turned `/usr/bin` into a system directory and refused
+/// **every** program on the machine. Measured on Omarchy: `git`, `docker`,
+/// `curl`, `nvidia-smi` and `lspci` all answered "belongs to the operating
+/// system and is not run for a version". That is the whole open-source path —
+/// a project asking which version of its own package is installed — dead on
+/// current Linux, and it went unseen because no walk had run on one.
+///
+/// So a name that resolves onto the shared binary directory is dropped rather
+/// than believed: there it names nothing smaller than "every program", and a
+/// rule that matches everything is not a rule. What still holds people back is
+/// `PROGRAM_DENY` and `deny_hit`, which work on what a program *is* rather than
+/// where a distribution decided to put it — `bash` and `python3` are refused
+/// here by name, from `/usr/bin`, with the merge or without it.
 fn in_system_directory(p: &Path) -> bool {
     let real = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
     let mut system: Vec<PathBuf> = Vec::new();
@@ -344,6 +371,7 @@ fn in_system_directory(p: &Path) -> bool {
     system
         .into_iter()
         .map(|d| d.canonicalize().unwrap_or(d))
+        .filter(|d| !is_shared_bin(d))
         .any(|d| real.starts_with(&d))
 }
 
@@ -2466,19 +2494,66 @@ version = 3.11.9
         }
 
         // The system directories, which is where the programs that ignore
-        // their arguments and open a window live.
-        let sys = if cfg!(windows) {
-            PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
-                .join("System32").join("where.exe")
+        // their arguments and open a window live. On a merged /usr there is no
+        // such directory — /usr/sbin *is* /usr/bin — so the claim to make there
+        // is the other one, and it is the one that was false.
+        if cfg!(windows) {
+            let sys = PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+                .join("System32").join("where.exe");
+            assert!(in_system_directory(&sys), "{} is not recognised as the system's", sys.display());
+        } else if merged_usr() {
+            assert!(!in_system_directory(Path::new("/usr/bin/podshl-anything")),
+                    "a merged /usr made every program on the machine the system's");
         } else {
-            PathBuf::from("/usr/sbin/podshl-anything")
-        };
-        assert!(in_system_directory(&sys), "{} is not recognised as the system's", sys.display());
+            let sys = PathBuf::from("/usr/sbin/podshl-anything");
+            assert!(in_system_directory(&sys), "{} is not recognised as the system's", sys.display());
+        }
         assert!(!in_system_directory(&std::env::temp_dir().join("engram")),
                 "an ordinary directory was treated as the system's");
         if cfg!(windows) {
             let e = precheck(&json!({"op": "program_version", "program": "where"})).unwrap_err();
             assert!(crate::msg::is("system_program", &e), "a system program was offered: {e}");
+        }
+    }
+
+    /// Does this machine have a merged `/usr` — `/usr/sbin` resolved onto the
+    /// same directory as `/usr/bin`? True on every current Linux distribution
+    /// and false on macOS, and the cases below say different things on each
+    /// rather than one thing that is only true on one of them.
+    fn merged_usr() -> bool {
+        let sbin = std::fs::canonicalize("/usr/sbin");
+        let bin = std::fs::canonicalize("/usr/bin");
+        matches!((sbin, bin), (Ok(a), Ok(b)) if a == b)
+    }
+
+    /// An ordinary program installed the ordinary way can be asked its version.
+    ///
+    /// `in_system_directory` canonicalises the names it holds, to see through
+    /// the links a distribution puts there — and on a merged `/usr` that turned
+    /// `/sbin` and `/usr/sbin` into `/usr/bin`, which is every program on the
+    /// machine. The published path is a project asking which version of its own
+    /// package is installed, and on current Linux it answered that nothing
+    /// could be asked. Named here rather than left to the tests that use
+    /// `rustc`, because those go red for a dozen reasons and this one is worth
+    /// recognising on sight.
+    #[test]
+    fn the_shared_binary_directory_is_not_the_operating_system() {
+        if cfg!(windows) {
+            return;
+        }
+        for d in ["/usr/bin", "/bin", "/sbin", "/usr/sbin"] {
+            let Ok(real) = std::fs::canonicalize(d) else { continue };
+            if real == Path::new("/usr/bin") {
+                assert!(!in_system_directory(&real.join("podshl-not-a-real-program")),
+                        "{d} resolves onto {} and was treated as the system's, \
+                         which refuses every program here", real.display());
+            }
+        }
+        // And the refusal that has to survive it: what a program *is*, rather
+        // than where it sits, still holds.
+        for named in ["bash", "sh"] {
+            assert!(program_denied(named).is_some(),
+                    "{named} stopped being refused by name");
         }
     }
 

@@ -512,12 +512,14 @@ mod tests {
                 }
             }
         }
-        let base = "http://127.0.0.1:8725";
+        let base = crate::http::operator_base();
         let client = crate::http::client();
         let head = get(client, format!("{base}/log/sth")).await
-            .expect("the operator server is not answering on :8725 — this test must never pass without a real log");
+            .expect("the operator is not answering — start it with `mise run server`, or set PODSHL_SERVER_URL to one that is — this test must never pass without a real log");
         let size = head["sth"]["tree_size"].as_u64().expect("no tree size");
-        assert!(size >= 2, "a log of {size} entries cannot show growth");
+        assert!(size >= 2, "{base} has {size} entries and growth cannot be shown \
+                against a log that has not grown: nothing has been registered there. \
+                Not a client defect — see the index case.");
         let root = hex32(head["sth"]["root_hash"].as_str().unwrap()).unwrap();
 
         // Paged, because `/log/entries` caps a page and the log outgrows it.
@@ -629,20 +631,21 @@ mod tests {
         // for a user and the wrong reason for this case to be red. The only
         // test that touches this file.
         let _ = std::fs::remove_file(seen_path());
-        let base = "http://127.0.0.1:8725";
+        let base = crate::http::operator_base();
         let head = reqwest::get(format!("{base}/log/sth")).await
-            .expect("the operator server is not answering on :8725 — this test must never pass without a real log")
+            .expect("the operator is not answering — start it with `mise run server`, or set PODSHL_SERVER_URL to one that is — this test must never pass without a real log")
             .json::<Value>().await.unwrap();
         let size = head["sth"]["tree_size"].as_u64().unwrap();
-        assert!(size > 0, "the log is empty — nothing to prove");
+        assert!(size > 0, "{base} has an empty log — nothing has been registered \
+                there, so there is no entry to prove. Not a client defect.");
         for seq in [0, size / 2, size - 1] {
-            let got = prove(base, seq, &json!({})).await
+            let got = prove(&base, seq, &json!({})).await
                 .unwrap_or_else(|e| panic!("entry {seq} of {size} did not prove: {e}"));
             assert_eq!(got["verified"], true);
         }
-        let e = prove(base, 0, &json!({"content_sha256": "0".repeat(64)})).await.unwrap_err();
+        let e = prove(&base, 0, &json!({"content_sha256": "0".repeat(64)})).await.unwrap_err();
         assert!(crate::msg::is("entry_attests_other", &e),
                 "an entry about other files was accepted for these: {e}");
-        assert!(prove(base, size + 1000, &json!({})).await.is_err(), "an entry past the head proved");
+        assert!(prove(&base, size + 1000, &json!({})).await.is_err(), "an entry past the head proved");
     }
 }

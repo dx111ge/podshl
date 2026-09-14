@@ -1,6 +1,6 @@
 # llmtraining — German helpdesk LLM finetuning
 # Hardware baseline: RTX 2070 SUPER (8 GB, sm_75 Turing) / Ryzen 9 3900X / 31 GB RAM
-# Storage: project lives on 2 TB WD SN770 NVMe (btrfs, LUKS) at /home/dx/Work
+# Storage: the project lives on an NVMe volume (btrfs, LUKS) under the user's home
 #
 # Turing constraints that drive every choice in this project:
 #   - no hardware bf16  -> fp16 + GradScaler, never bf16
@@ -22,7 +22,7 @@ postgres = "18"
 # mise creates and activates .venv automatically on cd into this dir
 _.python.venv = { path = ".venv", create = true }
 
-# keep model downloads on the 2 TB WD SN770 NVMe (mounted at /home/dx/Work, 1.9 TB free),
+# keep model downloads on the project's own volume rather than the system disk,
 # NOT in ~/.cache which lives on the smaller SATA SSD
 HF_HOME = "{{config_root}}/.hf"
 # hf_transfer is gone; Xet is the current fast-download path
@@ -53,9 +53,10 @@ run = "PYTHONPATH=src python -m uvicorn podshl.vendor.app:app --host 127.0.0.1 -
 
 [tasks.client]
 description = "Run the native client (Rust/Tauri)"
-# The DMABUF workaround is required on NVIDIA + Wayland, so the launcher sets it
-# rather than leaving a protocol error to the user.
-run = "cd client-rs && WEBKIT_DISABLE_DMABUF_RENDERER=1 VS_ROOT=../var VS_TRUST=../var/ans_stub.json VS_DIRECTORY=../var/vendor_directory.json cargo run --release"
+# The DMABUF workaround is the binary's own business now (`L2`), so it is not
+# set here: setting it would hide a regression in that default from the one
+# command a developer runs most.
+run = "cd client-rs && VS_ROOT=../var VS_TRUST=../var/ans_stub.json VS_DIRECTORY=../var/vendor_directory.json cargo run --release"
 
 [tasks.client-test]
 description = "The client suite — every client-side case, against the shipped binary"
@@ -163,8 +164,8 @@ auditable.
 
     libwebkit2gtk-4.1-0, libgtk-3-0
 
-On NVIDIA + Wayland set WEBKIT_DISABLE_DMABUF_RENDERER=1 before starting it, or
-the window fails with a Wayland protocol error. The package does not set it.
+On Wayland the client sets WEBKIT_DISABLE_DMABUF_RENDERER=1 for itself, or no
+window would be created at all. Set it yourself to override that.
 
 ## Which operator
 

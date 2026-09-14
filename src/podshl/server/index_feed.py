@@ -48,7 +48,8 @@ VERSION = 1
 MIN_TOKEN = 3
 
 
-def _tokens(host: str, anchor_url: str, problem_classes: list[str]) -> list[str]:
+def _tokens(host: str, anchor_url: str, problem_classes: list[str],
+            kind: str = "url") -> list[str]:
     """What a user could type and reasonably expect to land here.
 
     Every dot segment of every problem class, plus the labels of the verified
@@ -57,13 +58,19 @@ def _tokens(host: str, anchor_url: str, problem_classes: list[str]) -> list[str]
     `pip.install.wheel-missing` is findable as `pip`, and one who writes
     `install.wheel-missing` is still findable as `install`, without either being
     forced into a shape the schema does not require.
+
+    **A repository contributes no host labels.** `github.com` is shared by every
+    repository on it, so emitting `github` would make one token match every such
+    anchor at once -- and it is the forge's name, never the project's. What is
+    left is the owner and the repository, which is what somebody would type, and
+    the classes the project itself declared.
     """
     out: set[str] = set()
     for cls in problem_classes:
         for part in str(cls).replace("/", ".").replace("-", ".").split("."):
             if len(part) >= MIN_TOKEN:
                 out.add(part.lower())
-    for label in host.split("."):
+    for label in (host.split(".") if kind != "repo" else []):
         # Not `com`, `org`, `io`: a public suffix matches half the index.
         if len(label) >= MIN_TOKEN and label not in ("com", "org", "net", "www"):
             out.add(label.lower())
@@ -83,7 +90,7 @@ def entries(conn) -> list[dict]:
     """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT a.host, a.host_unicode, a.value AS anchor_url, a.status, "
+            "SELECT a.host, a.host_unicode, a.value AS anchor_url, a.kind, a.status, "
             "       a.last_confirmed, s.declared_status, s.successor_url, "
             "       c.json, c.langs, c.commit, c.content_hash, c.log_seq "
             "FROM anchor a "
@@ -104,8 +111,15 @@ def entries(conn) -> list[dict]:
             # anchor table states for it.
             "host_unicode": r["host_unicode"],
             "anchor_url": r["anchor_url"],
+            # What kind of location was verified, because it is not one claim.
+            # A domain holds without a third party -- DNS and TLS say who served
+            # the bytes. A repository does not: the forge decides who may write
+            # there, so the forge is a trusted third party for every one of
+            # these, and a client that showed both as "control confirmed" would
+            # be putting one sentence over two strengths of evidence.
+            "anchor_kind": r["kind"],
             "problem_classes": classes,
-            "search_tokens": _tokens(r["host"], r["anchor_url"] or "", classes),
+            "search_tokens": _tokens(r["host"], r["anchor_url"] or "", classes, r["kind"]),
             "langs": sorted(r["langs"] or []),
             # The publisher's own word, and the only one that is authoritative.
             "status": r["declared_status"] or "active",

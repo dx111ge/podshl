@@ -65,6 +65,33 @@ This is deliberately also the storage requirement: **anyone who cannot serve a
 challenge file cannot be verified anyway**, so there is no separate "developer
 without a repository" case to solve. The bar is a single static file.
 
+> **Open, and the code does not do this yet — 2026-09-14.** The paragraph above
+> names a git forge first, and the implementation cannot anchor one. A claim
+> stores `value = https://<host>/` and asks for the challenge at that host's
+> root, and `anchor_host_is_punycode` admits nothing but a bare hostname — so
+> the only anchor that can exist is a **domain**. A maintainer whose project is
+> `github.com/owner/repo` cannot publish, because nobody can write
+> `https://github.com/.well-known/podshl-challenge`. That is most of the
+> audience this branch exists for.
+>
+> What is being built instead: the anchor's identity is the full `owner/repo`,
+> which the forge does guarantee is unique; the challenge is a file **inside the
+> repository**, fetched through the forge's raw URL; and **no name is ever
+> claimed**, because a name is a word in common use rather than property —
+> GitHub holds 1872 repositories with `engram` in the name. The index therefore
+> shows candidates and does not pick one, ordered by relevance to the problem
+> the person actually has, then by corroboration as a **weight and never a
+> gate**, then by this operator's own distinct-reporter counts, then by the age
+> of the anchor. Stars and downloads appear nowhere: ranking the measured
+> example by stars puts the wrong project first.
+>
+> **And the trust story is not the same for the two.** A domain holds without a
+> third party — DNS and TLS say who served the bytes. A forge path does not: the
+> forge decides who may write there, so for a repo anchor the forge is a trusted
+> third party and an anchor is no better than its word. That difference has to
+> reach the user rather than hiding behind one sentence about control being
+> confirmed. `SECURITY.md` carries what is a finding here and what is not.
+
 | | OSS | Enterprise |
 |---|---|---|
 | Challenge | File at the controlled URL | **DNS TXT** |

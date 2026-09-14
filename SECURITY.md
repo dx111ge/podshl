@@ -85,6 +85,42 @@ protocol that cannot be implemented safely is a defect in the protocol.
   `notifier.statement_of_good_faith = true`; that it refuses without one is
   also the design, and it is not an authentication check — filing is open to
   strangers by necessity.
+* **A name in the index is claimed, not owned — and a forge anchor makes
+  claiming one free.** Today an anchor is a domain root, so a name costs a
+  domain. The forge anchors this project needs in order to be usable at all
+  (most maintainers own a repository and no domain) remove that cost: anyone may
+  create `github.com/<anything>/<anything>` and prove control of it in a minute.
+  Measured while deciding this: GitHub holds **1872 repositories with `engram`
+  in the name**, several of them far larger than the one this operator's own
+  maintainer wrote. **No mechanism establishes who is entitled to a name,
+  because nobody is** — a name here is a word in common use, not property.
+  So the interface is being built to show candidates rather than to pick one,
+  and a hostile entry is a row in a list beside the genuine project rather than
+  a substitution for it. Reporting that you can claim a name near somebody
+  else's is therefore **not** a finding. What *is* a finding: a way to make a
+  hostile row appear **above** the genuine one, or to make the genuine one
+  disappear; anything that lets a claim assert a bare name rather than
+  `owner/repo`; or a confusable `owner` that the index does not mark as one.
+  Note that the confusable check currently runs on the **host**, which for forge
+  anchors is shared, so it does not yet cover the owner — known and open.
+
+* **Nobody is watching the log for names.** Certificate Transparency works
+  because parties monitor their own names in it. Every anchor and every card
+  here is in an append-only log and a project *could* watch for a claim near its
+  own — but nothing makes that easy and no notification exists. That the
+  mechanism for finding out is missing is known and open; a way to make a claim
+  **not** appear in the log at all would be a finding of the first order.
+
+* **What a hostile publisher can actually do is bounded, and that is
+  deliberate.** The action vocabulary is three entries (`report_only`,
+  `set_config_key`, `restore_backup`), there is no code execution, writes land
+  only under a root the user granted, a dry run precedes them and a `.bak`
+  follows, readings come from a fixed catalogue one consent at a time, and free
+  text never travels. So the realistic payload of a fake project is **prose that
+  persuades somebody to do something**, and **fact collection of phishing
+  quality** — both real, neither a way in. A payload that escapes those bounds
+  is a finding, and a serious one; that a publisher can write persuasive prose
+  is not.
 
 ## Found here already, and what each one was
 

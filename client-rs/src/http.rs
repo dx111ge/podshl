@@ -139,3 +139,13 @@ mod tests {
         assert!(CONNECT_TIMEOUT < TOTAL_TIMEOUT);
     }
 }
+
+/// The operator these tests check themselves against. Loopback by default,
+/// which is the development loop; `PODSHL_SERVER_URL` points them at a real
+/// one — the live operator answers every route they use with a GET, so running
+/// the suite against it reads a genuinely signed index and log rather than one
+/// this machine produced for itself.
+#[cfg(test)]
+pub(crate) fn operator_base() -> String {
+    std::env::var("PODSHL_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1:8725".into())
+}
