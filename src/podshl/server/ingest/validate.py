@@ -23,24 +23,36 @@ from ..errors import IngestRefused
 from .fetch import MAX_FILES, under_prefix
 
 
-def check_endpoint(endpoint: str, anchor_prefix: str) -> None:
+def check_endpoint(endpoint: str, anchor_prefix: str, identity: str = "") -> None:
     """SV3. The endpoint must lie under the verified anchor.
 
     A card for `example.org` pointing at `google.com` is rejected here, not
     rendered with a warning. The impersonation attack is prevented by removing
     the field it needs, and this is the other half of that: there is no name to
     abuse, and no way to point a verified anchor at somebody else's endpoint.
+
+    **A repository anchor proves two locations at once**, and this is the one
+    place that matters. Control was demonstrated by writing into the repository,
+    which is as much a fact about `github.com/owner/name/` as about the raw
+    prefix the bytes are read from -- they are the same repository, named twice
+    by the forge. Checking only the raw prefix would refuse the endpoint a
+    maintainer would actually publish, their own issue tracker, while accepting
+    a URL under a content delivery host nobody visits. So the identity is
+    allowed as well, and only for a repository: for a domain the two are the
+    same string, or the fetch prefix is the narrower of them, and narrower is
+    what this rule wants.
     """
     if not isinstance(endpoint, str) or not endpoint:
         raise IngestRefused("the manifest declares no endpoint")
     parsed = urlparse(endpoint)
     if parsed.scheme not in ("https", "http"):
         raise IngestRefused(f"endpoint {endpoint!r} is not an http(s) URL")
-    if not under_prefix(endpoint, anchor_prefix):
+    allowed = [anchor_prefix] + ([identity] if identity else [])
+    if not any(under_prefix(endpoint, p) for p in allowed):
         raise IngestRefused(
             f"endpoint {endpoint!r} does not lie under the verified anchor "
-            f"{anchor_prefix!r}. An anchor proves control of a location; it "
-            f"cannot vouch for another one."
+            f"{' or '.join(repr(p) for p in allowed)}. An anchor proves control "
+            f"of a location; it cannot vouch for another one."
         )
 
 
@@ -117,9 +129,14 @@ def check_probes(collect: list) -> None:
             raise IngestRefused(f"probe {probe.get('id', '?')}: {e}") from e
 
 
-def check_manifest(manifest: dict, anchor_prefix: str) -> None:
-    """Everything the manifest itself must satisfy, before a byte is stored."""
-    check_endpoint(manifest["endpoint"], anchor_prefix)
+def check_manifest(manifest: dict, anchor_prefix: str, identity: str = "") -> None:
+    """Everything the manifest itself must satisfy, before a byte is stored.
+
+    `identity` is the anchor's human-facing form where that differs from where
+    its bytes are fetched, which is the case for a repository on a forge and
+    for nothing else. Only `check_endpoint` uses it, and why is written there.
+    """
+    check_endpoint(manifest["endpoint"], anchor_prefix, identity)
     check_english(manifest["langs"])
     check_probes(manifest.get("collect") or [])
 

@@ -109,23 +109,55 @@ def is_single_script(label: str) -> bool:
     return len(scripts) <= 1
 
 
-def hold_reason(conn, host: str) -> str | None:
+def repo_labels(value: str) -> list[str]:
+    """The parts of a repository identity a claimant chose.
+
+    `https://github.com/owner/name/` gives `["owner", "name"]`. The host is not
+    in it, and that is the point: the claimant did not choose `github.com`, it is
+    shared by every repository there, and examining it would ask whether *the
+    forge* resembles somebody's mark -- a question whose two answers are "no,
+    for everyone" and "yes, so hold every project on GitHub".
+    """
+    tail = value.split("://", 1)[-1]
+    parts = [p for p in tail.split("/") if p]
+    return [p.lstrip("~") for p in parts[1:]]
+
+
+def hold_reason(conn, host: str, *, kind: str = "url", value: str = "") -> str | None:
     """A reason to hold this anchor for review, or None.
 
     Returns a reason rather than a boolean so the operator queue can say *why*,
     and so a publisher told they are held can be told what to change.
-    """
-    try:
-        ascii_host, unicode_host = normalise_host(host)
-    except ValueError as e:
-        return f"not a usable hostname: {e}"
 
-    labels = ascii_host.split(".")
-    if unicode_host:
-        for label in unicode_host.split("."):
+    **What is examined depends on what the claimant chose.** For a domain it is
+    every label of the host. For a repository it is the owner and the name,
+    because the host there is the forge's and is shared -- so a check on it
+    would be asking the wrong question of everybody at once. Impersonation on a
+    forge happens in the owner: `dx111geo/engram` is a letter out, and the host
+    is identical either way.
+    """
+    if kind == "repo":
+        labels = repo_labels(value)
+        if not labels:
+            return "a repository anchor with no owner or name in it"
+        ascii_host = "/".join(labels)
+        for label in labels:
             if not is_single_script(label):
-                return (f"the label {label!r} mixes scripts, which is the shape a "
-                        f"homoglyph attack takes. Shown as {ascii_host}.")
+                return (f"{label!r} mixes scripts, which is the shape a homoglyph "
+                        f"attack takes. On a forge the host is shared, so the owner "
+                        f"is where this happens.")
+    else:
+        try:
+            ascii_host, unicode_host = normalise_host(host)
+        except ValueError as e:
+            return f"not a usable hostname: {e}"
+
+        labels = ascii_host.split(".")
+        if unicode_host:
+            for label in unicode_host.split("."):
+                if not is_single_script(label):
+                    return (f"the label {label!r} mixes scripts, which is the shape a "
+                            f"homoglyph attack takes. Shown as {ascii_host}.")
 
     # **Every label, not the second-to-last one.** Guessing the registrable
     # label as `labels[-2]` picks the *hosting platform* on exactly the shared
@@ -165,6 +197,13 @@ def hold_reason(conn, host: str) -> str | None:
     for mark in marks:
         if mark["owner_host"] and mark["owner_host"] == ascii_host:
             return None  # It is theirs.
+    # Known and accepted: a mark's owner is recognised by *host*, so the same
+    # vendor's repository on a forge is not recognised as theirs -- NVIDIA's own
+    # `github.com/nvidia/...` is held for carrying the mark `nvidia`. Held is not
+    # blocked; the anchor stays as reachable as one that never registered, and a
+    # person decides. Recognising a mark owner on a forge would mean marks
+    # recording forge identities as well as hosts, which is a decision about
+    # whose name is whose, and this project has no standing to make it quietly.
 
     # SV33: the same skeleton is a spoof — it is meant to be mistaken for the
     # mark, which is a technical trick rather than a dispute about a name.

@@ -5435,5 +5435,104 @@ def sv_a_repository_goes_from_claim_to_served_card():
         srv.shutdown()
 
 
+def sv_a_confusable_owner_is_held_and_the_forge_is_not():
+    """On a forge the impersonation is in the owner, and the host is everybody's.
+
+    `hold_reason` examined the labels of the host. For a repository that is
+    `github.com`, so the check asked whether *the forge* resembles somebody's
+    mark -- a question with two answers, "no, for everyone" and "yes, so hold
+    every project on GitHub", and neither is about the claimant. Meanwhile
+    `dx111geo/engram` is a letter out from `dx111ge/engram` and the host is
+    identical either way, which is where this actually happens.
+
+    Held, not blocked, exactly as `SV33` has it: a held anchor is mirrored and
+    served and simply gets no attestation, so being conservative costs a review
+    rather than an existence.
+    """
+    from .ingest import confusable
+
+    with db.tx() as conn:
+        _marks(conn)
+        gh = "github.com"
+
+        # The owner carries the mark: a person decides, not us.
+        held = confusable.hold_reason(
+            conn, gh, kind="repo", value="https://github.com/nvidia-drivers/fixes/")
+        assert held, "an owner carrying a well-known mark was attested"
+
+        # A Cyrillic letter inside a Latin owner is the homoglyph shape, and the
+        # message has to say where to look, because the host looks fine.
+        mixed = confusable.hold_reason(
+            conn, gh, kind="repo", value="https://github.com/nvidi\u0430/drivers/")
+        assert mixed and "owner" in mixed, f"mixed scripts in an owner: {mixed}"
+
+        # And an ordinary repository on the same forge is not held. This is the
+        # half that was broken in both directions: the forge's own labels were
+        # the only thing examined, so nothing about the claimant ever was.
+        ok = confusable.hold_reason(
+            conn, gh, kind="repo", value="https://github.com/dx111ge/engram/")
+        assert ok is None, f"an ordinary repository was held: {ok}"
+
+        # The host is not the claimant's and is never the reason.
+        assert "github" not in (held or ""), \
+            "the forge's own name reached a publisher's hold reason"
+
+        # A domain anchor is unchanged.
+        assert confusable.hold_reason(conn, "rnicrosoft.io") is not None
+        assert confusable.hold_reason(conn, "nvidia.com") is None
+
+
+def sv_a_repository_may_publish_the_endpoint_a_person_can_visit():
+    """A repository anchor proves two locations at once, and the endpoint rule
+    only knew about one of them.
+
+    Control is demonstrated by writing into the repository, which is as much a
+    fact about `github.com/owner/name/` as about the raw prefix the bytes are
+    read from — the forge names one repository twice. `check_endpoint` compared
+    against the fetch prefix alone, so the endpoint a maintainer would actually
+    publish, their own issue tracker, was refused, while a URL under a content
+    delivery host nobody visits would have been accepted.
+
+    Found in production rather than here: the first real project enrolled, the
+    crawler fetched its manifest, and the source was refused with
+    `endpoint 'https://github.com/dx111ge/engram/issues' does not lie under the
+    verified anchor 'https://raw.githubusercontent.com/...'`.
+
+    A domain is unchanged and must stay so: there the fetch prefix is the
+    narrower of the two, and narrower is what this rule wants.
+    """
+    from .errors import IngestRefused
+    from .ingest import validate
+
+    ident = "https://github.com/dx111ge/engram/"
+    raw = "https://raw.githubusercontent.com/dx111ge/engram/HEAD/"
+
+    # The one a maintainer publishes.
+    validate.check_endpoint(f"{ident}issues", raw, ident)
+    # And the raw side, still fine, because it is also theirs.
+    validate.check_endpoint(f"{raw}support/", raw, ident)
+
+    # Somebody else's repository on the same forge is not theirs to name.
+    for outside in ("https://github.com/someone/else/issues",
+                    "https://example.org/support",
+                    "https://raw.githubusercontent.com/someone/else/HEAD/"):
+        try:
+            validate.check_endpoint(outside, raw, ident)
+        except IngestRefused:
+            pass
+        else:
+            raise AssertionError(f"{outside} was accepted under another project's anchor")
+
+    # A domain keeps the narrower rule: the prefix, not the whole host.
+    narrow = "https://example.org/project/"
+    validate.check_endpoint(f"{narrow}support", narrow)
+    try:
+        validate.check_endpoint("https://example.org/elsewhere", narrow)
+    except IngestRefused:
+        pass
+    else:
+        raise AssertionError("a domain anchor stopped being confined to its prefix")
+
+
 ALL = {name: fn for name, fn in sorted(globals().items())
        if name.startswith(("sv", "gr")) and callable(fn)}

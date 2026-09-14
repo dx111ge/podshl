@@ -120,7 +120,13 @@ def ingest_one(conn, source: dict, *, client: httpx.Client | None = None) -> dic
         else:
             try:
                 m = manifest.parse_manifest(fetched.body)
-                validate.check_manifest(m, source["fetch_prefix"])
+                # The identity too, because a repository anchor proves two
+                # locations at once and a maintainer publishes the one a
+                # person can visit. Empty for a domain, where they are the
+                # same place.
+                validate.check_manifest(
+                    m, source["fetch_prefix"],
+                    anchor["value"] if anchor["kind"] == "repo" else "")
             except IngestRefused as e:
                 # Refused, and the previous version keeps being served. A broken
                 # commit must not take a working mirror down with it.
@@ -195,7 +201,10 @@ def ingest_one(conn, source: dict, *, client: httpx.Client | None = None) -> dic
         # get is an attestation. Declining to attest is not blocking — the anchor
         # stays exactly as reachable as one that never registered — and that is
         # what lets this be conservative without becoming a chokepoint.
-        hold = confusable.hold_reason(conn, anchor["host"])
+        # For a repository the labels that matter are the owner and the name;
+        # the host is the forge's and is shared by everything on it.
+        hold = confusable.hold_reason(conn, anchor["host"],
+                                      kind=anchor["kind"], value=anchor["value"])
         with conn.cursor() as cur:
             cur.execute("UPDATE anchor SET attest_hold = %s WHERE id = %s",
                         (hold, anchor["id"]))

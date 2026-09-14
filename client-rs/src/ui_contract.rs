@@ -863,6 +863,64 @@ the binary and its manifest would ship disagreeing about what they are"
         }
     }
 
+
+    /// Every text the window asks for by name exists in every language it
+    /// offers.
+    ///
+    /// `i18n.rs` says it plainly: **a missing key falls back to English
+    /// silently**, and in a consent dialogue that is the wrong failure — the
+    /// person is told in a language they may not read what is about to be read
+    /// from their machine. Two cases already checked a handful of keys they
+    /// happened to care about, by hand. Everything added since was covered by
+    /// nobody, which is how a key typed once and spelled differently in four
+    /// files would ship.
+    ///
+    /// Literal keys only. `t("env_c_"+c)` builds its name at runtime and is
+    /// checked where it is built; what this catches is the ordinary case, which
+    /// is also the common one.
+    #[test]
+    fn every_text_the_window_names_exists_in_every_language() {
+        let ui = ui_source();
+        let mut keys: Vec<String> = Vec::new();
+        let bytes = ui.as_bytes();
+        let mut at = 0usize;
+        while let Some(i) = ui[at..].find("t(\"") {
+            let start = at + i;
+            at = start + 3;
+            // `t(` is the tail of `split(`, `format(`, `insert(` and a dozen
+            // others. The first version of this case matched all of them and
+            // reported that `en.json` was missing the text `div`, which is how
+            // it became clear it was reading identifiers rather than keys.
+            let before = if start == 0 { b' ' } else { bytes[start - 1] };
+            if before.is_ascii_alphanumeric() || before == b'_' || before == b'$' {
+                continue;
+            }
+            let Some(end) = ui[at..].find('"') else { break };
+            let key = &ui[at..at + end];
+            let after = ui[at + end + 1..].chars().next().unwrap_or(' ');
+            // `t("x"+y)` names nothing on its own.
+            if after != '+' && !key.is_empty() && !key.contains(' ') {
+                keys.push(key.to_string());
+            }
+            at += end + 1;
+        }
+        keys.sort();
+        keys.dedup();
+        assert!(keys.len() > 50, "only {} keys found — this case is reading the wrong file", keys.len());
+
+        for lang in ["en", "de", "fr", "es"] {
+            let table: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(crate_dir().join(format!("ui/i18n/{lang}.json"))).unwrap()).unwrap();
+            let missing: Vec<&String> = keys.iter()
+                .filter(|k| table.get(k.as_str()).and_then(|v| v.as_str())
+                                 .map_or(true, |s| s.trim().is_empty()))
+                .collect();
+            assert!(missing.is_empty(),
+                    "{lang}.json is missing {} of the window's texts: {:?}",
+                    missing.len(), &missing[..missing.len().min(8)]);
+        }
+    }
+
     /// AT1: a published answer says what the operator attests about whoever
     /// published it — control of the location, when it was last confirmed, the
     /// log entry, and the project's own word about itself. The window knew only

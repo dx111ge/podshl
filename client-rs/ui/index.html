@@ -636,6 +636,16 @@ let QID=0;
 const qid = () => "ql" + (++QID);
 
 /* ---------------------------------------------------------------- flow */
+/* What a published project is called on the wire. For a domain that is its
+   host, as it has always been. For a repository it is the verified identity,
+   because the host is shared by every repository on the forge — sending that
+   would ask the operator about whichever project happened to be first, and
+   would put every project on GitHub into one cluster of reports. */
+function subjectOf(pick){
+  return pick && pick.anchor_kind === "repo" && pick.base
+    ? pick.base : (pick ? pick.domain : "");
+}
+
 async function chooseVendor(){
   const q=$("vquery").value.trim();
   if(!q){
@@ -644,14 +654,45 @@ async function chooseVendor(){
     return null;
   }
   const hits=await invoke("search_vendors",{query:q});
-  if(hits.length===1) return hits[0];
+  if(hits.length===1) return await confirmOrigin(hits[0], q);
   return new Promise(res=>{
     const el=add(`<h3>${t("pick_vendor_h")}</h3>
       <ul class="plain">${hits.map(h=>`<li><span><span class="lbl">${esc(h.vendor)}</span> — ${esc(h.domain)}<br>
-        <span class="why">${esc(tr(h.how))}</span></span></li>`).join("")}</ul>
+        <span class="why">${esc(tr(h.how))} · ${esc(h.anchor_kind==="repo"
+          ? t("anchor_repo",{f:h.domain}) : t("anchor_domain"))}</span></span></li>`).join("")}</ul>
       <div class="btns">${hits.map((h,i)=>`<button class="${i?'':'primary'}" data-i="${i}">${esc(h.vendor)}</button>`).join("")}</div>`);
-    el.querySelectorAll("button").forEach(b=>b.onclick=()=>{ settle(el); res(hits[+b.dataset.i]); });
+    el.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
+      settle(el); res(await confirmOrigin(hits[+b.dataset.i], q));
+    });
   });
+}
+
+/* A name belongs to nobody — 1872 repositories on GitHub have "engram" in
+   theirs — so the list above shows candidates rather than choosing one. This is
+   the one fact that can help a person recognise theirs and that an impostor
+   cannot forge, because it is not on their side of the wire: this machine's own
+   package database already records where each installed program came from,
+   written by the distribution rather than by anybody publishing here.
+
+   It is a reading, so it is asked for first, and refusing it costs nothing. It
+   answers nothing far more often than not — nothing installed under that name,
+   nothing recorded — and a disagreement is said as a disagreement: a fork or a
+   repackaged version produces one honestly. The person decides either way; the
+   pick is returned unchanged. */
+async function confirmOrigin(pick, subject){
+  if(!pick || !pick.base) return pick;
+  const ok = await new Promise(res=>{
+    const el=add(`<h3>${t("prov_h")}</h3><p>${t("prov_1",{s:esc(subject)})}</p>
+      <div class="btns"><button class="primary" data-y="1">${t("prov_ask")}</button>
+      <button data-y="">${t("prov_skip")}</button></div>`);
+    el.querySelectorAll("button").forEach(b=>b.onclick=()=>{ settle(el); res(!!b.dataset.y); });
+  });
+  if(!ok) return pick;
+  let d=null;
+  try{ d=await invoke("provenance_check",{anchorUrl:pick.base, subject}); }catch(e){ d=null; }
+  if(d) add(`<p>${t("prov_warn",{s:esc(d.package), d:esc(d.declared),
+                                 src:esc(d.source), p:esc(pick.vendor)})}</p>`, "panel warn");
+  return pick;
 }
 
 async function run(){
@@ -1294,7 +1335,7 @@ async function publishedPath(pick, problem){
   let out=null;
   for(let round=0; round<3; round++){
     try{
-      out=await invoke("ask_published",{base:SERVER_URL, subject:pick.domain,
+      out=await invoke("ask_published",{base:SERVER_URL, subject:subjectOf(pick),
         problemClass:cls, facts:SHOWN, stated:[...STATED]});
     }catch(e){
       add(`<h3>${t("pub_off_h")}</h3><p>${esc(tr(e))}</p>`,"panel stop"); return false;
@@ -1496,7 +1537,7 @@ async function offerPublishedReport(pick, outcome){
   // followed. And it is not "a reply from the vendor": there is no vendor here.
   el.className="panel";
   try{
-    const r=await invoke("send_published_report",{base:SERVER_URL, subject:pick.domain, report});
+    const r=await invoke("send_published_report",{base:SERVER_URL, subject:subjectOf(pick), report});
     if(r.accepted===false || r.code) throw new Error(r.reason||r.code);
     add(`<h3>${t("pub_receipt_h")}</h3><p>${r.surfaced
       ? t("pub_ok_yes",{n:esc(r.reporters), v:esc(pick.vendor)})
@@ -1759,12 +1800,12 @@ async function noVendorPath(pick, problem, reason){
   const el=add(`<h3>${t("catch_h",{v:esc(pick.vendor)})}</h3><p>${t("catch_1")}</p>
     <p class="why">${t("catch_2")}</p>
     <details class="more"><summary>${t("report_what")}</summary>${kv({
-      subject: pick.domain, model_class: cfg.model_class })}</details>
+      subject: subjectOf(pick), model_class: cfg.model_class })}</details>
     <div class="btns"><button class="primary allow">${t("report_yes")}</button>
       <button class="deny">${t("report_no")}</button></div>`, "panel decide");
   if(!await ask(el)){ el.innerHTML=`<h3>${t("report_none_h")}</h3><p>${t("report_none_1")}</p>`; return; }
   try{
-    const r=await invoke("report_without_vendor",{base:SERVER_URL, subject:pick.domain,
+    const r=await invoke("report_without_vendor",{base:SERVER_URL, subject:subjectOf(pick),
       modelClass:cfg.model_class, uxSeverity:sol.ux_severity, observed:FACTS});
     el.className="panel done";
     // `reporters` is distinct people, not submissions, and `surfaced` is the

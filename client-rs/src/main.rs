@@ -33,6 +33,9 @@ mod jws;
 mod llm;
 mod logproof;
 mod probes;
+// The client's own question, asked on the person's behalf and requestable by
+// no publisher — see the module for why that separation is the point.
+mod provenance;
 mod reads;
 mod redact;
 mod report;
@@ -808,6 +811,35 @@ mod dmabuf_tests {
     }
 }
 
+/// Ask this machine where it got `subject` from, and say so only if that
+/// disagrees with the anchor the person picked.
+///
+/// **Nobody can request this and nobody can switch it off.** Every other reading
+/// here is one a publisher asked for; this one is the client's own question,
+/// asked on the person's behalf, which is the only reason it is worth anything:
+/// a project pretending to be another cannot prevent the machine from naming the
+/// real one, because the answer is not on their side of the wire.
+///
+/// It is still a reading, so the window asks before calling this. And it answers
+/// `null` far more often than not — nothing installed under that name, nothing
+/// recorded about it, or it agrees — because only a disagreement is worth a
+/// person's attention, and even that is a disagreement rather than a verdict:
+/// forks, vendored copies and distributions that repackage all produce one
+/// honestly.
+#[tauri::command]
+fn provenance_check(anchor_url: String, subject: String) -> Value {
+    match provenance::disagrees_with(&anchor_url, &subject) {
+        None => Value::Null,
+        Some(p) => json!({
+            "package": p.package,
+            "declared": p.url,
+            "source": p.source,
+            "picked": anchor_url,
+        }),
+    }
+}
+
+
 fn main() {
     if let Some(arg) = std::env::args().nth(1) {
         if let Err(e) = run_subcommand(&arg) {
@@ -880,7 +912,8 @@ fn main() {
             execute, applicability, reply_channels, escalate, preview_report, ask_published, attach_consented_text, send_report, search_vendors, refresh_index, index_status, interpreter_conflict, set_project_root, vendor_mismatch, identity_info, identity_reset, vendor_standing, record_report_state, contribute_standing, llm_solve, llm_translate, report_without_vendor, llm_providers, llm_models, llm_probe, llm_test, baseline_facts, os_locale, endpoints, llm_choose_reads, llm_follow_up,
             llm_get, llm_set, end_incident, grant_program_path, load_log_excerpt, anonymise_text,
             facts_as_sent,
-            published_card, send_published_report, verify_log_entry
+            published_card, send_published_report, verify_log_entry,
+            provenance_check
         ])
         .run(tauri::generate_context!())
         .expect("PODSHL could not start");

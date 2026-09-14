@@ -1840,6 +1840,16 @@ def _():
     sv("sv_a_repository_goes_from_claim_to_served_card")
 
 
+@case("SV116", "A confusable owner is held, and the forge is not the claimant")
+def _():
+    sv("sv_a_confusable_owner_is_held_and_the_forge_is_not")
+
+
+@case("SV117", "A repository may publish the endpoint a person can visit")
+def _():
+    sv("sv_a_repository_may_publish_the_endpoint_a_person_can_visit")
+
+
 @case("SV84", "A read instruction cannot walk out of a granted root")
 def _():
     sv("sv_a_read_cannot_walk_out_of_a_granted_root")

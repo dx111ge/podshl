@@ -614,14 +614,22 @@ def diagnose(body: dict):
     with db.read() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                # `kind <> 'repo'`: a repository's host is shared with every
-                # other repository on the forge, so a bare host would resolve to
-                # whichever one happened to be first — somebody else's project,
-                # answering for a subject it never claimed. A repository is
-                # reached by its identity or not at all.
-                "SELECT s.id AS source_id FROM anchor a "
-                "JOIN source s ON s.anchor_id = a.id AND s.mirror_state = 'serving' "
-                "WHERE a.host = %s AND a.kind <> 'repo'", (subject,))
+                # A repository is reached by its **identity** or not at all.
+                # Its host is shared with every other repository on the forge, so
+                # a bare host would resolve to whichever one happened to be first
+                # — somebody else's project, answering for a subject it never
+                # claimed. So a subject that is a URL is matched against
+                # `anchor.value`, and a bare name stays a host and never reaches
+                # a repository.
+                #
+                # The same string is what a report carries, and therefore what a
+                # cluster is keyed on: two projects on one forge must not share a
+                # cluster, and with the host as the subject they would have
+                # shared every one.
+                ("SELECT s.id AS source_id FROM anchor a "
+                 "JOIN source s ON s.anchor_id = a.id AND s.mirror_state = 'serving' "
+                 + ("WHERE a.value = %s" if subject.startswith(("https://", "http://"))
+                    else "WHERE a.host = %s AND a.kind <> 'repo'")), (subject,))
             row = cur.fetchone()
         if not row:
             # Nobody published here. Not an accusation, and not an error.

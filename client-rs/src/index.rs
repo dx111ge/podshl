@@ -30,6 +30,13 @@ pub struct Entry {
     pub host: String,
     #[serde(default)]
     pub anchor_url: String,
+    /// Which kind of location was verified — `url` for a domain, `repo` for a
+    /// repository on a forge. Not one claim: a domain holds without a third
+    /// party, because DNS and TLS say who served the bytes, while a forge
+    /// decides who may write in a repository. Shown, never collapsed into one
+    /// sentence about control being confirmed.
+    #[serde(default)]
+    pub anchor_kind: String,
     #[serde(default)]
     pub problem_classes: Vec<String>,
     #[serde(default)]
@@ -207,6 +214,50 @@ pub fn cached() -> Option<Index> {
 /// Matching is on tokens the publisher earned — segments of the problem classes
 /// it declared, and of the anchor it proved control of. There is no name field
 /// to match against, because there is no name field.
+impl Entry {
+    /// Is this a repository on a forge rather than a domain?
+    pub fn is_repo(&self) -> bool {
+        self.anchor_kind == "repo"
+    }
+
+    /// What a person is shown, and what they compare against their own memory.
+    ///
+    /// A domain is its host. A repository is `owner/name` and **never** its
+    /// host: `github.com` is shared by everything on it, so showing the host
+    /// would present every repository under one name and tell the person
+    /// nothing about which project this is. `owner/name` is the form they
+    /// already know, because it is where they got the software.
+    pub fn display(&self) -> String {
+        if !self.is_repo() {
+            return self.host.clone();
+        }
+        let tail = self.anchor_url.split("://").nth(1).unwrap_or("");
+        let parts: Vec<&str> = tail.split('/').filter(|p| !p.is_empty()).collect();
+        match parts.len() {
+            0 | 1 => self.host.clone(),
+            _ => parts[1..].join("/"),
+        }
+    }
+
+    /// The words this entry can be found by, for a query typed by a person.
+    ///
+    /// For a repository the forge's own host is left out. It is shared by every
+    /// repository there, so `github` would match all of them at once, and it is
+    /// the forge's name rather than the project's. The server leaves it out of
+    /// `search_tokens` for the same reason; this is the other half, because the
+    /// client also matched on `host` directly.
+    fn haystack(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.search_tokens.iter().map(|t| t.to_lowercase()).collect();
+        out.extend(self.problem_classes.iter().map(|c| c.to_lowercase()));
+        if self.is_repo() {
+            out.push(self.display().to_lowercase());
+        } else {
+            out.push(self.host.to_lowercase());
+        }
+        out
+    }
+}
+
 pub fn search(idx: &Index, query: &str) -> Vec<Entry> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
@@ -215,15 +266,27 @@ pub fn search(idx: &Index, query: &str) -> Vec<Entry> {
     let mut hits: Vec<Entry> = idx
         .entries
         .iter()
-        .filter(|e| {
-            e.search_tokens.iter().any(|t| t == &q)
-                || e.problem_classes.iter().any(|c| c.to_lowercase().contains(&q))
-                || e.host.to_lowercase().contains(&q)
-        })
+        .filter(|e| e.haystack().iter().any(|h| h == &q || h.contains(&q)))
         .cloned()
         .collect();
-    // An exact token beats a substring, and a live project beats a deprecated
-    // one. Beyond that the order is the index's, which is the host order.
+    // **Ordered by the query, never by the projects.** An exact token beats a
+    // substring and a live project beats a deprecated one, because both are
+    // statements about this search rather than about whose project is better.
+    // Beyond that the order is the index's, which is host order.
+    //
+    // Nothing else goes in here, and the reason is `W8`: *"the participant list
+    // is ordered by name — an ordering is a ranking wearing different clothes"*.
+    // Stars and downloads are bought by the hour and need a forge API; this
+    // operator's own reporter counts cannot be in a public index at all, since
+    // no public page may carry a per-project figure; and weighting by whether
+    // some third party corroborates a project is this operator ranking
+    // projects, which is the thing that rule refuses. Sorting by popularity was
+    // measured against the only concrete case anybody looked at and put the
+    // *wrong* project first.
+    //
+    // So the list does not decide. It shows `owner/name`, what kind of location
+    // was verified and what each project claims to answer for, and the person
+    // recognises their own — which they can, because it is where they got it.
     hits.sort_by_key(|e| {
         (
             e.status == "deprecated",
@@ -345,4 +408,60 @@ mod tests {
         let doc = serde_json::json!({"index": i, "signature": {}});
         assert!(verify(&doc).is_err(), "an unprovable entry was accepted");
     }
+
+    /// A repository is shown as `owner/name`, found by it, and never found by
+    /// the forge.
+    ///
+    /// `github.com` is shared by every repository on it. Showing the host would
+    /// put the same name on every row; matching on it would make one word find
+    /// all of them at once. Both were true — the client matched `host` directly
+    /// even after the server stopped emitting the forge as a token.
+    #[test]
+    fn a_repository_is_its_owner_and_name_not_its_forge() {
+        let mut i = idx();
+        i.entries = vec![
+            Entry {
+                host: "github.com".into(),
+                anchor_url: "https://github.com/dx111ge/engram/".into(),
+                anchor_kind: "repo".into(),
+                search_tokens: vec!["dx111ge".into(), "engram".into()],
+                problem_classes: vec!["engram.index.corrupt".into()],
+                status: "active".into(),
+                ..Default::default()
+            },
+            Entry {
+                host: "github.com".into(),
+                anchor_url: "https://github.com/someone/other/".into(),
+                anchor_kind: "repo".into(),
+                search_tokens: vec!["someone".into(), "other".into()],
+                status: "active".into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(i.entries[0].display(), "dx111ge/engram",
+                   "a repository was shown under the forge's name");
+
+        let hits = search(&i, "engram");
+        assert_eq!(hits.len(), 1, "searching a project name found {} rows", hits.len());
+        assert_eq!(hits[0].display(), "dx111ge/engram");
+
+        assert!(search(&i, "github").is_empty(),
+                "the forge's own name found every repository on it at once");
+        assert!(search(&i, "github.com").is_empty(),
+                "the forge's host found every repository on it at once");
+
+        // And a domain is still found by its host, which is its name.
+        let mut d = idx();
+        d.entries = vec![Entry {
+            host: "curl.se".into(),
+            anchor_url: "https://curl.se/".into(),
+            anchor_kind: "url".into(),
+            status: "active".into(),
+            ..Default::default()
+        }];
+        assert_eq!(d.entries[0].display(), "curl.se");
+        assert_eq!(search(&d, "curl").len(), 1, "a domain stopped being findable");
+    }
+
 }

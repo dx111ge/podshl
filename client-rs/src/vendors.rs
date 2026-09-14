@@ -83,9 +83,21 @@ pub fn search(query: &str) -> Value {
             return serde_json::json!(hits
                 .iter()
                 .map(|e| serde_json::json!({
-                    "vendor": e.host.clone(),
+                    // `display()`, not `host`. For a repository the host is
+                    // `github.com` and is shared by everything on it, so the
+                    // list would offer the same name several times over and
+                    // say nothing about which project each row is. `owner/name`
+                    // is what the person already knows.
+                    "vendor": e.display(),
                     "domain": e.host.clone(),
                     "base": e.anchor_url.clone(),
+                    // Which kind of location was verified, so the window can
+                    // say it rather than putting one sentence over two
+                    // strengths of evidence. A domain holds without a third
+                    // party; for a repository the forge decides who may write
+                    // there, and the person is entitled to know which they are
+                    // looking at.
+                    "anchor_kind": if e.is_repo() { "repo" } else { "url" },
                     "answers": e.problem_classes.clone(),
                     "status": e.status.clone(),
                     "how": m!("how_published")
