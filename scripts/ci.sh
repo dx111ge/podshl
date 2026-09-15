@@ -50,6 +50,40 @@ docker compose run --rm --no-deps --entrypoint sh podshl \
 say "the suite"
 docker compose run --rm podshl testcases
 
+say "the flow, headless, against the real binary"
+# **The one piece of coverage that needed neither a desktop nor Windows.** The
+# window test beside it drives WebView2 over the DevTools protocol, which is
+# Windows only; this serves the same page to a headless browser under the
+# application's own policy and bridges `invoke` to the same Rust. It needs a
+# client built with `--features uitest`, which a release must never be, so it
+# is built separately and under its own name.
+#
+# **And into its own target directory.** Both builds write
+# `release/podshl-client`; building the test client over the release one
+# replaces the artefact that was just checked for *not* having the test
+# surface, and the next run then checks what the previous run left behind.
+# That happened, and the check caught it — which is the check doing its job
+# and not a reason to weaken it. Two builds, two outputs.
+# Exported inside the command rather than passed with `-e`: on a Windows shell
+# MSYS rewrites anything that looks like an absolute path, so the container was
+# handed `C:/Program Files/Git/cargo-target-uitest` — which cargo then tried to
+# join into `LD_LIBRARY_PATH` and refused, because of the colon in it.
+docker compose run --rm --no-deps --entrypoint sh podshl \
+  -c "set -e
+      export CARGO_TARGET_DIR=/cargo-target-uitest
+      cd /app
+      ./scripts/build_client.sh --uitest '$OPERATOR' '$SERVER_URL' >/dev/null
+      cd client-rs/uitest
+      # Exported, not merely assigned. A line of bare assignments with no
+      # command sets shell variables, and \`node\` is a separate command that
+      # never sees them — which read as 'no client to drive' about a client
+      # that had just been built.
+      export PODSHL_CLIENT=\$HOME/.local/bin/podshl-client-uitest
+      export UITEST_CHROME=\$(command -v chromium || command -v chromium-browser)
+      WS=''
+      node -e 'process.exit(typeof WebSocket===\"function\"?0:1)' || WS=--experimental-websocket
+      node \$WS --test 'tests/flow-headless.test.mjs'"
+
 say "format and lint, reported"
 # The tools have to be there. This step once printed "0 places differ" for a
 # tree with 588 of them: `cargo fmt` was not installed, it errored, the grep

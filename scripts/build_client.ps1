@@ -39,6 +39,12 @@ param(
     # Releases keep the apex: the authoritative record is right, and it is only
     # this network that is wrong.
     [string]$ServerUrl,
+    # Build the client the headless flow test drives: `perform_reads`,
+    # `send_published_report` and `llm_translate` on the `invoke` surface, which
+    # a released client must not have. Installed under its own name and never
+    # over the real one, and the release check below is skipped because this is
+    # deliberately the thing that check exists to catch.
+    [switch]$UiTest,
     # Where the built client is put so that everything which runs
     # `podshl-client` runs *this* one. A client that was built and not installed
     # is the same gap one step later.
@@ -70,7 +76,8 @@ $env:PODSHL_BUILD_INDEX_URL  = $base
 $env:PODSHL_BUILD_LOG_KEY    = $keyText
 Push-Location (Join-Path $repo 'client-rs')
 try {
-    if ($Profile -eq 'release') { cargo build --release } else { cargo build }
+    $features = if ($UiTest) { @('--features', 'uitest') } else { @() }
+    if ($Profile -eq 'release') { cargo build --release @features } else { cargo build @features }
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed ($LASTEXITCODE)" }
 } finally {
     Pop-Location
@@ -111,12 +118,16 @@ if ($ep.operator -ne $base) { throw "the binary reports $($ep.operator), not $ba
 # screens and from a command line they would not. Asked of the artefact rather
 # than assumed from the build, which is the rule the rest of this script already
 # follows.
+if ($UiTest) {
+    Write-Host '- built WITH the test-only surface, which a release must never have'
+} else {
 Write-Host '- checking the test-only surface is not in it'
 foreach ($cmd in 'perform_reads', 'send_published_report', 'llm_translate') {
     $answer = & $bin invoke $cmd '{}' 2>&1 | Out-String
     if ($answer -notmatch 'is not in this build') {
         throw "$bin answers $cmd - it was built with the uitest feature and must not be released"
     }
+}
 }
 
 Write-Host '- verifying the compiled key against the operator'
@@ -127,7 +138,9 @@ if ($LASTEXITCODE -ne 0 -or $refresh -notmatch '"entries"') {
 Write-Host "  $refresh"
 
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
-$dest = Join-Path $InstallDir 'podshl-client.exe'
+# Its own name. A test build and the client somebody runs must not be one file,
+# or the next `-UiTest` quietly replaces what the desktop entry starts.
+$dest = Join-Path $InstallDir $(if ($UiTest) { 'podshl-client-uitest.exe' } else { 'podshl-client.exe' })
 Copy-Item $bin $dest -Force
 $installedOp = (& $dest invoke endpoints '{}' | ConvertFrom-Json).operator
 if ($installedOp -ne $base) { throw "installed client reports $installedOp, not $base" }

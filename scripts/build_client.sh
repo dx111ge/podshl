@@ -28,7 +28,14 @@
 # Releases keep the apex. The authoritative record is right; one network is not.
 set -euo pipefail
 
-OPERATOR="${1:?usage: scripts/build_client.sh <operator> [server-url]   (e.g. sdota.de)}"
+# `--uitest` builds the client the headless flow test drives: three commands on
+# the `invoke` surface that a released client must not have. Installed under its
+# own name, never over the real one, and the release check below is skipped
+# because this build is deliberately the thing that check exists to catch.
+UITEST=""
+if [ "${1:-}" = "--uitest" ]; then UITEST=1; shift; fi
+
+OPERATOR="${1:?usage: scripts/build_client.sh [--uitest] <operator> [server-url]   (e.g. sdota.de)}"
 KEYFILE="release/$OPERATOR/log_key.json"
 [ -f "$KEYFILE" ] || { echo "no public log key at $KEYFILE" >&2; exit 1; }
 
@@ -46,7 +53,7 @@ touch client-rs/src/main.rs
   PODSHL_BUILD_SERVER_URL="$BASE" \
   PODSHL_BUILD_INDEX_URL="$BASE" \
   PODSHL_BUILD_LOG_KEY="$KEY" \
-    cargo build --release )
+    cargo build --release ${UITEST:+--features uitest} )
 
 # `CARGO_TARGET_DIR` moves the output, and the container sets it to a volume.
 # Looking in `client-rs/target` regardless is how this script checked a file the
@@ -76,13 +83,28 @@ grep -qF "$X" < <(strings "$BIN") \
 # under `--features uitest`: from a window they happen behind consent screens,
 # from a command line they would not. Asked of the artefact rather than assumed
 # from the build.
+if [ -n "$UITEST" ]; then
+  echo "· built WITH the test-only surface, which a release must never have"
+else
 echo "· checking the test-only surface is not in it"
+# **Not a pipeline.** Refusing is how the binary answers here, and refusing is
+# a non-zero exit — so with `set -o pipefail` the pipeline fails because the
+# *first* command failed, however well `grep` did. The check then reports the
+# opposite of what it measured: "it answers" about a binary that refused.
+#
+# This project has a commit about exactly this — "the check failed because it
+# succeeded: pipefail and grep -q" — and the trap was walked into again, in a
+# script written to stop this kind of hour. The output is captured first and
+# matched second, where no exit status is in the way.
 for cmd in perform_reads send_published_report llm_translate; do
-  if ! "$BIN" invoke "$cmd" '{}' 2>&1 | grep -q "is not in this build"; then
-    echo "$BIN answers $cmd — it was built with the uitest feature and must not be released" >&2
-    exit 1
-  fi
+  answer=$("$BIN" invoke "$cmd" '{}' 2>&1 || true)
+  case "$answer" in
+    *"is not in this build"*) continue ;;
+  esac
+  echo "$BIN answers $cmd — it was built with the uitest feature and must not be released" >&2
+  exit 1
 done
+fi
 
 echo "· asking the binary itself"
 "$BIN" invoke endpoints '{}' | python3 -c '
@@ -99,9 +121,12 @@ raise SystemExit(0 if op.startswith("https://") else "the binary reports a loopb
 # and never reached the program anybody was actually starting.
 DEST="${PODSHL_INSTALL_DIR:-$HOME/.local/bin}"
 mkdir -p "$DEST"
-install -m755 "$BIN" "$DEST/podshl-client"
-installed_op=$("$DEST/podshl-client" invoke endpoints '{}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["operator"])')
+# Its own name. A test build and the client somebody runs must not be one file,
+# or the next `--uitest` quietly replaces what a desktop entry starts.
+NAME="podshl-client${UITEST:+-uitest}"
+install -m755 "$BIN" "$DEST/$NAME"
+installed_op=$("$DEST/$NAME" invoke endpoints '{}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["operator"])')
 [ "$installed_op" = "$BASE" ] \
   || { echo "installed client reports $installed_op, not $BASE" >&2; exit 1; }
 
-echo "built and installed $DEST/podshl-client for $BASE"
+echo "built and installed $DEST/$NAME for $BASE"

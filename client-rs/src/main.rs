@@ -907,6 +907,34 @@ async fn invoke_by_name(name: &str, a: &Value) -> Result<Value, String> {
         "send_published_report" => send_published_report(s("base"), s("subject"), v("report")).await?,
         #[cfg(feature = "uitest")]
         "llm_translate" => llm_translate(v("texts"), s("to"), Some(list("keep"))).await?,
+
+        // **`discover`, for the same build and with a stated limit.** It is
+        // absent from the ordinary surface for a reason that is architecture
+        // rather than policy: the window's copy stores the verified
+        // out-of-band key in `AppState` and every later step reads it from
+        // there, while this surface is one process per call — the key would be
+        // gone before anybody could use it.
+        //
+        // The published path never needs it: a project with no agent card has
+        // no key to keep. So this answers, and refuses the one case it cannot
+        // honour, rather than returning a half-answer that looks like the
+        // window's.
+        #[cfg(feature = "uitest")]
+        "discover" => {
+            let trust_env = std::env::var("VS_TRUST").unwrap_or_else(|_| "dns".into());
+            let resolver = if trust_env == "dns" {
+                trust::Resolver::Dns
+            } else {
+                trust::Resolver::Pinned(std::path::PathBuf::from(trust_env))
+            };
+            let (found, jwk) = flow::discover(&s("base"), &resolver).await?;
+            if jwk.is_some() {
+                return Err(
+                    "this anchor publishes an agent card, and the key verified for it cannot be                      kept: `invoke` is one process per call and the window holds that key in                      application state for every later step. Drive the vendor path through the                      window instead."
+                        .to_string());
+            }
+            serde_json::to_value(found).map_err(|e| e.to_string())?
+        }
         "issue_report" => issue_report(
             s("subject"), s("problem"), v("facts"), list("stated"), s("outcome"),
             s("answer"), a.get("answerFromModel").and_then(|b| b.as_bool()).unwrap_or(false),
