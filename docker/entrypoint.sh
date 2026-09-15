@@ -84,6 +84,15 @@ migrate() {
 # The out-of-band key the client verifies the vendor's card against. var/ is
 # gitignored, so a fresh clone has none and ten client cases fail on the
 # missing file rather than on anything they test.
+seed_log() {
+  # Three cases ask the client to verify this operator's own proofs, and none
+  # of them can hold on an empty log. A database that somebody has been using
+  # for a while has entries; a fresh one has none, which is why they passed on
+  # developers' machines for months and failed the first time this ran in CI.
+  say "seeding the log so the operator's own proofs can be verified"
+  python scripts/seed_log.py
+}
+
 fixtures() {
   say "trust stub"
   python scripts/make_trust_stub.py
@@ -158,7 +167,7 @@ case "${1:-all}" in
   all)       migrate; fixtures; counterparty; operator; wait ;;
   server)    migrate; operator; wait ;;
   services)  fixtures; counterparty; wait ;;
-  testcases) migrate; fixtures; counterparty; operator; wait_for_services; rc=0; python run_testcases.py || rc=$?; shutdown; exit $rc ;;
+  testcases) migrate; fixtures; counterparty; operator; wait_for_services; seed_log; rc=0; python run_testcases.py || rc=$?; shutdown; exit $rc ;;
   release)   shutdown_store; exec mise run release ;;
   migrate)   migrate; shutdown ;;
   shell)     exec bash ;;
