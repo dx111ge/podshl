@@ -110,6 +110,20 @@ def apply_all(verbose: bool = True) -> list[str]:
             if verbose:
                 print(f"  applied {version}")
 
+    # **A head over an empty tree is still a head.** Without one, the first
+    # request for the signed index reaches a read-only transaction with nothing
+    # to serve — and `sth.current` used to paper over that by writing, which a
+    # read path may not do. Issued here because migrating is the one moment a
+    # fresh operator is certainly allowed to write, and it is idempotent per
+    # tree size: an operator that already has one gets nothing new.
+    from . import sth as _sth
+    with connect() as conn:
+        if _sth.current(conn) is None:
+            _sth.issue(conn)
+            conn.commit()
+            if verbose:
+                print("  issued the first signed head, over an empty log")
+
     if verbose:
         print(f"{len(applied)} applied, {len(seen)} already present")
     return applied

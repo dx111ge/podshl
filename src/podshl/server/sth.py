@@ -95,14 +95,25 @@ def issue(conn) -> dict:
     return {"sth": head, "signature": sig}
 
 
-def current(conn) -> dict:
+def current(conn) -> dict | None:
+    """The newest signed head, or `None` if this operator has never issued one.
+
+    **It used to issue one when there was none, and that is a write.** Every
+    caller is a read — `GET /index` holds a read-only transaction — so on an
+    operator that had never signed anything the first request for the index
+    raised `cannot execute INSERT in a read-only transaction` and answered 500.
+    Production never met it because a head has existed there since the first
+    crawl; a freshly stood-up operator meets it immediately, and answers 500
+    until something happens to write one.
+
+    Found on 2026-09-15 by the staging instance, on the day it was built, which
+    is the first thing it was built to do.
+    """
     with conn.cursor() as cur:
         cur.execute("SELECT tree_size, root_hash, timestamp_ms, signature, key_id, body "
                     "FROM sth ORDER BY tree_size DESC LIMIT 1")
         row = cur.fetchone()
-    if row is None:
-        return issue(conn)
-    return _from_row(row)
+    return None if row is None else _from_row(row)
 
 
 def verify(head: dict, signature: dict, jwk: dict) -> bool:

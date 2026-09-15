@@ -23,8 +23,27 @@
 # its operator identity are not production's.
 name: podshl-staging
 
+# **Staging mints its own log key, and production must never.**
+#
+# The shared operator settings set `PODSHL_LOG_KEY_CREATE` empty, with the
+# reason written beside it: a key created silently on a host that lost its own
+# forks the log under a key nobody pinned. That is right for the operator people
+# use. It is wrong here, and the first staging deployment proved it — every
+# request for the signed index answered 500, and the log said so exactly:
+# "creating one is not enabled ... set PODSHL_LOG_KEY_CREATE=1 only where that
+# is what you mean".
+#
+# Here is where that is what you mean. This log is disposable, no client pins
+# its key, and the alternative — copying production's private half into a second
+# stack — is the one thing that must not happen: it would put the key that signs
+# the real log in another place and let this instance sign as the operator.
+x-staging-env: &staging-env
+  environment:
+    PODSHL_LOG_KEY_CREATE: "1"
+
 services:
   server:
+    <<: *staging-env
     # Published, because there is no Caddy here to reach it. Loopback only:
     # this must not be something the internet can find and mistake for the
     # operator, and the log it signs is not the log anybody should trust.
@@ -32,8 +51,15 @@ services:
       - "127.0.0.1:8735:8725"
 
   ops:
+    <<: *staging-env
     ports: !override
       - "127.0.0.1:8736:8726"
+
+  ingest:
+    <<: *staging-env
+
+  migrate:
+    <<: *staging-env
 
   # Not started. `profiles` keeps it out of `up` unless somebody names the
   # profile, which nothing here does.

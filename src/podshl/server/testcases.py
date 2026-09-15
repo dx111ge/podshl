@@ -4424,6 +4424,56 @@ def _route_all_pending(operator, auth):
         offset += 200
 
 
+class _Rollback(Exception):
+    """Leaves `db.tx()` by the door that rolls back."""
+
+
+def sv_a_fresh_operator_can_serve_its_index():
+    """**An operator that has never signed a head answered 500 for its index.**
+
+    `GET /index` runs in a read-only transaction — `db.read()` sets that at the
+    database, so a write on a query path is an error from Postgres rather than
+    a convention somebody can forget. `sth.current` issued a head when it found
+    none, which is a write, so the very first request to a freshly stood-up
+    operator raised `cannot execute INSERT in a read-only transaction`.
+
+    Production never met it: a head has existed there since its first crawl. It
+    is met immediately by anybody standing up their own operator, which is the
+    whole of the self-hosting story. Found on 2026-09-15 by the staging
+    instance, on the day it was built, which is the first thing it was built to
+    do.
+
+    The head is issued by the migration runner now, where writing is allowed,
+    and `current` reports honestly that there is none.
+    """
+    from . import index_feed, sth
+
+    try:
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM sth")
+
+            assert sth.current(conn) is None,                 "current() invented a head for an operator that has never signed one"
+
+            try:
+                index_feed.prepare(conn)
+            except index_feed.NoSignedHead:
+                pass
+            else:
+                raise AssertionError(
+                    "an index was prepared against nothing — either a head was "
+                    "written on a read path, or one was served unproven")
+
+            # And the migration runner is where it comes from.
+            sth.issue(conn)
+            assert sth.current(conn) is not None, "issuing left no head"
+            index_feed.prepare(conn)
+
+            raise _Rollback()
+    except _Rollback:
+        pass
+
+
 def _all_pending(conn):
     """Every pending notice, not the first page of them.
 

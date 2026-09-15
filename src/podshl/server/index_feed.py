@@ -184,9 +184,22 @@ def prepare(conn) -> tuple[dict, dict, str]:
     request that already holds this body gets a 304 and costs no signature.
     """
     head = sth.current(conn)
+    if head is None:
+        # An operator that has never signed a head has nothing to publish an
+        # index against, and must say so rather than serve one unproven. This
+        # should not be reachable — migrating issues the first head — so it is
+        # a named refusal and not a fallback.
+        raise NoSignedHead(
+            "this operator has never issued a signed head, so there is nothing "
+            "an index could be published against. Run the migrations, which "
+            "issue the first one.")
     body = build(conn, tree_size=head["sth"]["tree_size"],
                  generated_ms=head["sth"]["timestamp"])
     return head, body, etag(body)
+
+
+class NoSignedHead(Exception):
+    """Raised rather than serving an index nothing vouches for."""
 
 
 def sign(head: dict, body: dict) -> dict:

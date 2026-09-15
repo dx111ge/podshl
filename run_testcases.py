@@ -824,6 +824,11 @@ def _():
     sv("sv_a_notice_states_that_whoever_filed_it_means_it")
 
 
+@case("SV119", "A freshly stood-up operator can serve its index")
+def _():
+    sv("sv_a_fresh_operator_can_serve_its_index")
+
+
 @case("SV118", "A notice filed behind a backlog is still reachable")
 def _():
     sv("sv_a_notice_filed_behind_a_backlog_is_still_reachable")
