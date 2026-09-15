@@ -1480,6 +1480,13 @@ async function publishedPath(pick, problem){
           {list:(out.rested_on_supplied||[]).join(", ")}))}</p>` : ""}`, "panel done");
   // Not awaited: the answer is readable while the proof is fetched.
   checkLogEntry(answered, card);
+  // **Here, not at the end of the function.** This was written after
+  // `offerIssueReport`, which waits for the person to say whether the answer
+  // helped — so somebody who read their answer and closed the window left no
+  // record that the published path had answered at all. The claim is true the
+  // moment the project's text is on the screen; what comes after it is theirs
+  // to do or not.
+  logUi(`publishedPath: answered from the project's own files, class=${cls}`);
 
   // Whether it worked is the person's to say, after trying. It was sent as
   // `resolved` the moment the text appeared — before anybody had tried it —
@@ -1499,7 +1506,6 @@ async function publishedPath(pick, problem){
   // Offered whether or not they reported: the two are different acts. One tells
   // the operator's counts something; this one is theirs to keep.
   await offerIssueReport(pick, problem, outcome, text, false);
-  logUi("publishedPath: answered from the project's own files");
   return "answered";
 }
 

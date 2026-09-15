@@ -8,6 +8,10 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    # Tagged, so `docker ps` shows a name rather than an image id. The deploy
+    # compose already does this; here it was missing, and a test that asks what
+    # is running read an id and had nothing to look it up by.
+    image: podshl-dev:local
     container_name: podshl
     ports:
       - "127.0.0.1:8721:8721"   # vendor

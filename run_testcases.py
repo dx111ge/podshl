@@ -2978,7 +2978,16 @@ def main():
     if failures:
         print("\nFailures in detail:")
         for cid, e, tb in failures:
-            print(f"\n── {cid} ──\n{tb.strip().splitlines()[-1]}")
+            # **The message, not the last line of the traceback.** A `cargo`
+            # delegation ends with "error: test failed, to rerun pass `--bin
+            # podshl-client`", which names neither the test nor what it
+            # asserted — so the first CI run of this suite reported four
+            # failures and said nothing whatever about any of them. What a case
+            # puts in its own assertion is the part somebody can act on.
+            body = str(e).strip() or tb.strip()
+            lines = body.splitlines()
+            shown = lines if len(lines) <= 40 else lines[:6] + ["  …"] + lines[-32:]
+            print(f"\n── {cid} ──\n" + "\n".join(shown))
     undone, extra = check_drift()
     twice = documented_twice()
     if twice:

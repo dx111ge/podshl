@@ -13,10 +13,15 @@
 # on a server is one nobody runs first, and a gate that exists only on a laptop
 # is one CI cannot enforce.
 #
-# **Where this runs.** The working repository is on Gitea and has no runner, so
-# this runs on the public mirror — after a change has been pushed rather than
-# before. That is worth having and is not the whole of what item 3 asked for;
-# a Gitea runner on the operator's host would close the gap.
+# **Where this runs.** On the public mirror, which is fed by hand after a change
+# is already pushed — so this one reports rather than gates. The gate is
+# `.gitea/workflows/suite.yml`, on the working repository, which has a runner
+# (`local-builder`) that was there all along; the first version of this comment
+# said it did not, which was wrong and was worth checking rather than assuming.
+#
+# Both are worth having. This one runs on a clean machine and the Gitea one does
+# not, and the difference between them is exactly the class of failure that
+# passes locally and fails for everybody else.
 name: suite
 
 on:

@@ -653,8 +653,18 @@ the binary and its manifest would ship disagreeing about what they are"
             let outcome = line[at + 8..].split('"').next().unwrap_or("");
             assert!(known.contains(&outcome),
                     "publishedPath returns an outcome nothing handles: {outcome:?}");
-            let named = line.contains("logUi(")
-                || lines.get(i.wrapping_sub(1)).is_some_and(|p| p.contains("logUi("));
+            // A failure or a refusal has to say so *where it leaves*: those are
+            // the six exits that look alike to the caller. "answered" is
+            // different — it is recorded the moment the project's text is on
+            // the screen, which is earlier in the function and is the point at
+            // which the claim becomes true. Requiring a line beside the final
+            // `return` too would only be requiring it twice.
+            let named = if outcome == "answered" {
+                body.contains("answered from the project's own files")
+            } else {
+                line.contains("logUi(")
+                    || lines.get(i.wrapping_sub(1)).is_some_and(|p| p.contains("logUi("))
+            };
             assert!(named, "publishedPath leaves silently at: {}", line.trim());
         }
         assert!(exits >= 6, "publishedPath has only {exits} named exits; it had six");

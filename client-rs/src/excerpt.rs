@@ -180,9 +180,17 @@ mod tests {
             eprintln!("docker is not answering — container sources not attempted");
             return;
         };
+        // **An untagged image reports as its own id**, and an id is not a name a
+        // publisher could ever write — `containers_of` is right not to match
+        // one. A compose file that builds without `image:` produces exactly
+        // that, so this case failed on a machine whose own development stack
+        // was running. Skipping it is not weakening the case: the property
+        // under test is that a container named by its image is found, and a
+        // bare id names nothing.
+        let is_id = |l: &str| l.len() >= 12 && l.chars().all(|c| c.is_ascii_hexdigit());
         let Some(image) = listing.lines().map(str::trim)
-            .find(|l| !l.is_empty() && !l.contains('@')) else {
-            eprintln!("no container is running — container sources not attempted");
+            .find(|l| !l.is_empty() && !l.contains('@') && !is_id(l)) else {
+            eprintln!("no container is running under an image name — container sources not attempted");
             return;
         };
         let repo = image.rsplit_once(':').filter(|(_, t)| !t.contains('/')).map(|(r, _)| r).unwrap_or(image);
