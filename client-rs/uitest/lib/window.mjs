@@ -102,7 +102,13 @@ export async function openWindow({ port = 9444, env = {} } = {}) {
     stdio: "ignore",
     env: {
       ...process.env,
-      // WebView2 on Windows and WebKitGTK elsewhere both take the port this way.
+      // **WebView2 only, which means Windows only.** This was written claiming
+      // WebKitGTK takes the port the same way. It does not: it has no CDP
+      // endpoint at all, it exposes WebKit's own remote inspector through
+      // `WEBKIT_INSPECTOR_SERVER`, and nothing here speaks that protocol. So
+      // this harness runs on Windows and nowhere else — which is the reason
+      // it cannot be the flow's coverage in CI, and the reason that gap has to
+      // be closed somewhere else.
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
       PODSHL_LOG: logFile,
       ...env,

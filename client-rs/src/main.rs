@@ -883,10 +883,40 @@ async fn invoke_by_name(name: &str, a: &Value) -> Result<Value, String> {
         // driving the window must be able to say what the window would have
         // said or the trace it produces is not the window's.
         "log_line" => { log_line(s("what")); json!({ "logged": true }) }
+
+        // **Read-only, and on the surface for everybody.** None of these four
+        // touches the machine, sends anything or spends anything: a pure
+        // function over probes, a network read with a verification, an
+        // environment variable, and clearing grants that live in this process
+        // and die with it. They were missing for no reason anybody wrote down.
+        "plan_reads" => plan_reads(a.get("probes").and_then(|p| p.as_array()).cloned().unwrap_or_default()),
+        "verify_log_entry" => verify_log_entry(s("base"), a.get("seq").and_then(|x| x.as_u64()).unwrap_or(0), v("expected")).await?,
+        "os_locale" => os_locale(),
+        "end_incident" => end_incident(),
+
+        // **Only in a build that asked for them.** These run readings on
+        // somebody's machine, send their data to an operator, and can spend
+        // their money — which from a window happens behind consent screens,
+        // and from here would not. A released client is built without
+        // `uitest`, so it does not have them at all: a decision made at compile
+        // time by whoever builds, not at run time by whatever is running.
+        #[cfg(feature = "uitest")]
+        "perform_reads" => perform_reads(
+            a.get("probes").and_then(|p| p.as_array()).cloned().unwrap_or_default(), list("allow")),
+        #[cfg(feature = "uitest")]
+        "send_published_report" => send_published_report(s("base"), s("subject"), v("report")).await?,
+        #[cfg(feature = "uitest")]
+        "llm_translate" => llm_translate(v("texts"), s("to"), Some(list("keep"))).await?,
         "issue_report" => issue_report(
             s("subject"), s("problem"), v("facts"), list("stated"), s("outcome"),
             s("answer"), a.get("answerFromModel").and_then(|b| b.as_bool()).unwrap_or(false),
             list("tried"), a.get("footer").and_then(|b| b.as_bool()).unwrap_or(true)),
+        // Two kinds of absence, said apart. "Not in this build" is not "no such
+        // command", and telling somebody the second when the first is true
+        // costs them the afternoon this distinction exists to save.
+        #[cfg(not(feature = "uitest"))]
+        other @ ("perform_reads" | "send_published_report" | "llm_translate") => return Err(format!(
+            "{other:?} is not in this build. It runs readings on this machine, sends data, or spends money. Build with `--features uitest` if you are driving the window in a test.")),
         other => return Err(format!(
             "no such command on this surface: {other:?}. The window has more; the ones \
              that write to this machine or spend money are deliberately not here.")),

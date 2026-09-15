@@ -766,6 +766,37 @@ the binary and its manifest would ship disagreeing about what they are"
                 "the marker is not wrapped, so a missing sentence would stop the window");
     }
 
+    /// **The commands a released client must not have are behind a build flag.**
+    ///
+    /// `perform_reads` runs readings on somebody's machine, `send_published_report`
+    /// sends their data to an operator, `llm_translate` can spend their money.
+    /// From the window each happens behind a consent screen; from `invoke` none
+    /// of them would. They are on that surface only under `--features uitest`,
+    /// so a released binary does not have them at all — a decision made at
+    /// compile time by whoever builds, rather than at run time by whatever is
+    /// running, which is what an environment variable would have been.
+    ///
+    /// `build_client.sh` and `build_client.ps1` ask the built artefact and
+    /// refuse it if it answers. This is the cheaper half: it fails when
+    /// somebody adds the fourth one without the flag, before any binary exists.
+    #[test]
+    fn the_commands_a_release_must_not_have_are_behind_the_build_flag() {
+        let main = main_source();
+        let start = main.find("async fn invoke_by_name").expect("the invoke surface is gone");
+        let body = &main[start..];
+        for cmd in ["perform_reads", "send_published_report", "llm_translate"] {
+            let at = body.find(&format!("\"{cmd}\" =>"))
+                .unwrap_or_else(|| panic!("{cmd} is no longer on the surface at all"));
+            // The three lines above the arm carry the flag.
+            let before = &body[at.saturating_sub(120)..at];
+            assert!(before.contains("#[cfg(feature = \"uitest\")]"),
+                    "{cmd} is on the invoke surface of every build, including released ones");
+        }
+        // And the refusal tells the two kinds of absence apart.
+        assert!(body.contains("is not in this build"),
+                "a command missing for want of a build flag is reported as one that does not exist");
+    }
+
     /// Every sentence the window asks for exists in every language it offers.
     /// `t()` falls back to English and then to the key itself, so a missing one
     /// is not a crash — it is a raw `pub_unreach_h` on somebody's screen.

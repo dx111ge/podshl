@@ -105,6 +105,20 @@ if ($ep.operator -ne $base) { throw "the binary reports $($ep.operator), not $ba
 # compiled in, for the thing the key exists to check. This is the only check
 # here that can fail for the reason that actually matters, and the message it
 # prints on failure now names the key it used.
+# **A release must not carry the test-only surface.** `perform_reads`,
+# `send_published_report` and `llm_translate` exist on the `invoke` surface only
+# under `--features uitest`, because from a window they happen behind consent
+# screens and from a command line they would not. Asked of the artefact rather
+# than assumed from the build, which is the rule the rest of this script already
+# follows.
+Write-Host '- checking the test-only surface is not in it'
+foreach ($cmd in 'perform_reads', 'send_published_report', 'llm_translate') {
+    $answer = & $bin invoke $cmd '{}' 2>&1 | Out-String
+    if ($answer -notmatch 'is not in this build') {
+        throw "$bin answers $cmd - it was built with the uitest feature and must not be released"
+    }
+}
+
 Write-Host '- verifying the compiled key against the operator'
 $refresh = & $bin invoke refresh_index (@{ base = $base } | ConvertTo-Json -Compress)
 if ($LASTEXITCODE -ne 0 -or $refresh -notmatch '"entries"') {

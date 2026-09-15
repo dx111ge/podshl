@@ -16,20 +16,24 @@ DevTools protocol. A browser automation stack here would be a second browser.
 | **2** flow logic | *not built* — see below |
 | **3** the window | **this**, against the real binary and the real engine |
 
-Layer 2 was planned as a headless page with `window.__TAURI__.core.invoke`
-bridged to `podshl-client invoke`, so a test could drive the real Rust in
-seconds without a window. It is not buildable as described, and the reason is
-worth writing down rather than rediscovering: **eight of the commands the
-published path calls are not on the `invoke` surface**, and several are absent
-on purpose — `perform_reads` runs readings on the machine, `send_published_report`
-sends somebody's data, `llm_translate` can spend their money. Widening that
-surface to make a test possible would be widening it for everybody. Recording
-the answers instead was ruled out by the same plan that asked for the bridge,
-and rightly: a recording is a claim that the shape has not changed.
+Layer 2 in the plan is not this and not the bridge either: it is the *flow
+logic* pulled out of the DOM code and tested with a measured transport. That is
+weeks of untangling 2212 lines, and it is the item worth the most — every defect
+this project has seen lived in them.
 
-So the choice is a decision somebody has to make — widen the surface, or accept
-that the fast loop stops before the readings — and it is not one to make by
-writing a test that quietly assumes it.
+**The `invoke` surface is settled, and it is not what blocks that.** The
+commands the published path needs are on it, except three that a released
+client must not have: `perform_reads` runs readings on somebody's machine,
+`send_published_report` sends their data, `llm_translate` can spend their money.
+From the window each happens behind a consent screen; from a command line none
+would. They are compiled in only under `--features uitest`, so a released binary
+does not have them at all — a decision made when somebody builds, rather than at
+run time by whatever is running, which is what an environment variable would
+have been. `build_client.sh` and `build_client.ps1` ask the artefact and refuse
+to release one that answers.
+
+So a headless layer 3a is now buildable against the real binary, with nothing
+recorded and nothing stubbed. It is not built yet.
 
 ## Running them
 
@@ -52,6 +56,12 @@ interrupted, which is the whole reason it is done this way. On 2026-09-14 the
 same job was attempted with synthetic keystrokes against the operator's desktop
 and broke whenever they typed.
 
-They do not run in CI: a desktop session is needed and GitHub's runners have
-none. `scripts/ci.sh` gates on layers 1 and 2's Rust half, which is everything
-that can be checked without one.
+They do not run in CI, for two reasons rather than one. A desktop session is
+needed and GitHub's runners have none — and this drives **WebView2**, over the
+DevTools protocol, which is Windows. WebKitGTK, which the Linux `.deb` runs on,
+has no CDP endpoint at all; it exposes WebKit's own remote inspector and nothing
+here speaks that protocol.
+
+So this is a Windows developer's command, not a gate. `scripts/ci.sh` gates on
+everything that can be checked without a desktop, and the flow itself is not in
+that set — which is the open question, not a detail.

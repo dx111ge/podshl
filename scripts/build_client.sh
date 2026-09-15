@@ -71,6 +71,19 @@ grep -qF "$BASE" < <(strings "$BIN") \
 grep -qF "$X" < <(strings "$BIN") \
   || { echo "the log key is not in $BIN — it could not verify the directory, and every project would fall through to the model" >&2; exit 1; }
 
+# **A release must not carry the test-only surface.** `perform_reads`,
+# `send_published_report` and `llm_translate` are on the `invoke` surface only
+# under `--features uitest`: from a window they happen behind consent screens,
+# from a command line they would not. Asked of the artefact rather than assumed
+# from the build.
+echo "· checking the test-only surface is not in it"
+for cmd in perform_reads send_published_report llm_translate; do
+  if ! "$BIN" invoke "$cmd" '{}' 2>&1 | grep -q "is not in this build"; then
+    echo "$BIN answers $cmd — it was built with the uitest feature and must not be released" >&2
+    exit 1
+  fi
+done
+
 echo "· asking the binary itself"
 "$BIN" invoke endpoints '{}' | python3 -c '
 import json,sys
