@@ -145,7 +145,15 @@ mkdir -p "$OUT"
 TARGET="${CARGO_TARGET_DIR:-client-rs/target}"
 (cd client-rs && cargo tauri build --bundles deb)
 cp "$TARGET/release/podshl-client" "$OUT/podshl-client-$V-linux-x86_64"
-find "$TARGET/release/bundle/deb" -name '*.deb' -exec cp {} "$OUT/" ';'
+# **This version's .deb, not every .deb ever built there.** The bundle
+# directory keeps what previous builds left, so a bare `*.deb` copied 0.1.0 and
+# 0.1.1 into the 0.1.2 release — twice, caught by hand both times, and the
+# second time minutes before publishing. A release directory that contains two
+# versions is one somebody downloads the wrong half of.
+DEBS=$(find "$TARGET/release/bundle/deb" -name "*_${V}_*.deb")
+test -n "$DEBS" || { echo "no .deb for $V under $TARGET/release/bundle/deb" >&2; exit 1; }
+test "$(echo "$DEBS" | wc -l)" -eq 1 || { echo "more than one .deb for $V: $DEBS" >&2; exit 1; }
+cp $DEBS "$OUT/"
 cat > "$OUT/PLATFORM.md" <<'EOF'
 # podshl-client — Linux, x86_64
 
@@ -187,7 +195,9 @@ story here yet worth signing with.
 EOF
 printf '\nVersion %s, built from %s on %s\n' \
   "$V" "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OUT/PLATFORM.md"
-(cd "$OUT" && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+# Not `*`: a SHA256SUMS from a previous run is in the directory and hashing it
+# into its own successor is a line that means nothing.
+(cd "$OUT" && sha256sum $(ls | grep -v '^SHA256SUMS$') > SHA256SUMS && cat SHA256SUMS)
 echo
 echo "  artefacts in $OUT"
 echo "  Linux only. Windows and macOS need runners on those systems - see RELEASING.md"
