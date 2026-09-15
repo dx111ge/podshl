@@ -684,9 +684,9 @@ the binary and its manifest would ship disagreeing about what they are"
         // rest. An operator that did not answer is not a project that publishes
         // nothing, and a timeout is not a person asking for a model.
         let no_vendor = function_body(&ui, "noVendorPath");
-        let unreachable = no_vendor.find("\"unreachable\"")
+        let unreachable = no_vendor.find("offer-retry")
             .expect("noVendorPath no longer treats an unreachable catalogue as its own case");
-        let no_agent = no_vendor.rfind("if(published) saidNoAgent();")
+        let no_agent = no_vendor.rfind("if(plan.sayNoAgent) saidNoAgent();")
             .expect("noVendorPath no longer says when a project publishes no agent");
         assert!(unreachable < no_agent,
                 "the unreachable case is decided after the no-agent message, so it still fires on a network failure");
@@ -712,7 +712,7 @@ the binary and its manifest would ship disagreeing about what they are"
         let body = function_body(&ui, "publishedPath");
         assert!(!body.contains("<select id=\"pcls\""),
                 "the classes are a dropdown of identifiers again");
-        assert!(body.contains("pick.answer_labels"),
+        assert!(body.contains("Flow.publishedAnswers(pick).labels"),
                 "the window no longer reads the maintainer's sentence for a class");
         assert!(body.contains("labels[c] ? bi(labels[c], labels_t[c]) : esc(c)"),
                 "a class with no sentence no longer falls back to its identifier, so                  every manifest published before this would show nothing");
@@ -795,6 +795,40 @@ the binary and its manifest would ship disagreeing about what they are"
         // And the refusal tells the two kinds of absence apart.
         assert!(body.contains("is not in this build"),
                 "a command missing for want of a build flag is reported as one that does not exist");
+    }
+
+    /// **The decisions live in `flow.js`, and the page asks it.**
+    ///
+    /// `index.html` is 2200 lines of JavaScript in one block, and every defect
+    /// this project has seen lived in them — a project that publishes answers
+    /// handed to a model, an operator that could not be reached reported as a
+    /// project that publishes nothing. Neither is a rendering fault; both are
+    /// decisions taken in the middle of code that also builds panels, and so
+    /// only checkable by driving a window.
+    ///
+    /// The first of them are out, in a file the page loads and a test can
+    /// evaluate in a millisecond. This keeps them out: a copy of the decision
+    /// written back inline is what made them unreachable in the first place.
+    #[test]
+    fn the_flow_decisions_are_asked_for_rather_than_repeated() {
+        let ui = ui_source();
+        assert!(ui.contains(r#"<script src="flow.js">"#),
+                "the page no longer loads the file the decisions live in");
+        let flow = std::fs::read_to_string(crate_dir().join("ui/flow.js"))
+            .expect("cannot read ui/flow.js");
+        // Defined there, and asked for here.
+        for name in ["publishedAnswers", "planBefore", "planAfter", "planOnGivingUp", "OUTCOMES"] {
+            assert!(flow.contains(name), "flow.js no longer defines {name}");
+        }
+        for name in ["publishedAnswers", "planBefore", "planAfter"] {
+            assert!(ui.contains(&format!("Flow.{name}")),
+                    "the page does not ask flow.js for {name}");
+        }
+        // The two the page used to work out inline, and got wrong.
+        assert!(!ui.contains("Array.isArray(pick.answers) && pick.answers.length"),
+                "whether a project publishes answers is decided in the page again");
+        assert!(!ui.contains(r#"if(took === "answered") return;"#),
+                "what to do with an outcome is decided in the page again");
     }
 
     /// Every sentence the window asks for exists in every language it offers.

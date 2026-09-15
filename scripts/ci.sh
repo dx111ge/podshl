@@ -82,7 +82,7 @@ docker compose run --rm --no-deps --entrypoint sh podshl \
       export UITEST_CHROME=\$(command -v chromium || command -v chromium-browser)
       WS=''
       node -e 'process.exit(typeof WebSocket===\"function\"?0:1)' || WS=--experimental-websocket
-      node \$WS --test 'tests/flow-headless.test.mjs'"
+      node \$WS --test 'tests/flow-decisions.test.mjs' 'tests/flow-headless.test.mjs'"
 
 say "format and lint, reported"
 # The tools have to be there. This step once printed "0 places differ" for a

@@ -10,30 +10,24 @@ DevTools protocol. A browser automation stack here would be a second browser.
 
 ## What this covers, and what it does not
 
-| | |
-|---|---|
-| **1** Rust commands | `cargo test`, and `podshl-client invoke` against a live operator |
-| **2** flow logic | *not built* — see below |
-| **3** the window | **this**, against the real binary and the real engine |
+| | | |
+|---|---|---|
+| **1** Rust commands | `cargo test`, and `podshl-client invoke` against a live operator | in CI |
+| **2** flow decisions | `tests/flow-decisions.test.mjs` over `ui/flow.js` — no page, no network, milliseconds | in CI |
+| **3a** the page, headless | `tests/flow-headless.test.mjs` — the shipped page in a browser, `invoke` bridged to the real binary | in CI |
+| **3b** the real window | `tests/published-path.test.mjs` — WebView2 over the DevTools protocol | **Windows, by hand** |
 
-Layer 2 in the plan is not this and not the bridge either: it is the *flow
-logic* pulled out of the DOM code and tested with a measured transport. That is
-weeks of untangling 2212 lines, and it is the item worth the most — every defect
-this project has seen lived in them.
+**Layer 2 is begun, not finished.** `ui/flow.js` holds the decisions that were
+wrong twice: what a hit publishes, what to say when nothing is published, and
+what to do with each outcome the published path returns. The consent ordering,
+the question rounds and the report assembly are still inside the page's 2200
+lines. They belong here too, one at a time, each move covered by 3a — which is
+what made this move safe to start.
 
-**The `invoke` surface is settled, and it is not what blocks that.** The
-commands the published path needs are on it, except three that a released
-client must not have: `perform_reads` runs readings on somebody's machine,
-`send_published_report` sends their data, `llm_translate` can spend their money.
-From the window each happens behind a consent screen; from a command line none
-would. They are compiled in only under `--features uitest`, so a released binary
-does not have them at all — a decision made when somebody builds, rather than at
-run time by whatever is running, which is what an environment variable would
-have been. `build_client.sh` and `build_client.ps1` ask the artefact and refuse
-to release one that answers.
-
-So a headless layer 3a is now buildable against the real binary, with nothing
-recorded and nothing stubbed. It is not built yet.
+The `invoke` surface is settled and is not what blocks the rest: three commands
+a released client must not have are compiled in only under `--features uitest`,
+so a release cannot be asked for them and both build scripts refuse to ship one
+that answers.
 
 ## Running them
 

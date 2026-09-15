@@ -236,6 +236,7 @@
   </div></footer>
 </div>
 
+<script src="flow.js"></script>
 <script>
 "use strict";
 const invoke = (c,a) => window.__TAURI__.core.invoke(c,a);
@@ -1297,7 +1298,7 @@ function bindLogBoxes(root){
    "answered" means the path is finished and nothing more is owed, including
    when the person refused to send — their refusal was the answer. */
 async function publishedPath(pick, problem){
-  const classes = Array.isArray(pick.answers) ? pick.answers : [];
+  const classes = Flow.publishedAnswers(pick).classes;
   if(!classes.length){ logUi("publishedPath: no answers on the hit"); return "none"; }
 
   // **The question is asked in the person's words, not in the publisher's
@@ -1312,8 +1313,7 @@ async function publishedPath(pick, problem){
   // dropdown. Where nobody wrote a sentence — every manifest published before
   // `class_labels` existed — the identifier leads on its own, which is exactly
   // what this window did before.
-  const labels = (pick.answer_labels && typeof pick.answer_labels === "object")
-    ? pick.answer_labels : {};
+  const labels = Flow.publishedAnswers(pick).labels;
 
   // **The sentence is publisher text, so it is translated like the rest of it.**
   // A project owes English and nothing more (`LG7`), and everything else it
@@ -1759,7 +1759,7 @@ async function noVendorPath(pick, problem, reason){
   const saidNoAgent=()=>add(`<h3>${t("noagent_h",{v:esc(pick.vendor)})}</h3>
     <p>${t("noagent_1",{r:esc(reason)})}</p>
     <p class="why">${t("noagent_2")}</p>`, "panel stop");
-  const published = Array.isArray(pick.answers) && pick.answers.length > 0;
+  const published = Flow.publishedAnswers(pick).classes.length > 0;
   // The gate the 2026-09-14 log could not show: what the hit carried by the
   // time *the window* read it, rather than what the binary logged returning.
   logUi(`noVendorPath vendor=${pick.vendor} answers=${Array.isArray(pick.answers)
@@ -1772,8 +1772,10 @@ async function noVendorPath(pick, problem, reason){
   // any answers in it. A person then reads that a project publishes nothing
   // while it publishes three answers, and there is nothing on the screen to
   // contradict them. The console said so; nobody reads a console.
-  if(!published){
-    const st = await invoke("index_status").catch(()=>({have:false,entries:0}));
+  const before = Flow.planBefore(pick, published
+    ? null : await invoke("index_status").catch(()=>({have:false,entries:0})));
+  if(before.kind === "nothing-published"){
+    const st = {have: before.directory === "holds-entries", entries: before.entries};
     if(!st.have){
       add(`<h3>${t("nodir_h")}</h3><p>${t("nodir_1")}</p>
         <p class="why">${t("nodir_2")}</p>`, "panel stop");
@@ -1789,6 +1791,7 @@ async function noVendorPath(pick, problem, reason){
   // generated, and a user with no model configured gets the whole of it.
   let took = await publishedPath(pick, problem);
   logUi(`publishedPath -> ${took}`);
+  let plan = Flow.planAfter(took, {published, why: UNREACHABLE_WHY});
 
   // **An operator that did not answer is not a project that published nothing,
   // and a timeout is not somebody asking for a model.** The window used to say
@@ -1800,7 +1803,7 @@ async function noVendorPath(pick, problem, reason){
   // Trying again is the whole remedy when the reason is a name that resolves to
   // the wrong address for five minutes, so it is offered first and the refusing
   // button keeps the focus.
-  while(took === "unreachable"){
+  while(plan.kind === "offer-retry"){
     const el=add(`<h3>${t("pub_unreach_h")}</h3>
       <p>${t("pub_unreach_1",{v:esc(pick.vendor), o:esc(operatorHost())})}</p>
       <p class="why">${t("pub_unreach_2")}</p>
@@ -1816,9 +1819,10 @@ async function noVendorPath(pick, problem, reason){
     }
     took = await publishedPath(pick, problem);
     logUi(`publishedPath (retry) -> ${took}`);
+    plan = Flow.planAfter(took, {published, why: UNREACHABLE_WHY});
   }
-  if(took === "answered") return;
-  if(published) saidNoAgent();
+  if(plan.kind === "done") return;
+  if(plan.sayNoAgent) saidNoAgent();
   // A project that publishes answers and is handed to a model anyway — now only
   // ever because the person declined, or because nothing published matched.
   logUi(published ? `falling through to the model DESPITE published answers (${took})`
