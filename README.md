@@ -11,7 +11,7 @@ and gives the project's own answer at the moment something broke. No server to
 run, no model to pay for, nothing to install per project.
 
 **Early beta.** The operator runs at **https://sdota.de**. Clients for Windows,
-Linux and macOS: **[download 0.1.0](https://github.com/dx111ge/podshl/releases/latest)**
+Linux and macOS: **[download 0.1.1](https://github.com/dx111ge/podshl/releases/latest)**
 (unsigned — [INSTALL.md](INSTALL.md) says how to start them anyway, and what
 they send).
 

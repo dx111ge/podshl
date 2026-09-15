@@ -21,6 +21,7 @@ narrows that gap rather than closing it; the rows that remain uncovered are
 marked `manual` or `open` and are not counted as passing.
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1465,6 +1466,148 @@ def server_up():
         return False
 
 
+# ------------------------------------------------- the flow, through the client
+
+
+#: The built client, asked the way the window asks it.
+#:
+#: Every defect on 2026-09-14 was found by a person clicking, and none of them
+#: could have been found otherwise: `ui_contract` reads the window's source,
+#: and text cannot fall into the wrong branch. These walk the same commands the
+#: window calls, in the same order, and assert what came back.
+#: `PODSHL_CLIENT` names one explicitly; otherwise wherever the build put it.
+#: The container moves the target directory to a volume, so a fixed path here
+#: would check a file the build never wrote.
+CLIENT = Path(os.environ.get("PODSHL_CLIENT")
+              or (Path(os.environ.get("CARGO_TARGET_DIR", "client-rs/target"))
+                  / "release" / "podshl-client"))
+
+
+def client(command: str, args: dict | None = None):
+    """One of the window's commands, against the built client.
+
+    Fails with an instruction rather than skipping: a client built without the
+    operator and the log key compiled in is not a broken client, it is a
+    *plausible* one — it starts, draws its window, and quietly cannot verify the
+    published directory. That is exactly what shipped this morning.
+    """
+    import subprocess
+    assert CLIENT.exists(), (
+        f"no client at {CLIENT} — build one with `scripts/build_client.sh <operator>`. "
+        f"These cases walk the real binary; there is nothing to assert without it.")
+    r = subprocess.run([str(CLIENT), "invoke", command, json.dumps(args or {})],
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, f"{command} failed: {r.stderr.strip()[:300]}"
+    return json.loads(r.stdout)
+
+
+@case("CL1", "The client is built for an operator, not for loopback")
+def _():
+    """A client built without `PODSHL_BUILD_SERVER_URL` and `PODSHL_BUILD_LOG_KEY`
+    points at loopback and holds no key. It still starts and still draws its
+    window — and every published project then falls through to the model,
+    because an index it cannot verify is an index it will not use.
+
+    `option_env!` is read at compile time and cargo does not rebuild when only an
+    environment variable changed, so this is one `cargo build` away at any
+    moment. `scripts/build_client.sh` is the guard; this is the case."""
+    e = client("endpoints")
+    assert e["operator"].startswith("https://"), (
+        f"the client talks to {e['operator']!r} — built without an operator, so it "
+        f"would ask loopback on somebody's desktop")
+    # The window fetches the directory when it opens; nothing else does. A case
+    # that only asked `index_status` was asserting that somebody had opened a
+    # window first, which is not a property of the client.
+    client("refresh_index", {"base": e["operator"]})
+    st = client("index_status")
+    assert st["have"], (
+        "the client holds no verified directory. Either it has no pinned log key "
+        "compiled in, or the operator's index did not verify — and in both cases "
+        "every published project silently becomes a model question")
+
+
+@case("CL2", "A published project is found, and found as owner/repo")
+def _():
+    """What the window does first. `engram` is a word 1872 repositories use, so
+    the row has to say *which* — and the forge's own name must not find every
+    repository on it at once."""
+    hits = client("search_vendors", {"query": "engram"})
+    assert hits, "nothing found for a project that is published"
+    top = hits[0]
+    assert top["vendor"] == "dx111ge/engram", (
+        f"shown as {top['vendor']!r} — a repository must be owner/name, never the forge")
+    assert top["base"] == "https://github.com/dx111ge/engram/", top
+    assert len(top.get("answers") or []) == 3, (
+        f"{len(top.get('answers') or [])} problem classes — without them the window "
+        f"skips the published path entirely and asks a model instead")
+    # The forge's own name must not reach a *published* row. It still gets an
+    # answer — the guess, which every unknown name gets — and asserting emptiness
+    # here was this case being wrong rather than the client.
+    forge = client("search_vendors", {"query": "github"})
+    assert not any(h.get("base", "").startswith("https://github.com/") for h in forge), \
+        f"the forge's own name reached the repositories on it: {forge}"
+
+
+@case("CL3", "The published card is fetched for a repository")
+def _():
+    """The half that was missing when the operator learned about repositories:
+    `/mirror/{host}` began refusing a bare forge host — correctly, since
+    `github.com` is shared — and the client kept sending the host. Every
+    repository anchor fell through to the model, which then asked what the
+    project was, having never been told."""
+    card = client("published_card", {"base": "https://sdota.de",
+                                     "host": "https://github.com/dx111ge/engram/"})
+    assert card.get("collect"), (
+        "no readings came back — the card was not fetched, and the published path "
+        "cannot run without it")
+    ids = {c.get("id") for c in card["collect"]}
+    assert "os.arch" in ids, ids
+    # And the address that must not work, because it is everybody's.
+    import subprocess
+    r = subprocess.run([str(CLIENT), "invoke", "published_card",
+                        json.dumps({"base": "https://sdota.de", "host": "github.com"})],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode != 0, "a bare forge host answered with somebody's card"
+
+
+@case("CL4", "The whole published path answers, and answers from the project")
+def _():
+    """Search, card, diagnosis — the walk a person makes, with no model anywhere
+    in it. This is the open-source path and the common one."""
+    out = client("ask_published", {
+        "base": "https://sdota.de",
+        "subject": "https://github.com/dx111ge/engram/",
+        "problemClass": "engram.search.stale-after-model-change",
+        "facts": {"os.arch": "x86_64", "os.name": "linux",
+                  "engram.embedding_changed": "yes, and I did not run engram reindex"},
+        "stated": ["engram.embedding_changed"]})
+    assert out.get("outcome") == "finding", out
+    assert out["solution"]["solution_id"] == "search-stale-after-model-change", out["solution"]
+    assert "reindex" in json.dumps(out["solution"]["text_by_lang"]), \
+        "the answer does not name the fix the project published"
+    assert out.get("confidence") == "rests_on_supplied", (
+        "an answer that turned on something a person typed must say so")
+
+    # And the one that must not match: the same class on a machine the rule does
+    # not cover. A published answer that fires anyway is worse than none.
+    other = client("ask_published", {
+        "base": "https://sdota.de",
+        "subject": "https://github.com/dx111ge/engram/",
+        "problemClass": "engram.start.wrong-build",
+        "facts": {"os.arch": "x86_64", "engram.download": "engram-linux-x86_64.zip"},
+        "stated": ["engram.download"]})
+    assert other.get("outcome") == "no_statement", other
+
+    # Somebody else's repository on the same forge reaches none of it.
+    stranger = client("ask_published", {
+        "base": "https://sdota.de",
+        "subject": "https://github.com/someone/engram/",
+        "problemClass": "engram.search.stale-after-model-change",
+        "facts": {"engram.embedding_changed": "yes, and I did not run engram reindex"},
+        "stated": []})
+    assert stranger.get("outcome") == "no_statement", stranger
+
+
 def sv(name):
     """Delegate to one server case. Named for the SV row it satisfies.
 
@@ -2589,7 +2732,11 @@ def _():
 
     drafts = [
         {"anchor": "https://example.org/proj/", "commit": "1.10", "status": "active", "langs": "en, de",
-         "classes": ["proj.install.wrong-archive", "proj.search.empty"],
+         # Both shapes at once: a class with the sentence a person picks it by,
+         # and one without, which is every class published before `describes`.
+         "classes": [{"id": "proj.install.wrong-archive",
+                      "describes": "It will not start — no window, no error"},
+                     "proj.search.empty"],
          "probes": [
              {"kind": "machine", "id": "os.name", "describes": "Operating system", "why": "One build each",
               "op": "os_fact", "params": {"name": "os"}},
@@ -2634,6 +2781,16 @@ def _():
     written = json.loads(out.stdout)
 
     assert 'commit: "1.10"' in written[0]["agent.yaml"], "a version that looks like a number went out unquoted"
+    # The sentence a person picks a class by survives the writer, and a class
+    # without one stays the bare string it has always been — a builder that
+    # promoted every class to a mapping would rewrite files nobody asked it to.
+    first = written[0]["agent.yaml"]
+    assert 'id: "proj.install.wrong-archive"' in first, (
+        f"the builder dropped the class it was given:\n{first}")
+    assert 'describes: "It will not start — no window, no error"' in first, (
+        f"the builder dropped the sentence a class is picked by:\n{first}")
+    assert '- "proj.search.empty"' in first, (
+        f"a class with no sentence was promoted to a mapping:\n{first}")
     for draft, files in zip(drafts, written):
         solutions = {k: v for k, v in files.items() if k != "agent.yaml"}
         assert len(solutions) == len(draft["solutions"]), files.keys()

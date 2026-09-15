@@ -360,11 +360,14 @@ try {
                    document.getElementById('go').click(); return true })()`);
 
   step("pick the problem class");
-  await waitFor(`!!document.getElementById('pcls')`, "the class picker");
-  await js(`(()=>{ const s=document.getElementById('pcls'); s.value=${JSON.stringify(process.env.CLASS || "engram.search.empty-after-embedding-change")};
-                   return true })()`);
+  await waitFor(`!!document.querySelector('input.pc')`, "the class picker");
+  await js(`(()=>{ const want=${JSON.stringify(process.env.CLASS || "")};
+                   const rs=[...document.querySelectorAll('input.pc')];
+                   const r=(want && rs.find(x=>x.value===want)) || rs[0];
+                   if(!r) return 'no class to pick';
+                   r.checked=true; return r.value })()`);
   await screenshot("class-picker");
-  await js(`(()=>{ const p=document.getElementById('pcls').closest('.panel'); p.querySelector('.allow').click(); return true })()`);
+  await js(`(()=>{ const p=document.querySelector('input.pc').closest('.panel'); p.querySelector('.allow').click(); return true })()`);
 
   step("consent to the project's readings");
   await waitFor(`${lastPanel}.querySelectorAll('.rp').length > 0`, "the read consent");

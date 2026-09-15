@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "podshl.diagnose",
+  "name": "PODSHL",
+  "version": "0.1.1",
+  "author": "Sven Andreas",
+  "license": "AGPL-3.0-or-later",
+  "description": "Ask the projects you actually run what is wrong — every reading consented, nothing generated, nothing uploaded.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "PODSHL",
+    "description": "One bar icon: start a diagnosis against the support the projects on this machine published themselves.",
+    "category": "System",
+    "aliases": ["podshl", "diagnose", "support"],
+    "allowMultiple": false
+  }
+}

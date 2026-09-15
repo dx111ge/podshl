@@ -627,6 +627,127 @@ the binary and its manifest would ship disagreeing about what they are"
         assert!(body.contains("STATED.clear()"), "what a person said last time survives into this one");
     }
 
+    /// PB3: **every way out of the published path says which way it was**, to
+    /// the log and to the caller.
+    ///
+    /// It used to return a bare `false` for six different things — the person
+    /// declined, the card could not be fetched, the operator did not answer,
+    /// the readings were refused, nothing matched — and `noVendorPath` read all
+    /// of them as permission to start a model. On 2026-09-15 a stale DNS record
+    /// made `/mirror` unreachable and the window told the person the project
+    /// published nothing, then chose a model for them. So the outcome is named
+    /// now, and "unreachable" is handled on its own.
+    ///
+    /// Reading the source is weaker than exercising it. What it can still do is
+    /// refuse a silent or unnamed exit.
+    #[test]
+    fn every_exit_from_the_published_path_says_which_exit_it_was() {
+        let ui = ui_source();
+        let body = function_body(&ui, "publishedPath");
+        let known = ["answered", "declined", "unreachable", "reads", "nofinding", "none"];
+        let lines: Vec<&str> = body.lines().collect();
+        let mut exits = 0;
+        for (i, line) in lines.iter().enumerate() {
+            let Some(at) = line.find("return \"") else { continue };
+            exits += 1;
+            let outcome = line[at + 8..].split('"').next().unwrap_or("");
+            assert!(known.contains(&outcome),
+                    "publishedPath returns an outcome nothing handles: {outcome:?}");
+            let named = line.contains("logUi(")
+                || lines.get(i.wrapping_sub(1)).is_some_and(|p| p.contains("logUi("));
+            assert!(named, "publishedPath leaves silently at: {}", line.trim());
+        }
+        assert!(exits >= 6, "publishedPath has only {exits} named exits; it had six");
+        assert!(!body.contains("return false") && !body.contains("return true"),
+                "publishedPath is back to a boolean, which cannot tell a refusal from a failure");
+
+        // One event, one panel. The failure used to be announced where it
+        // happened and then again, differently, by the panel offering the
+        // retry — the person read "the catalogue is not answering" and then a
+        // second panel with a gentler tone about the same thing.
+        assert!(!body.contains("pub_off_h"),
+                "publishedPath announces an unreachable operator itself, so it is said twice");
+        assert!(body.contains("UNREACHABLE_WHY ="),
+                "the reason is not kept, so the one panel that remains cannot say what happened");
+
+        // The caller must keep the three apart: finished, unreachable, and the
+        // rest. An operator that did not answer is not a project that publishes
+        // nothing, and a timeout is not a person asking for a model.
+        let no_vendor = function_body(&ui, "noVendorPath");
+        let unreachable = no_vendor.find("\"unreachable\"")
+            .expect("noVendorPath no longer treats an unreachable catalogue as its own case");
+        let no_agent = no_vendor.rfind("if(published) saidNoAgent();")
+            .expect("noVendorPath no longer says when a project publishes no agent");
+        assert!(unreachable < no_agent,
+                "the unreachable case is decided after the no-agent message, so it still fires on a network failure");
+        assert!(no_vendor.contains("DESPITE published answers"),
+                "a project with published answers can reach the model unrecorded");
+
+        // The window can only say any of this if the binary still offers it.
+        assert!(registered_commands(&main_source()).iter().any(|c| c == "log_line"),
+                "log_line is no longer registered, so none of the lines above are written");
+    }
+
+    /// PB4: **the question is asked in the person's words.**
+    ///
+    /// A problem class is an identifier because a rule matches on it and a
+    /// solution answers it. For a long time three identifiers in a dropdown
+    /// were the whole of what the published path asked — a question about your
+    /// own computer that nobody outside the project could answer. The
+    /// maintainer's sentence leads now; the identifier stays under it, because
+    /// it is what travels and what a support conversation quotes.
+    #[test]
+    fn the_class_picker_asks_in_the_persons_words() {
+        let ui = ui_source();
+        let body = function_body(&ui, "publishedPath");
+        assert!(!body.contains("<select id=\"pcls\""),
+                "the classes are a dropdown of identifiers again");
+        assert!(body.contains("pick.answer_labels"),
+                "the window no longer reads the maintainer's sentence for a class");
+        assert!(body.contains("labels[c] ? bi(labels[c], labels_t[c]) : esc(c)"),
+                "a class with no sentence no longer falls back to its identifier, so                  every manifest published before this would show nothing");
+        // What is recorded and sent stays the identifier, never the sentence.
+        assert!(body.contains("input.pc:checked"),
+                "the chosen class is not read from what the person actually chose");
+
+        // LG7 reaches the first publisher sentence a person meets, too. It is
+        // translated by the reader's own model with the original beside it, and
+        // the question is asked before the card is fetched, so the translation
+        // happens before the picker is drawn rather than after.
+        let translated = body.find("translateKeeping(src, [])")
+            .expect("the class sentences are never translated, so a German reader meets English");
+        let drawn = body.find("role=\"radiogroup\"").expect("the class picker is gone");
+        assert!(translated < drawn,
+                "the sentences are translated after the picker is drawn, so it is drawn in English");
+        assert!(body.contains("bi(labels[c], labels_t[c])"),
+                "a translated sentence no longer keeps the publisher's own words beside it");
+        // And the binary still puts them on the hit the window reads.
+        let vendors = std::fs::read_to_string(crate_dir().join("src/vendors.rs"))
+            .expect("cannot read src/vendors.rs");
+        assert!(vendors.contains("\"answer_labels\""),
+                "the search hit no longer carries the sentences, so the window has only ids");
+    }
+
+    /// Every sentence the window asks for exists in every language it offers.
+    /// `t()` falls back to English and then to the key itself, so a missing one
+    /// is not a crash — it is a raw `pub_unreach_h` on somebody's screen.
+    #[test]
+    fn every_language_has_every_sentence() {
+        let dir = crate_dir().join("ui/i18n");
+        let read = |l: &str| -> serde_json::Map<String, serde_json::Value> {
+            let p = dir.join(format!("{l}.json"));
+            serde_json::from_str(&std::fs::read_to_string(&p)
+                .unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display())))
+                .unwrap_or_else(|e| panic!("{} is not JSON: {e}", p.display()))
+        };
+        let en = read("en");
+        for lang in ["de", "fr", "es"] {
+            let other = read(lang);
+            let missing: Vec<&String> = en.keys().filter(|k| !other.contains_key(*k)).collect();
+            assert!(missing.is_empty(), "{lang}.json is missing {missing:?}");
+        }
+    }
+
     /// PB1: the published path reads the project's own probes, under the same
     /// consent as every other reading, before it asks the operator anything —
     /// and it asks a person only for what was not read.
@@ -919,6 +1040,47 @@ the binary and its manifest would ship disagreeing about what they are"
                     "{lang}.json is missing {} of the window's texts: {:?}",
                     missing.len(), &missing[..missing.len().min(8)]);
         }
+    }
+
+
+    /// IS1: the diagnosis has an exit that is not a report to the operator.
+    ///
+    /// It ended with one offer — a pseudonymous report — and that is the wrong
+    /// shape for the case the open-source branch rests on: the published answers
+    /// did not cover somebody's problem, they now hold more about it than they
+    /// could have assembled in an hour, and there was nowhere to put it. "A good
+    /// bug report in two minutes" was the promise and it did not exist.
+    ///
+    /// Three properties, and the second is the one that could go quietly wrong.
+    #[test]
+    fn the_published_path_offers_a_report_the_person_can_take_away() {
+        let ui = ui_source();
+        let path = function_body(&ui, "publishedPath");
+        assert!(path.contains("offerIssueReport("),
+                "the published path still ends at the operator or nowhere");
+
+        let panel = function_body(&ui, "offerIssueReport");
+
+        // Shown before it is copied, and what was taken out is said — the same
+        // sentence the consent panel uses, about a larger audience, because an
+        // issue tracker is more public than a report and keeps it for ever.
+        assert!(panel.contains("issue_took") && panel.contains("r.replaced"),
+                "the panel does not say what the anonymiser removed");
+        assert!(panel.contains("<textarea") && panel.contains("box.value = withFooter"),
+                "the text is not shown before it is copied");
+
+        // **What is copied is what is in the box.** Copying `r.markdown` would
+        // hand over the generated text after the person edited it — something
+        // they did not read, from a panel whose whole argument is that they did.
+        let copy = panel.split("issuecopy\").onclick").nth(1).unwrap_or("");
+        assert!(copy.contains("box.value"),
+                "the copy button copies the generated text rather than what is shown");
+        assert!(!copy.contains("r.markdown"),
+                "the copy button reaches past the box to the original");
+
+        // The footer is the publisher's line about us, and it is theirs to drop.
+        assert!(panel.contains("issuefoot") && panel.contains("issue_footer"),
+                "the footer cannot be switched off");
     }
 
     /// AT1: a published answer says what the operator attests about whoever

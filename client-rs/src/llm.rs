@@ -47,6 +47,13 @@ impl Config {
         !self.provider.is_empty() && !self.model.is_empty()
     }
     pub fn is_cloud(&self) -> bool {
+        // The desktop's own agent is whatever it is configured with, and for the
+        // one agent measured so far that is a cloud service. Asked of the agent
+        // table rather than assumed here, so adding a local agent later does not
+        // leave this sentence quietly wrong.
+        if self.provider == "omarchy_agent" {
+            return crate::omarchy::headless(&self.model, "").map(|h| h.cloud).unwrap_or(true);
+        }
         self.provider == "anthropic" || self.provider == "openai_compatible"
     }
     pub fn ux_severity(&self) -> &'static str {
@@ -680,6 +687,10 @@ pub async fn choose_reads(cfg: &Config, problem: &str, catalogue: &Value, known:
                           lang: &str, round: usize) -> Result<Round, String> {
     let p = round_prompt(problem, catalogue, known, lang, round);
     let raw = match cfg.provider.as_str() {
+        // The desktop's agent answers the prompt itself, with every tool
+        // denied and from an empty directory — see `omarchy.rs` for what was
+        // measured and which two switches look like a fence and are not.
+        "omarchy_agent" => crate::omarchy::ask(&cfg.model, &p).await?,
         "anthropic" => anthropic(cfg, &p).await?,
         _ => openai_compatible(cfg, &p).await?,
     };
@@ -715,6 +726,7 @@ pub async fn follow_up(cfg: &Config, problem: &str, facts: &Value, previous: &st
         known = serde_json::to_string_pretty(facts).unwrap_or_default()
     );
     match cfg.provider.as_str() {
+        "omarchy_agent" => crate::omarchy::ask(&cfg.model, &p).await,
         "anthropic" => anthropic(cfg, &p).await,
         _ => openai_compatible(cfg, &p).await,
     }
@@ -1026,6 +1038,10 @@ pub async fn translate(cfg: &Config, texts: &Value, to: &str, keep: &[String])
     let p = translate_prompt(&shielded.texts, to,
                              (!shielded.originals.is_empty()).then_some(example.as_str()));
     let raw = match cfg.provider.as_str() {
+        // The desktop's agent answers the prompt itself, with every tool
+        // denied and from an empty directory — see `omarchy.rs` for what was
+        // measured and which two switches look like a fence and are not.
+        "omarchy_agent" => crate::omarchy::ask(&cfg.model, &p).await?,
         "anthropic" => anthropic(cfg, &p).await?,
         _ => openai_compatible(cfg, &p).await?,
     };
@@ -1173,6 +1189,10 @@ pub async fn solve(cfg: &Config, problem: &str, facts: &Value, lang: &str,
     }
     let p = prompt(problem, facts, lang);
     let raw = match cfg.provider.as_str() {
+        // The desktop's agent answers the prompt itself, with every tool
+        // denied and from an empty directory — see `omarchy.rs` for what was
+        // measured and which two switches look like a fence and are not.
+        "omarchy_agent" => crate::omarchy::ask(&cfg.model, &p).await?,
         "anthropic" => anthropic(cfg, &p).await?,
         _ => openai_compatible(cfg, &p).await?,
     };
@@ -1279,6 +1299,10 @@ pub const PROVIDERS: &[(&str, &str, &str, &str, bool, &str)] = &[
     ("ollama", "Ollama", "http://localhost:11434", "openai", false, ""),
     ("lmstudio", "LM Studio", "http://localhost:1234", "openai", false, ""),
     ("llamacpp", "llama.cpp", "http://localhost:8080", "openai", false, ""),
+    // Not an endpoint and not a key: the name of the agent this desktop already
+    // has. Offered only where Omarchy names one, it is installed, and somebody
+    // has measured how to call it without its tools.
+    ("omarchy_agent", "Omarchy default agent", "", "agent", false, ""),
     ("custom", "", "", "openai", true, ""),
 ];
 
@@ -1369,6 +1393,18 @@ pub async fn list_models(cfg: &Config) -> Result<Vec<String>, String> {
 pub async fn probe(cfg: &Config) -> Result<usize, String> {
     if !cfg.configured() {
         return Err(m!("not_configured"));
+    }
+    // An agent has no model catalogue to list — it *is* the one thing on offer.
+    // Asking whether it is installed is the same question `list_models` answers
+    // for an endpoint: is there something here to talk to.
+    if cfg.provider == "omarchy_agent" {
+        let h = crate::omarchy::headless(&cfg.model, "")
+            .ok_or_else(|| format!("no measured way to call {:?} without its tools", cfg.model))?;
+        return if crate::omarchy::installed(h.program) {
+            Ok(1)
+        } else {
+            Err(format!("{} is not installed", h.program))
+        };
     }
     list_models(cfg).await.map(|m| m.len())
 }

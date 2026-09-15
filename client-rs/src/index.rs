@@ -39,6 +39,16 @@ pub struct Entry {
     pub anchor_kind: String,
     #[serde(default)]
     pub problem_classes: Vec<String>,
+    /// The sentence a person picks a class by, where the maintainer wrote one.
+    ///
+    /// A class is an identifier — `engram.llm.model-not-pulled` — because a
+    /// rule matches on it and a solution answers it. It is not a question
+    /// anybody can answer about their own computer, and for a long time three
+    /// of them in a dropdown was the whole of what the window asked. Absent for
+    /// every manifest published before this existed, which is why the window
+    /// falls back to the identifier rather than showing nothing.
+    #[serde(default)]
+    pub class_labels: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub search_tokens: Vec<String>,
     #[serde(default)]
@@ -109,24 +119,57 @@ fn cache_path() -> PathBuf {
 /// debug build: in a release it would be a key read relative to whatever
 /// directory the program was started from, and a key anybody can plant beside
 /// a shortcut is not pinned.
-pub(crate) fn pinned_key() -> Option<Value> {
-    let named = std::env::var("VS_LOG_KEY").map(PathBuf::from).ok().or_else(|| {
-        std::env::var("VS_ROOT").map(|r| PathBuf::from(r).join("log_key.json")).ok()
-    });
-    if let Some(p) = named {
-        return serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok();
+pub(crate) fn pinned_key() -> Result<(Value, String), String> {
+    let named = std::env::var("VS_LOG_KEY")
+        .map(|p| (PathBuf::from(p), "VS_LOG_KEY"))
+        .ok()
+        .or_else(|| {
+            std::env::var("VS_ROOT")
+                .map(|r| (PathBuf::from(r).join("log_key.json"), "VS_ROOT/log_key.json"))
+                .ok()
+        });
+    if let Some((p, what)) = named {
+        // Somebody named this file. If it cannot be read, or is not a key, that
+        // is their answer being wrong — not an invitation to quietly use a
+        // different one, which is how a client ends up verifying against a key
+        // nobody chose.
+        let raw = std::fs::read_to_string(&p)
+            .map_err(|e| format!("{what} names {}, which cannot be read: {e}", p.display()))?;
+        let k = serde_json::from_str(&raw)
+            .map_err(|e| format!("{what} names {}, which is not a JWK: {e}", p.display()))?;
+        return Ok(announce(k, what.to_string()));
     }
     if let Some(built) = option_env!("PODSHL_BUILD_LOG_KEY") {
-        return serde_json::from_str(built).ok();
+        let k = serde_json::from_str(built)
+            .map_err(|e| format!("the key compiled into this build is not a JWK: {e}"))?;
+        return Ok(announce(k, "compiled into this build".to_string()));
     }
     #[cfg(debug_assertions)]
     {
-        serde_json::from_str(&std::fs::read_to_string("../var/log_key.json").ok()?).ok()
+        const DEV: &str = "../var/log_key.json";
+        let raw = std::fs::read_to_string(DEV).map_err(|e| format!(
+            "no key was named and none is compiled in, and the development key at {DEV} cannot be read: {e}"))?;
+        let k = serde_json::from_str(&raw).map_err(|e| format!("{DEV} is not a JWK: {e}"))?;
+        // Named in full, because this is the one source a person did not choose
+        // and the one that quietly made a good index look forged.
+        return Ok(announce(k, format!("{DEV} beside this checkout — a development key, not any operator's")));
     }
     #[cfg(not(debug_assertions))]
-    {
-        None
-    }
+    Err("no log key: none was named and none is compiled into this build".to_string())
+}
+
+/// Say once, in the log, which key everything will be checked against.
+///
+/// The one that was used is the fact every failure here turns on, and until now
+/// it was the one fact nobody had. `cargo test` against a live operator
+/// reported "signature does not verify" about a perfectly good index, for a day
+/// of 2026-09-15, because a debug build had silently reached for
+/// `../var/log_key.json` — a stub `make_trust_stub.py` regenerates — and no
+/// message anywhere named it.
+fn announce(k: Value, what: String) -> (Value, String) {
+    static SAID: std::sync::Once = std::sync::Once::new();
+    SAID.call_once(|| crate::clientlog::line(&format!("pinned log key from {what}")));
+    (k, what)
 }
 
 /// Verify the signed document and return the index inside it.
@@ -135,10 +178,13 @@ pub(crate) fn pinned_key() -> Option<Value> {
 /// so this is the same detached-JWS-over-JCS check the client already performs
 /// on an agent card. One verifier, two uses.
 pub fn verify(doc: &Value) -> Result<Index, String> {
-    let jwk = pinned_key().ok_or_else(|| m!("index_no_pinned_key"))?;
+    let (jwk, from) = pinned_key().map_err(|e| format!("{} — {e}", m!("index_no_pinned_key")))?;
     let body = doc.get("index").ok_or_else(|| m!("index_missing"))?;
     let sig = doc.get("signature").ok_or_else(|| m!("index_unsigned"))?;
-    jws::verify_detached(&jwk, body, sig)?;
+    // Naming the key in the failure is the whole point: "signature does not
+    // verify" is true of a wrong key and of a wrong index alike, and the two
+    // have entirely different remedies.
+    jws::verify_detached(&jwk, body, sig).map_err(|e| format!("{e} (key from {from})"))?;
 
     let idx: Index = serde_json::from_value(body.clone()).map_err(|e| e.to_string())?;
     // A version we cannot read is not a version we should guess at.

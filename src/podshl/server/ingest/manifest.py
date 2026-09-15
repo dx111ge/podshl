@@ -25,6 +25,10 @@ MAX_READS = 24
 #: Both exist so that an oversized document is refused with a sentence instead
 #: of reaching the database and failing there.
 MAX_CLASSES = 64
+#: A class label is the one line a person recognises their own problem by, so it
+#: is a sentence and not a page. Longer than this and it is the answer, which
+#: belongs in a solution file where the walk can reach it under consent.
+MAX_DESCRIBES = 120
 MAX_LANGS = 16
 
 #: How many nodes a parsed document may hold, counting every visit. YAML
@@ -43,7 +47,7 @@ MAX_NODES = 20_000
 #: reads off the mirrored card to know where a person is reached.
 MANIFEST_KEYS = frozenset({
     "endpoint", "problem_classes", "langs", "solutions", "status", "collect",
-    "commit", "successor", "escalate", "glossary",
+    "commit", "successor", "escalate", "glossary", "class_labels",
 })
 
 #: A glossary's bounds. Its terms enter the prompt of the reader's own model, so
@@ -140,6 +144,54 @@ def _yaml(raw: bytes, what: str) -> dict:
     return loaded
 
 
+def _classes(raw) -> tuple[list[str], dict[str, str]]:
+    """`problem_classes`, split into the identifiers and the sentences for them.
+
+    A refusal here is a sentence a maintainer can act on, which is the whole
+    reason the shape is checked at ingest rather than discovered by a window.
+    """
+    if not isinstance(raw, list):
+        raise IngestRefused("agent.yaml: problem_classes must be a list")
+    ids: list[str] = []
+    labels: dict[str, str] = {}
+    for item in raw:
+        if isinstance(item, str):
+            ids.append(item)
+            continue
+        if not isinstance(item, dict):
+            raise IngestRefused(
+                "agent.yaml: an entry in problem_classes is neither the class itself "
+                f"nor a mapping with `id`, but {type(item).__name__}")
+        cid = item.get("id")
+        if not isinstance(cid, str) or not cid.strip():
+            raise IngestRefused("agent.yaml: an entry in problem_classes has no string `id`")
+        cid = cid.strip()
+        extra = sorted(set(item) - {"id", "describes"})
+        if extra:
+            raise IngestRefused(
+                f"agent.yaml: the problem_classes entry for {cid!r} carries "
+                f"{', '.join(extra)}, which means nothing here")
+        ids.append(cid)
+        describes = item.get("describes")
+        if describes is None:
+            continue
+        if not isinstance(describes, str) or not describes.strip():
+            raise IngestRefused(
+                f"agent.yaml: `describes` for {cid!r} must be a sentence, not "
+                f"{type(describes).__name__}")
+        describes = " ".join(describes.split())
+        if len(describes) > MAX_DESCRIBES:
+            raise IngestRefused(
+                f"agent.yaml: `describes` for {cid!r} is {len(describes)} characters, over "
+                f"the {MAX_DESCRIBES} permitted. It is the line somebody recognises their "
+                f"own problem by, not the answer — the answer belongs in a solution file, "
+                f"where the walk reaches it under consent.")
+        labels[cid] = describes
+    if len(set(ids)) != len(ids):
+        raise IngestRefused("agent.yaml: problem_classes names the same class twice")
+    return ids, labels
+
+
 def parse_manifest(raw: bytes) -> dict:
     """`agent.yaml`, as a dict, with the shape checked but not yet the content.
 
@@ -151,6 +203,24 @@ def parse_manifest(raw: bytes) -> dict:
     for required in ("endpoint", "problem_classes", "langs", "solutions"):
         if required not in m:
             raise IngestRefused(f"agent.yaml has no {required!r}")
+
+    # **A problem class may carry the sentence a person picks it by.**
+    # `engram.llm.model-not-pulled` is an identifier: it is what a rule matches
+    # on and what a solution answers. It was also the only thing the window had
+    # to put in front of a user, and three identifiers in a dropdown is not a
+    # question anybody can answer about their own computer.
+    #
+    # So an entry is either the identifier alone, as every manifest published so
+    # far is, or the identifier with `describes` — one sentence in the user's
+    # words. The maintainer writes it because the maintainer is the only person
+    # who knows what the symptom looks like from outside. Everything downstream
+    # goes on receiving plain identifiers; the sentences travel beside them.
+    # Absent, not empty, when nobody wrote a sentence: a manifest that says
+    # nothing about labels must come back out of the builder exactly as it went
+    # in, and `class_labels: {}` is a difference a maintainer never wrote.
+    m["problem_classes"], _labels = _classes(m["problem_classes"])
+    if _labels:
+        m["class_labels"] = _labels
 
     for name in ("problem_classes", "langs", "solutions"):
         if not isinstance(m[name], list) or not all(isinstance(x, str) for x in m[name]):

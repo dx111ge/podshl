@@ -30,10 +30,19 @@ status: active
 # their own client translates locally and says that it did.
 langs: [en, de]
 
+# The identifier is what a rule matches on and what a solution answers.
+# `describes` is the line the person picks it by, and writing it is the
+# maintainer's job because the maintainer is the only one who knows what the
+# symptom looks like from outside. Say what they see, not what is wrong —
+# somebody who already knew which of these it was would not be asking. A bare
+# string is still accepted, and a client then shows the identifier.
 problem_classes:
-  - pip.install.wheel-missing
-  - pip.install.version-conflict
-  - python.runtime.import-error
+  - id: pip.install.wheel-missing
+    describes: Installing fails with "no matching distribution found"
+  - id: pip.install.version-conflict
+    describes: pip refuses to install, saying two packages need different versions
+  - id: python.runtime.import-error
+    describes: It installed, but importing it raises ImportError
 
 # What to read, and why. Every instruction here is checked against the client's
 # published read vocabulary at ingest: an op or a tool that is not on that list

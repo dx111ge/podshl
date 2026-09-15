@@ -463,6 +463,15 @@ Two things about it that are easy to get wrong:
 
 - **The endpoint must lie under the anchor.** A manifest for `example.org`
   pointing at `google.com` is refused, not shown with a warning.
+- **A problem class may carry `describes`, one sentence in the user's words.**
+  An entry is either the class on its own or `{ id, describes }`. The class is
+  an identifier and is what rules match on, what solutions answer and what
+  travels; `describes` is at most 120 characters, is written by the maintainer,
+  and names what the person *sees*. It exists because a client otherwise has
+  nothing to ask with but identifiers. It is not the answer — the answer is a
+  solution file, reached under consent. A bare string stays valid for every
+  manifest published before this, and a client falls back to the identifier.
+
 - **`problem_classes` names other people's software on purpose.** A project that
   repairs `pip` behaviour has to be able to say `pip`. That is nominative use,
   and it is what the open-source branch *is*: projects that fix software they

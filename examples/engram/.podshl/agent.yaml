@@ -21,12 +21,23 @@ status: active
 # a user whose language is missing gets English rather than nothing.
 langs: [en, de]
 
+# The identifier is what a rule matches on and what a solution answers.
+# `describes` is the line the person picks it by, and it is the maintainer's job
+# because the maintainer is the only one who knows what the symptom looks like
+# from outside. Say what they see, not what is wrong: somebody who knew it was
+# an architecture mismatch would not be here. A bare string is still accepted
+# and the client then shows the identifier, which is all it ever had.
 problem_classes:
-  - engram.install.no-build-for-this-platform
-  - engram.install.wrong-architecture-zip
-  - engram.search.empty-after-embedding-change
-  - engram.ingest.ner-slow-without-gpu
-  - ollama.endpoint.unreachable
+  - id: engram.install.no-build-for-this-platform
+    describes: engram will not start, and there is no download for this computer
+  - id: engram.install.wrong-architecture-zip
+    describes: engram will not start — no window, or "cannot execute binary file"
+  - id: engram.search.empty-after-embedding-change
+    describes: Search stopped finding things it used to find
+  - id: engram.ingest.ner-slow-without-gpu
+    describes: Adding knowledge takes far longer than expected
+  - id: ollama.endpoint.unreachable
+    describes: Chat and Debate fail, but storing and search still work
 
 collect:
   # engram ships four zips and no source build. Which one applies is decided by

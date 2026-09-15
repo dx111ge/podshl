@@ -1,0 +1,16 @@
+// A row in the Omarchy menu, which is where most people actually look.
+//
+// Paste this into ~/.config/omarchy/extensions/omarchy-menu.jsonc, inside the
+// outermost braces. It is not a plugin and needs nothing installed from this
+// repository: `kind: "menu"` in Omarchy means *be the menu*, so contributing a
+// row is a config file rather than QML.
+//
+// `when` hides the row when the client is not installed, which is better than a
+// row that does nothing — the failure a bar icon cannot avoid.
+"podshl": {
+  "icon": "󰃤",
+  "label": "Diagnose a problem",
+  "description": "Ask the projects you run what is wrong — readings consented one at a time, nothing uploaded",
+  "action": "podshl-client",
+  "when": "command -v podshl-client"
+}

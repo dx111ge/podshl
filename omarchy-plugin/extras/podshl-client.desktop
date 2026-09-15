@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=PODSHL
+GenericName=Support diagnosis
+Comment=Ask the projects you run what is wrong — every reading consented, nothing uploaded
+Exec=podshl-client
+Icon=podshl-client
+Terminal=false
+Categories=System;
+Keywords=support;diagnose;bug;report;problem;podshl;help;
+StartupWMClass=podshl-client

@@ -114,8 +114,9 @@ pub async fn prove(base: &str, seq: u64, expected: &Value) -> Result<Value, Stri
         Value::String(s) => serde_json::from_str(s).map_err(|e| m!("signature_unreadable", e = e))?,
         other => other.clone(),
     };
-    let jwk = index::pinned_key().ok_or_else(|| m!("log_no_pinned_key"))?;
-    jws::verify_detached(&jwk, sth, &sig).map_err(|e| m!("sth_signature_invalid", e = e))?;
+    let (jwk, from) = index::pinned_key().map_err(|e| format!("{} — {e}", m!("log_no_pinned_key")))?;
+    jws::verify_detached(&jwk, sth, &sig)
+        .map_err(|e| m!("sth_signature_invalid", e = format!("{e} (key from {from})")))?;
     let size = sth["tree_size"].as_u64().ok_or_else(|| m!("sth_no_size"))?;
     let root = hex32(sth["root_hash"].as_str().ok_or_else(|| m!("sth_no_root"))?)?;
     if seq >= size {

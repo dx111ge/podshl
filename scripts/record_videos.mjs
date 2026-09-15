@@ -205,11 +205,11 @@ async function clientStory(beat, lines) {
   await sub(lines.ask, hold(2400));
   await js(`document.getElementById('go').click(), true`);
 
-  await waitFor(`!!document.getElementById('pcls')`, "the class picker");
-  await js(`document.getElementById('pcls').value='engram.search.empty-after-embedding-change', true`);
-  await scrollTo(`document.getElementById('pcls')`);
+  await waitFor(`!!document.querySelector('input.pc')`, "the class picker");
+  await js(`(()=>{ const r=document.querySelector('input.pc'); if(r) r.checked=true; return true })()`);
+  await scrollTo(`document.querySelector('input.pc')`);
   await sub(lines.found, hold(3200));
-  await js(`document.getElementById('pcls').closest('.panel').querySelector('.allow').click(), true`);
+  await js(`document.querySelector('input.pc').closest('.panel').querySelector('.allow').click(), true`);
 
   await waitFor(`${lastPanel}.querySelectorAll('.rp').length > 0`, "the read consent");
   await scrollTo(`${lastPanel}.querySelector('.rp')`);

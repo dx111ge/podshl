@@ -106,6 +106,10 @@
   ul.plain{margin:.5rem 0 .2rem;padding:0;list-style:none;display:grid;gap:.42rem}
   ul.plain li{display:flex;gap:.55rem}
   ul.plain li::before{content:"·";color:var(--ok);font-weight:700}
+  /* A list the person picks from rather than reads: the control is the marker,
+     so the bullet beside it is one mark too many. */
+  ul.plain.choices li::before{content:none}
+  ul.plain.choices label{display:flex;gap:.55rem;align-items:baseline;cursor:pointer}
   ul.plain .lbl{font-weight:500}
   ul.plain .why{color:var(--muted);font-size:.88rem}
 
@@ -229,6 +233,19 @@
 <script>
 "use strict";
 const invoke = (c,a) => window.__TAURI__.core.invoke(c,a);
+/* Which branch this window took, in the client's log.
+
+   The flow's decisions are all here, in JavaScript, and none of them left a
+   trace: on 2026-09-14 the log recorded that the search returned three
+   published answers and then went silent, so which of the ways past the
+   published path had been taken was argued about for a day and never settled.
+   `console.log` is not the answer — the window is started from a desktop entry
+   or a bar icon, nobody has a console, and the comment two screens down says
+   so itself.
+
+   Fire and forget, and it can never be why a diagnosis fails: the promise is
+   swallowed, so a log that cannot be written costs nothing. */
+const logUi = what => { try{ Promise.resolve(invoke("log_line",{what})).catch(()=>{}); }catch(_){} };
 const $ = id => document.getElementById(id);
 // Quotes too: this is used inside attribute values — `data-id="${esc(p.id)}"` —
 // with values a vendor's skill chooses, and a `"` there ended the attribute.
@@ -327,6 +344,12 @@ const STATED=new Set();
 // STATED it is what tells a publisher whether an outcome tests their rule or
 // tests whether somebody answered a question correctly.
 let DECIDED=[];
+// Why the operator could not be reached, kept for the one panel that says so.
+// It used to be shown by `publishedPath` the instant it happened and then said
+// again, differently and with less in it, by the panel that offers the retry —
+// two panels for one event, the first of which the person has already read by
+// the time the second contradicts its tone.
+let UNREACHABLE_WHY="";
 // Whether a diagnosis is under way. While it is, the language cannot change —
 // half a run in one language and half in another is not a translation — and
 // a new panel takes focus so a screen reader follows the flow.
@@ -654,6 +677,7 @@ async function chooseVendor(){
     return null;
   }
   const hits=await invoke("search_vendors",{query:q});
+  logUi(`chooseVendor hits=${hits.length}`);
   if(hits.length===1) return await confirmOrigin(hits[0], q);
   return new Promise(res=>{
     const el=add(`<h3>${t("pick_vendor_h")}</h3>
@@ -1256,18 +1280,79 @@ function bindLogBoxes(root){
 
    Returns true when it answered — or when the person ended it — so the
    caller knows not to reach for a model. */
+/* What happened on the published path, rather than whether it "worked".
+   It returned a bare `false` for six different things, and `noVendorPath`
+   treated all of them as permission to hand the person to a model — so an
+   operator that did not answer was indistinguishable from a person saying
+   "none of these". On 2026-09-15 that was the whole of the defect reported the
+   day before: a stale DNS record made `/mirror` unreachable, and the window
+   said the project published nothing and started a model on its own.
+
+   "answered" means the path is finished and nothing more is owed, including
+   when the person refused to send — their refusal was the answer. */
 async function publishedPath(pick, problem){
   const classes = Array.isArray(pick.answers) ? pick.answers : [];
-  if(!classes.length) return false;
+  if(!classes.length){ logUi("publishedPath: no answers on the hit"); return "none"; }
 
+  // **The question is asked in the person's words, not in the publisher's
+  // identifiers.** A class is `engram.llm.model-not-pulled` because a rule
+  // matches on it and a solution answers it, and for a long time three such
+  // strings in a dropdown were the whole of what this asked — a question about
+  // your own computer that nobody outside the project could answer.
+  //
+  // So the maintainer's sentence leads, the identifier stays under it rather
+  // than disappearing (it is what travels, and what a support conversation
+  // quotes), and a list of a few things to recognise is a list rather than a
+  // dropdown. Where nobody wrote a sentence — every manifest published before
+  // `class_labels` existed — the identifier leads on its own, which is exactly
+  // what this window did before.
+  const labels = (pick.answer_labels && typeof pick.answer_labels === "object")
+    ? pick.answer_labels : {};
+
+  // **The sentence is publisher text, so it is translated like the rest of it.**
+  // A project owes English and nothing more (`LG7`), and everything else it
+  // writes — a probe's `describes`, its `why`, the answer itself — already
+  // reaches a reader in their own language through their own model, with the
+  // original one click away. This was the first publisher sentence a person
+  // meets and it was the one left in English.
+  //
+  // No glossary yet: the card is fetched further down, under a consent this
+  // question comes before, so there is nothing to keep terms out of. A term
+  // the model changes here is recoverable — the original is beside it, and the
+  // identifier under it never moves.
+  const labels_t = {};
+  const toTranslate = classes.filter(c => labels[c]);
+  if(toTranslate.length && await publisherModel()){
+    const th = add(`<p class="why"><span class="spin"></span> ${esc(t("pub_translating"))}</p>`, "panel");
+    try{
+      const src = {};
+      toTranslate.forEach((c,i)=>{ src["c"+i] = labels[c]; });
+      const {texts:out} = await awaitOrCancel(translateKeeping(src, []), th);
+      toTranslate.forEach((c,i)=>{ if(out["c"+i]) labels_t[c] = out["c"+i]; });
+      th.remove();
+      if(Object.keys(labels_t).length) showTranslated();
+    }catch(e){
+      if(e instanceof Cancelled) throw e;
+      // The publisher's English is a worse answer than their German and a far
+      // better one than no question at all, so this never stops the path.
+      th.remove();
+      logUi(`publishedPath: the class sentences were not translated: ${tr(e)}`);
+    }
+  }
   const el=add(`<h3>${t("pub_h",{v:esc(pick.vendor)})}</h3>
     <p id="pcls_l">${t("pub_1")}</p>
-    <select id="pcls" class="field" aria-labelledby="pcls_l">
-      ${classes.map(c=>`<option>${esc(c)}</option>`).join("")}</select>
+    <ul class="plain choices" role="radiogroup" aria-labelledby="pcls_l">
+      ${classes.map((c,i)=>`<li><label><input type="radio" name="pcls" class="pc"
+          value="${esc(c)}"${i?"":" checked"}>
+        <span><span class="lbl">${labels[c] ? bi(labels[c], labels_t[c]) : esc(c)}</span>${labels[c]
+          ? `<br><span class="why">${esc(c)}</span>` : ""}</span></label></li>`).join("")}</ul>
     <div class="btns"><button class="primary allow">${t("pub_yes")}</button>
       <button class="deny">${t("pub_no")}</button></div>`, "panel decide");
-  if(!await ask(el)){ el.className="panel"; el.innerHTML=`<h3>${t("pub_skipped_h")}</h3>`; return false; }
-  const cls = el.querySelector("#pcls").value;
+  if(!await ask(el)){ el.className="panel"; el.innerHTML=`<h3>${t("pub_skipped_h")}</h3>`;
+    // Declined, which is a choice and not a fault. It leaves by the same
+    // `false` as the two failures below, so only the log tells them apart.
+    logUi("publishedPath: the person declined the published answers"); return "declined"; }
+  const cls = (el.querySelector("input.pc:checked") || {}).value || classes[0];
 
   // The project's own files: what it asks to have read, and — through the ids —
   // how each fact is coarsened before it may travel. Without them this path
@@ -1275,8 +1360,12 @@ async function publishedPath(pick, problem){
   // a box) and built its report from a skill it never had, which dropped every
   // fact on the way out.
   let card=null;
-  try{ card=await invoke("published_card",{base:SERVER_URL, host:pick.domain}); }
-  catch(e){ add(`<h3>${t("pub_off_h")}</h3><p>${esc(tr(e))}</p>`,"panel stop"); return false; }
+  // `subjectOf`, not `domain`: for a repository the host is the forge and is
+  // shared by everything on it, so the operator refuses it. The identity is what
+  // was verified and what the mirror answers for.
+  try{ card=await invoke("published_card",{base:SERVER_URL, host:subjectOf(pick)}); }
+  catch(e){ UNREACHABLE_WHY = tr(e && e.message || e);
+    logUi(`publishedPath: published_card failed: ${UNREACHABLE_WHY}`); return "unreachable"; }
   SKILL={id:cls, version:card.commit||"", probes:(card.collect||[]).map(p=>({...p}))};
   // A project owes English and nothing more. Without a model of their own the
   // reader meets its questions and its answer as written, and is told so
@@ -1292,7 +1381,8 @@ async function publishedPath(pick, problem){
   const KEEP = (card.glossary && Array.isArray(card.glossary.keep)) ? card.glossary.keep : [];
   if(SKILL.probes.length) await sayEnglish();
   await translatePublisher(SKILL.probes, KEEP);
-  if(SKILL.probes.length && !await collectFacts(SKILL.probes, pick.vendor)) return false;
+  if(SKILL.probes.length && !await collectFacts(SKILL.probes, pick.vendor)){
+    logUi("publishedPath: the readings were not collected"); return "reads"; }
 
   // Nothing leaves before this. The readings and the answers go to the
   // operator that mirrors the project — a third party the person has not
@@ -1321,7 +1411,8 @@ async function publishedPath(pick, problem){
   if(!await ask(tx)){
     tx.className="panel stop";
     tx.innerHTML=`<h3>${t("send_none_h")}</h3><p>${t("pub_send_none_1",{o:esc(operatorHost())})}</p>`;
-    return true;
+    logUi("publishedPath: the person refused to send, which is an answer");
+    return "answered";
   }
   tx.querySelectorAll("textarea.sv").forEach(a=>{
     const v=a.value.trim(), k=a.dataset.id;
@@ -1338,7 +1429,9 @@ async function publishedPath(pick, problem){
       out=await invoke("ask_published",{base:SERVER_URL, subject:subjectOf(pick),
         problemClass:cls, facts:SHOWN, stated:[...STATED]});
     }catch(e){
-      add(`<h3>${t("pub_off_h")}</h3><p>${esc(tr(e))}</p>`,"panel stop"); return false;
+      UNREACHABLE_WHY = tr(e && e.message || e);
+      logUi(`publishedPath: ask_published failed on round ${round}: ${UNREACHABLE_WHY}`);
+      return "unreachable";
     }
     if(out.outcome!=="need") break;
     if(!await askOneProbe(out.need[0], out.need_reason, pick.vendor)) break;
@@ -1350,7 +1443,12 @@ async function publishedPath(pick, problem){
   if(!out || out.outcome!=="finding"){
     add(`<h3>${t("pub_none_h")}</h3><p>${esc((out&&out.reason)||"")}</p>
       <p class="why">${t("pub_none_1")}</p>`,"panel");
-    return false;
+    // The project published answers and the walk over them reached none. This
+    // is a finding about the project's own files rather than about this client,
+    // and it is the one exit here a publisher can act on — so it says what the
+    // walk ended as and on which class it was asked.
+    logUi(`publishedPath: no finding for class=${cls}, outcome=${out ? out.outcome : "no answer"}`);
+    return "nofinding";
   }
 
   // What the answer turned on, kept for the report. With STATED this is what
@@ -1392,7 +1490,11 @@ async function publishedPath(pick, problem){
   oc.className="panel";
   oc.innerHTML=`<h3>${outcome==="resolved"?t("pub_try_yes_h"):outcome==="unresolved"?t("pub_try_no_h"):t("pub_try_skip_h")}</h3>`;
   if(outcome) await offerPublishedReport(pick, outcome);
-  return true;
+  // Offered whether or not they reported: the two are different acts. One tells
+  // the operator's counts something; this one is theirs to keep.
+  await offerIssueReport(pick, problem, outcome, text, false);
+  logUi("publishedPath: answered from the project's own files");
+  return "answered";
 }
 
 /* A publisher's words in the reader's language, by the reader's own model.
@@ -1512,6 +1614,55 @@ async function checkLogEntry(panel, card){
    published path never had, so every fact was dropped on the way and the send
    failed. The one branch whose offer is "the maintainer finally hears about
    it" could not deliver a single report. */
+/* The exit that did not exist. A diagnosis ended and the only way out was a
+   pseudonymous report to the operator — which is the wrong shape for the case
+   the whole open-source branch rests on: the published answers did not cover
+   somebody's problem, and they now hold more about it than they could have
+   assembled in an hour, with nowhere to put it.
+
+   Shown before it is copied, and editable, for the reason the log-excerpt panel
+   is: this is *more* public than a report. A report goes to one operator under a
+   pseudonym; this goes into an issue tracker anybody can read, for ever, with
+   the person's own name on it. So it says what the anonymiser took out, in the
+   same words the consent panel uses, about a larger audience. */
+async function offerIssueReport(pick, problem, outcome, answer, fromModel){
+  const r = await invoke("issue_report", {
+    subject: `${pick.vendor}`, problem: problem || "", facts: FACTS,
+    stated: [...STATED], outcome: outcome || "", answer: answer || "",
+    answerFromModel: !!fromModel, tried: [], footer: true });
+  const took = Object.entries(r.replaced || {});
+  const el = add(`<h3>${t("issue_h")}</h3><p>${t("issue_1")}</p>
+    <p class="why">${t("issue_en")}</p>
+    ${took.length?`<p class="why">${esc(t("issue_took",
+        {list: took.map(([k,n])=>`${n}\u00d7 ${label(k).t||k}`).join(", ")}))}</p>`:""}
+    ${(r.unstated_versions||[]).length?`<p class="why c-warn">${esc(t("issue_unstated",
+        {list: r.unstated_versions.join(", "),
+         n: r.unstated_versions.length===1?"It appears":"They appear",
+         n2: r.unstated_versions.length===1?"it":"them"}))}</p>`:""}
+    <textarea class="field" id="issuemd" rows="14" spellcheck="false"></textarea>
+    <label class="why"><input type="checkbox" id="issuefoot" checked> ${t("issue_footer")}</label>
+    <div class="btns"><button class="primary" id="issuecopy">${t("issue_copy")}</button>
+      <button class="deny" id="issueclose">${t("issue_close")}</button></div>`, "panel decide");
+  const box = el.querySelector("#issuemd");
+  const withFooter = r.markdown;
+  const noFooter = withFooter.replace(/\n---\n\*Assembled by PODSHL[^]*$/, "");
+  box.value = withFooter;
+  el.querySelector("#issuefoot").onchange = e => {
+    const keep = box.value.replace(/\n---\n\*Assembled by PODSHL[^]*$/, "");
+    box.value = e.target.checked ? keep + withFooter.slice(noFooter.length) : keep;
+  };
+  el.querySelector("#issuecopy").onclick = async () => {
+    // What is copied is what is in the box, not what was generated: the person
+    // may have edited it, and copying the original would send something they
+    // did not read.
+    try { await navigator.clipboard.writeText(box.value); } catch(e) {
+      box.select(); document.execCommand("copy");
+    }
+    el.querySelector("#issuecopy").textContent = t("issue_copied");
+  };
+  await new Promise(res => { el.querySelector("#issueclose").onclick = () => { settle(el); res(); }; });
+}
+
 async function offerPublishedReport(pick, outcome){
   const pv=await invoke("preview_report",{skill:SKILL, facts:FACTS, stated:[...STATED],
     decidedOn:DECIDED, resolvedBy:"vendor_skill", outcome});
@@ -1597,14 +1748,69 @@ async function noVendorPath(pick, problem, reason){
     <p>${t("noagent_1",{r:esc(reason)})}</p>
     <p class="why">${t("noagent_2")}</p>`, "panel stop");
   const published = Array.isArray(pick.answers) && pick.answers.length > 0;
-  if(!published) saidNoAgent();
+  // The gate the 2026-09-14 log could not show: what the hit carried by the
+  // time *the window* read it, rather than what the binary logged returning.
+  logUi(`noVendorPath vendor=${pick.vendor} answers=${Array.isArray(pick.answers)
+    ? pick.answers.length : `not-an-array(${typeof pick.answers})`} published=${published}`);
+
+  // **Why nothing was found, when nothing was found.** "Does not publish a
+  // support agent" is about one thing — an Agent Card — and it was being shown
+  // for every other reason as well, including the two that are ours: no
+  // verified directory to search, or a directory that has this project without
+  // any answers in it. A person then reads that a project publishes nothing
+  // while it publishes three answers, and there is nothing on the screen to
+  // contradict them. The console said so; nobody reads a console.
+  if(!published){
+    const st = await invoke("index_status").catch(()=>({have:false,entries:0}));
+    if(!st.have){
+      add(`<h3>${t("nodir_h")}</h3><p>${t("nodir_1")}</p>
+        <p class="why">${t("nodir_2")}</p>`, "panel stop");
+    } else {
+      add(`<p class="why">${esc(t("nodir_3",{n:st.entries}))}</p>`, "panel");
+    }
+    saidNoAgent();
+  }
 
   // A published answer first, and a model only if there is none. This is the
   // open-source path and the common one: somebody wrote the answer down, we
   // mirror it, and the decision is a walk over what they wrote. Nothing is
   // generated, and a user with no model configured gets the whole of it.
-  if(await publishedPath(pick, problem)) return;
+  let took = await publishedPath(pick, problem);
+  logUi(`publishedPath -> ${took}`);
+
+  // **An operator that did not answer is not a project that published nothing,
+  // and a timeout is not somebody asking for a model.** The window used to say
+  // both: "the catalogue is not answering", then "this project does not publish
+  // a support agent" two lines under it, and then it started a model by itself.
+  // The person was told the opposite of the truth about the project and had a
+  // model chosen for them by a network failure.
+  //
+  // Trying again is the whole remedy when the reason is a name that resolves to
+  // the wrong address for five minutes, so it is offered first and the refusing
+  // button keeps the focus.
+  while(took === "unreachable"){
+    const el=add(`<h3>${t("pub_unreach_h")}</h3>
+      <p>${t("pub_unreach_1",{v:esc(pick.vendor), o:esc(operatorHost())})}</p>
+      <p class="why">${t("pub_unreach_2")}</p>
+      ${UNREACHABLE_WHY ? `<details class="more"><summary>${t("pub_unreach_detail")}</summary>
+        <p class="why">${esc(UNREACHABLE_WHY)}</p></details>` : ""}
+      <div class="btns"><button class="primary allow">${t("pub_unreach_again")}</button>
+        <button class="deny">${t("pub_unreach_stop")}</button></div>`, "panel decide");
+    if(!await ask(el)){
+      logUi("stopped: the catalogue was unreachable and the person did not retry");
+      add(`<h3>${t("pub_unreach_stopped_h")}</h3>
+        <p>${t("pub_unreach_stopped_1",{o:esc(operatorHost())})}</p>`, "panel stop");
+      return;
+    }
+    took = await publishedPath(pick, problem);
+    logUi(`publishedPath (retry) -> ${took}`);
+  }
+  if(took === "answered") return;
   if(published) saidNoAgent();
+  // A project that publishes answers and is handed to a model anyway — now only
+  // ever because the person declined, or because nothing published matched.
+  logUi(published ? `falling through to the model DESPITE published answers (${took})`
+                  : `falling through to the model, nothing published (${took})`);
 
   const cfg=await llmGet();
   if(!cfg.configured){

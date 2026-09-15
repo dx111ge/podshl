@@ -4,7 +4,12 @@
   "title": "agent.yaml",
   "description": "What an open-source developer publishes at `.podshl/agent.yaml` under an anchor they control. Fetched as plain HTTPS — the manifest, then the files it lists — so a forge, a bare nginx and a static host all work identically. There is deliberately no identity field: the display name IS the verified anchor, so there is nowhere to type somebody else's name. `problem_classes` names other people's products on purpose, and that is nominative use rather than a claim of identity: a project that repairs NVIDIA driver problems has to be able to say so.",
   "type": "object",
-  "required": ["endpoint", "problem_classes", "langs", "solutions"],
+  "required": [
+    "endpoint",
+    "problem_classes",
+    "langs",
+    "solutions"
+  ],
   "properties": {
     "endpoint": {
       "type": "string",
@@ -16,26 +21,70 @@
     },
     "status": {
       "type": "string",
-      "enum": ["active", "deprecated"],
+      "enum": [
+        "active",
+        "deprecated"
+      ],
       "description": "The developer's own word, and authoritative. Deprecation is declared, not deduced: an observed commit age is an observation and stays one."
     },
-    "successor": { "type": "string", "description": "Where to go instead, if deprecated." },
+    "successor": {
+      "type": "string",
+      "description": "Where to go instead, if deprecated."
+    },
     "langs": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Must contain `en`. English is the one obligation — one extra language is a small burden and it guarantees every user something readable without pushing consent text through a machine."
     },
     "problem_classes": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "The class on its own. Every manifest published before `describes` existed is this shape, and it stays valid — a client then shows the identifier, which is all it ever had."
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The class. What a rule matches on, what a solution answers, and what travels in a report."
+              },
+              "describes": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "One sentence in the user's words, naming what they see rather than what is wrong. It is the line somebody picks their own problem by, and it is the maintainer's to write because the maintainer is the only person who knows the symptom from outside. Not the answer: the answer is a solution file, which the walk reaches under consent."
+              }
+            }
+          }
+        ]
+      },
       "description": "What this project handles. Naming another vendor's product here is accepted; a takedown reaches an anchor, never a problem class, or a vendor could forbid anyone from saying their name out loud."
     },
     "collect": {
       "type": "array",
-      "items": { "$ref": "probe.json" },
+      "items": {
+        "$ref": "probe.json"
+      },
       "description": "What to read, per problem class. Every read instruction is checked against the published vocabulary at ingest."
     },
-    "escalate": { "oneOf": [{ "$ref": "escalation.json" }, { "type": "null" }] },
+    "escalate": {
+      "oneOf": [
+        {
+          "$ref": "escalation.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "glossary": {
       "type": "object",
       "additionalProperties": false,
@@ -43,14 +92,22 @@
         "keep": {
           "type": "array",
           "maxItems": 50,
-          "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\r\\n]+$", "description": "One line, with at least one letter in it." }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^\\r\\n]+$",
+            "description": "One line, with at least one letter in it."
+          }
         }
       },
       "description": "The project's own terms — a feature, a file format, a command — that a reader's model must keep as written when it translates the project's questions and answers. Only `keep`: a small model keeps a named term reliably and renders it as a chosen word unreliably, so there is no field for a per-language rendering. A client checks that each term survives the translation and marks one that did not."
     },
     "solutions": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Paths under the anchor, relative to the manifest. These are fetched and mirrored; the solutions themselves stay in the developer's repository, so a takedown reaches the mirror and not the source."
     }
   }

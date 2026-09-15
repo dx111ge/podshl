@@ -105,6 +105,9 @@ def entries(conn) -> list[dict]:
     for r in rows:
         card = r["json"] or {}
         classes = sorted({str(c) for c in (card.get("problem_classes") or [])})
+        labels = card.get("class_labels") or {}
+        if not isinstance(labels, dict):
+            labels = {}
         out.append({
             "host": r["host"],
             # Display only, and never shown without `host` — the same rule the
@@ -119,6 +122,12 @@ def entries(conn) -> list[dict]:
             # be putting one sentence over two strengths of evidence.
             "anchor_kind": r["kind"],
             "problem_classes": classes,
+            # The sentence a person picks a class by, where the maintainer
+            # wrote one. Only for classes this entry actually declares, so a
+            # label cannot smuggle in a class the rules do not answer, and
+            # absent entirely when nobody wrote any — a client falls back to
+            # the identifier, which is what every client did before.
+            "class_labels": {c: labels[c] for c in classes if c in labels},
             "search_tokens": _tokens(r["host"], r["anchor_url"] or "", classes, r["kind"]),
             "langs": sorted(r["langs"] or []),
             # The publisher's own word, and the only one that is authoritative.

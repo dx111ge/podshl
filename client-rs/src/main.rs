@@ -13,6 +13,9 @@
 // First, so `m!` is in scope in every module below it.
 #[macro_use]
 mod msg;
+// The desktop's own agent as this client's model — measured, not assumed.
+mod omarchy;
+mod clientlog;
 mod a2a;
 mod actions;
 mod demo;
@@ -28,6 +31,9 @@ mod handover;
 #[cfg(test)]
 mod i18n;
 mod index;
+// The report a person takes with them — more public than the one they send
+// here, so it is anonymised harder rather than less.
+mod issue;
 mod identity;
 mod jws;
 mod llm;
@@ -84,9 +90,34 @@ fn vendor_mismatch(chosen: String, facts: Value) -> Value {
     }
 }
 
+/// The window's own line in the log.
+///
+/// Every gate on the published path is decided in JavaScript — whether a hit
+/// carries answers, whether the person took the offer, whether the card was
+/// fetched — and until now JavaScript had no way to write here. So a log could
+/// record `answers=3`, which it did on 2026-09-14, and say nothing whatever
+/// about what the window then did with them. A day went into reasoning
+/// backwards about which branch had been taken, and it was never established.
+/// One line per gate ends that.
+///
+/// The text is the window's, so it is anonymised and cut like every other line
+/// — `clientlog::line` does both — and `ui` marks which side wrote it.
+#[tauri::command]
+fn log_line(what: String) {
+    clientlog::line(&format!("ui {what}"));
+}
+
 #[tauri::command]
 fn search_vendors(query: String) -> Value {
-    vendors::search(&query)
+    let out = vendors::search(&query);
+    let first = out.as_array().and_then(|a| a.first());
+    clientlog::line(&format!(
+        "search {query:?} -> {} hit(s) first={} answers={} how={}",
+        out.as_array().map(|a| a.len()).unwrap_or(0),
+        first.and_then(|h| h.get("vendor")).and_then(|v| v.as_str()).unwrap_or("-"),
+        first.and_then(|h| h.get("answers")).and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        first.and_then(|h| h.get("how")).and_then(|v| v.as_str()).unwrap_or("-")));
+    out
 }
 
 /// Fetch the published catalogue and keep it. One request, the whole index, so
@@ -213,12 +244,39 @@ async fn published_card(base: String, host: String) -> Result<Value, String> {
     if let Some(why) = a2a::insecure_base(&base) {
         return Err(why);
     }
-    let url = format!("{}/mirror/{}", base.trim_end_matches('/'), host);
+    // `host` may be an identity rather than a host name, and for a repository it
+    // has to be: `github.com` is shared by everything on that forge, so the
+    // operator refuses a bare forge host rather than answer with whichever
+    // project happened to be first. The window passes what it verified; this
+    // turns it into the address the mirror takes.
+    //
+    // This is the half that was missed when the operator learned about
+    // repositories: the route started requiring `?repo=` and the client kept
+    // sending the host, so every repository anchor fell through the published
+    // path into the model — which then asked what the project was, having never
+    // been told.
+    let url = if host.starts_with("https://") || host.starts_with("http://") {
+        let tail = host.split("://").nth(1).unwrap_or("");
+        let mut parts = tail.split('/').filter(|p| !p.is_empty());
+        let h = parts.next().unwrap_or("");
+        let repo = parts.collect::<Vec<_>>().join("/");
+        if repo.is_empty() {
+            format!("{}/mirror/{}", base.trim_end_matches('/'), h)
+        } else {
+            format!("{}/mirror/{}?repo={}", base.trim_end_matches('/'), h, repo)
+        }
+    } else {
+        format!("{}/mirror/{}", base.trim_end_matches('/'), host)
+    };
     let resp = http::client()
-        .get(url)
+        .get(&url)
         .timeout(std::time::Duration::from_secs(30))
         .send().await.map_err(|e| m!("unreachable", e = e))?;
     let v: Value = http::json_capped(resp, http::MAX_BODY).await?;
+    clientlog::line(&format!("card {} -> attested={:?} collect={}", url,
+        v.get("attested"),
+        v.get("card").and_then(|c| c.get("collect")).and_then(|c| c.as_array())
+            .map(|a| a.len()).unwrap_or(0)));
     if v.get("attested") != Some(&Value::Bool(true)) {
         return Err(m!("not_mirrored", host = host));
     }
@@ -558,7 +616,32 @@ async fn report_without_vendor(base: String, subject: String,
 
 #[tauri::command]
 fn llm_providers() -> Value {
-    llm::providers_json()
+    let mut list = llm::providers_json();
+    // The desktop's own agent is offered **only where it actually works**: this
+    // desktop names one, it is installed, and somebody has measured how to call
+    // it with its tools denied. An option that appears and then fails is worse
+    // than one that never appears — and here the failure would be a person
+    // choosing "no setup needed" and getting nothing.
+    //
+    // Where it is offered, the agent's name is filled in as the model and the
+    // row says whether the prompt leaves this machine, because for the one
+    // agent measured so far it does.
+    let offer = omarchy::offer();
+    if let Some(arr) = list.as_array_mut() {
+        arr.retain(|p| p.get("id").and_then(|v| v.as_str()) != Some("omarchy_agent"));
+        if let Some((agent, cloud)) = offer {
+            arr.insert(0, json!({
+                "id": "omarchy_agent",
+                "label": format!("Omarchy default agent ({agent})"),
+                "endpoint": "",
+                "model": agent,
+                "needs_key": false,
+                "cloud": cloud,
+                "note": "no model setup here — this desktop already has one"
+            }));
+        }
+    }
+    list
 }
 
 #[tauri::command]
@@ -752,6 +835,51 @@ fn exit_quietly_on_a_closed_pipe() {
 #[cfg(not(unix))]
 fn exit_quietly_on_a_closed_pipe() {}
 
+/// One of the window's commands, by name, for `invoke`.
+///
+/// Named explicitly rather than generated: a command reachable from a shell is
+/// a surface, and the ones that write to this machine or spend somebody's money
+/// are not on it. `execute`, `llm_set` and the identity commands are absent on
+/// purpose — a case that needs them is a case that should say so.
+async fn invoke_by_name(name: &str, a: &Value) -> Result<Value, String> {
+    let s = |k: &str| a.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let v = |k: &str| a.get(k).cloned().unwrap_or(Value::Null);
+    let list = |k: &str| a.get(k).and_then(|x| x.as_array())
+        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
+        .unwrap_or_default();
+    Ok(match name {
+        "search_vendors" => search_vendors(s("query")),
+        "index_status" => index_status(),
+        "refresh_index" => refresh_index(s("base")).await?,
+        "llm_get" => llm_get(),
+        "llm_providers" => llm_providers(),
+        "llm_probe" => llm_probe().await,
+        "endpoints" => endpoints(),
+        "baseline_facts" => baseline_facts(),
+        "vocabulary" => vocabulary(),
+        "published_card" => published_card(s("base"), s("host")).await?,
+        "ask_published" => ask_published(s("base"), s("subject"), s("problemClass"),
+                                         v("facts"), list("stated")).await?,
+        "preview_report" => preview_report(v("skill"), v("facts"), list("stated"),
+                                           list("decidedOn"), s("resolvedBy"), s("outcome")),
+        "facts_as_sent" => facts_as_sent(v("facts")),
+        "anonymise_text" => anonymise_text(s("text")),
+        "provenance_check" => provenance_check(s("anchorUrl"), s("subject")),
+        // It writes, but only to the log it is allowed to write, and a harness
+        // driving the window must be able to say what the window would have
+        // said or the trace it produces is not the window's.
+        "log_line" => { log_line(s("what")); json!({ "logged": true }) }
+        "issue_report" => issue_report(
+            s("subject"), s("problem"), v("facts"), list("stated"), s("outcome"),
+            s("answer"), a.get("answerFromModel").and_then(|b| b.as_bool()).unwrap_or(false),
+            list("tried"), a.get("footer").and_then(|b| b.as_bool()).unwrap_or(true)),
+        other => return Err(format!(
+            "no such command on this surface: {other:?}. The window has more; the ones \
+             that write to this machine or spend money are deliberately not here.")),
+    })
+}
+
+
 fn run_subcommand(name: &str) -> Result<(), String> {
     exit_quietly_on_a_closed_pipe();
     match name {
@@ -764,11 +892,41 @@ fn run_subcommand(name: &str) -> Result<(), String> {
             .build()
             .map_err(|e| e.to_string())?
             .block_on(demo::run()),
+        // The window's own commands, reachable without the window.
+        //
+        // **Every defect found on 2026-09-14 was found by a person clicking**,
+        // and none of them could have been found any other way: `ui_contract`
+        // reads the window's source, which is text, and text cannot fall into
+        // the wrong branch. `TESTCASES.md` has said so for months — *"the Rust
+        // client is untested through its window"* — and it stayed true because
+        // the only door into these functions was a window nobody can drive.
+        //
+        // This is that door. It dispatches to the same functions the window
+        // calls, so a case can walk a whole path — search, pick, the published
+        // answer, the report — and assert what came back, without a desktop and
+        // without anybody clicking. What it cannot check is what a person sees;
+        // that stays `manual`, and it is a far smaller thing than a flow that
+        // silently takes the wrong turn.
+        "invoke" => {
+            let name = std::env::args().nth(2)
+                .ok_or_else(|| "usage: podshl-client invoke <command> [json]".to_string())?;
+            let raw = std::env::args().nth(3).unwrap_or_else(|| "{}".into());
+            let args: Value = serde_json::from_str(&raw)
+                .map_err(|e| format!("arguments are not JSON: {e}"))?;
+            let out = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| e.to_string())?
+                .block_on(invoke_by_name(&name, &args))?;
+            println!("{}", serde_json::to_string(&out).map_err(|e| e.to_string())?);
+            Ok(())
+        }
         "--help" | "-h" | "help" => {
-            println!("podshl-client [doctor|demo|--version]\n");
+            println!("podshl-client [doctor|demo|invoke <command> [json]|--version]\n");
             println!("  (no argument)  the window");
             println!("  doctor         what this client can do on this machine");
             println!("  demo           the whole argument in five acts, against live services");
+            println!("  invoke         one of the window's commands, without the window");
             println!("  --version      which version this is");
             Ok(())
         }
@@ -840,6 +998,29 @@ fn provenance_check(anchor_url: String, subject: String) -> Value {
 }
 
 
+/// The report a person takes with them, as Markdown, and what was taken out of
+/// it.
+///
+/// The only exit from a diagnosis was a pseudonymous report to the operator,
+/// which is the wrong shape for the case the open-source branch rests on: the
+/// published answers did not cover somebody's problem, and they now hold more
+/// about it than they could have assembled in an hour, with nowhere to put it.
+///
+/// This is **more public** than a report — an issue tracker, for ever, under
+/// their own name — so every string goes through the same anonymiser the
+/// consent panel uses, the person's own words included, and `replaced` is
+/// returned so the panel can say what it took out. The same sentence, about a
+/// larger audience.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn issue_report(subject: String, problem: String, facts: Value, stated: Vec<String>,
+                outcome: String, answer: String, answer_from_model: bool,
+                tried: Vec<String>, footer: bool) -> Value {
+    issue::build(&subject, &problem, &facts, &stated, &outcome, &answer,
+                 answer_from_model, &tried, footer)
+}
+
+
 fn main() {
     if let Some(arg) = std::env::args().nth(1) {
         if let Err(e) = run_subcommand(&arg) {
@@ -895,6 +1076,19 @@ fn main() {
         }
     }
 
+    // Written before the window exists, because these three decide whether
+    // anything can work and none of them is visible from it.
+    {
+        let st = index_status();
+        let cfg = llm::load();
+        clientlog::start(
+            &endpoints()["operator"].as_str().unwrap_or("?").to_string(),
+            st.get("entries").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            st.get("have").and_then(|v| v.as_bool()).unwrap_or(false),
+            &format!("{}/{}", cfg.provider, cfg.model),
+        );
+    }
+
     tauri::Builder::default()
         .setup(move |app| {
             app.manage(AppState {
@@ -913,7 +1107,7 @@ fn main() {
             llm_get, llm_set, end_incident, grant_program_path, load_log_excerpt, anonymise_text,
             facts_as_sent,
             published_card, send_published_report, verify_log_entry,
-            provenance_check
+            provenance_check, issue_report, log_line
         ])
         .run(tauri::generate_context!())
         .expect("PODSHL could not start");

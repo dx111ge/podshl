@@ -75,8 +75,10 @@ status: active
 langs: [en, de]
 
 problem_classes:
-  - pip.install.wheel-missing
-  - pip.install.version-conflict
+  - id: pip.install.wheel-missing
+    describes: Installing fails with "no matching distribution found"
+  - id: pip.install.version-conflict
+    describes: pip refuses to install, saying two packages need different versions
 
 collect:
   - id: python.version
@@ -93,6 +95,17 @@ solutions:
 anchor you proved you control, so there is nowhere for anybody to type somebody
 else's. It is also why the impersonation attack does not need defending against:
 `evil-nvidia-fake.io` appears as `evil-nvidia-fake.io`.
+
+**`describes` is the line a person picks their problem by, and it is yours to
+write.** The class itself is an identifier — a rule matches on it, a solution
+answers it, and it travels in a report. Nobody outside your project can answer a
+question asked in identifiers, and until they had `describes` clients had no
+choice but to put three of them in a dropdown and ask which was yours. Say what
+the person *sees*, not what is wrong: somebody who already knew it was an
+architecture mismatch would not be asking. One sentence, 120 characters, English
+— the answer itself belongs in a solution file, where the walk reaches it after
+they have consented. A bare string is still valid, and a client then shows the
+identifier.
 
 **`problem_classes` names other people's software on purpose.** A project that
 repairs `pip` behaviour has to be able to say `pip`. That is nominative use, and

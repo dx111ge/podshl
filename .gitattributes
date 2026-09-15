@@ -1,32 +1,63 @@
-# These files are executed by Linux, wherever they were checked out.
+# Line endings are not the platform's choice to make.
 #
-# With `core.autocrlf=true` — the Windows default — a checkout rewrites them
-# with CRLF, `#!/usr/bin/env bash` becomes `bash\r`, and the container fails
-# with "bad interpreter". Their line endings are therefore not the platform's
-# choice to make.
-*.sh            text eol=lf
-Dockerfile      text eol=lf
-*.yaml          text eol=lf
-Dockerfile.*    text eol=lf
-Caddyfile       text eol=lf
-*.service       text eol=lf
-# Its tasks are shell scripts run inside the container: `set -e` with a CR is
-# "Illegal option -", and the Linux release never starts.
-mise.toml       text eol=lf
-*.yml           text eol=lf
-# Copied to .env and read by Docker, which keeps a CR as part of the value — a
-# password that ends in an invisible character nobody typed.
-*.example       text eol=lf
-# Migrations are hash-pinned, and a hash is over bytes. A Windows checkout
-# rewrote these with CRLF, `git archive` carried that to the server, and the
-# recorded pin was the CRLF one — so the next deployment from Linux presented
-# the LF hash of a file nobody had edited, the runner refused to continue, and
-# the operator was down until somebody read the message closely enough to
-# disbelieve it. The runner now pins content rather than bytes, and this line
-# means it never has to.
-*.sql           text eol=lf
+# The rule is one line: everything git detects as text is stored and checked
+# out with LF, on every machine. `core.autocrlf` is true by default on Windows
+# and this file overrides it — which is the point, because that setting is
+# per-machine and the requirement is per-repository.
+#
+# This replaces a list that had grown one entry per outage. The outages are
+# kept below as comments, because each one is evidence for the rule rather
+# than a special case beside it:
+#
+#   *.sh, Dockerfile, *.service
+#       Executed by Linux wherever they were checked out. Under a CRLF checkout
+#       `#!/usr/bin/env bash` becomes `bash\r` and the container fails with
+#       "bad interpreter".
+#   mise.toml, *.yml, *.yaml
+#       Its tasks are shell scripts run inside the container. `set -e` with a
+#       trailing CR is "Illegal option -", and the Linux release never starts.
+#   *.example
+#       Copied to .env and read by Docker, which keeps the CR as part of the
+#       value — a password ending in an invisible character nobody typed.
+#   *.sql
+#       Migrations are hash-pinned and a hash is over bytes. A Windows checkout
+#       rewrote these with CRLF, `git archive` carried that to the server, the
+#       recorded pin was the CRLF one, and the next deployment from Linux
+#       presented the LF hash of a file nobody had edited. The runner refused
+#       to continue and the operator was down until somebody read the message
+#       closely enough to disbelieve it. The runner now pins content rather
+#       than bytes; this file means it never has to again.
 
-# Licence texts are verbatim by definition. A checkout that rewrites their line
-# endings changes the bytes of a document nobody is allowed to alter.
-LICENSE         text eol=lf
-LICENSE-*       text eol=lf
+* text=auto eol=lf
+
+# Binaries, named explicitly. Git's detection is a heuristic over the first
+# 8000 bytes, and a heuristic that guesses "text" once corrupts the file.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.icns  binary
+*.pdf   binary
+*.mp4   binary
+*.mov   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.zip   binary
+*.gz    binary
+*.xz    binary
+*.deb   binary
+*.dmg   binary
+*.exe   binary
+*.dll   binary
+*.msi   binary
+*.so    binary
+*.dylib binary
+
+# Licence texts are verbatim by definition: not rewritten in either direction,
+# on any platform. The committed bytes are LF and stay the bytes that ship.
+LICENSE     -text
+LICENSE-*   -text

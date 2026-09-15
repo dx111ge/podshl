@@ -99,6 +99,10 @@ pub fn search(query: &str) -> Value {
                     // looking at.
                     "anchor_kind": if e.is_repo() { "repo" } else { "url" },
                     "answers": e.problem_classes.clone(),
+                    // Beside the classes, never instead of them: what is
+                    // recorded and sent is the identifier the publisher's rules
+                    // answer, and what a person reads is their sentence for it.
+                    "answer_labels": e.class_labels.clone(),
                     "status": e.status.clone(),
                     "how": m!("how_published")
                 }))

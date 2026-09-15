@@ -68,6 +68,12 @@
     <p class="why">Problem classes: one name for each kind of problem, like
     <code>pip.install.wheel-missing</code>. A client offers these to a person, so a
     solution for a class you do not list can never be reached.</p>
+    <p class="why"><b>The sentence is what the person actually reads.</b> The name
+    is for your rules; nobody outside your project can pick their own problem out
+    of three identifiers. Write what they <i>see</i> — &ldquo;Installing fails with
+    &lsquo;no matching distribution found&rsquo;&rdquo; — not what is wrong, because
+    somebody who already knew that would not be asking. One line, 120 characters.
+    Leave it empty and a client shows the name, which is all it used to have.</p>
     <div id="classes"></div>
     <div class="btns"><button id="add-class">Add a problem class</button></div>
   </section>
@@ -194,10 +200,23 @@ const Emit = (() => {
     kept(L, "", d.extra);
     const langs = clean((d.langs || "").split(","));
     L.push("langs: " + JSON.stringify(langs.includes("en") ? langs : ["en"].concat(langs)));
-    const classes = clean(d.classes);
+    // A class with a sentence is a mapping; one without stays the bare string
+    // it has always been, so a manifest nobody has relabelled comes back out
+    // byte for byte as it went in.
+    // A draft may still be a list of plain names — one saved before classes
+    // could carry a sentence, or one handed straight to this writer.
+    const classes = (d.classes || [])
+      .map(c => typeof c === "string" ? {id: c.trim(), describes: ""}
+                                      : {id: ((c || {}).id || "").trim(),
+                                         describes: ((c || {}).describes || "").trim()})
+      .filter(c => c.id);
     L.push("");
     L.push(classes.length ? "problem_classes:" : "problem_classes: []");
-    classes.forEach(c => L.push("  - " + q(c)));
+    classes.forEach(c => {
+      if (!c.describes) { L.push("  - " + q(c.id)); return; }
+      L.push("  - id: " + q(c.id));
+      L.push("    describes: " + q(c.describes));
+    });
     const probes = (d.probes || []).filter(p => (p.id || "").trim());
     if (probes.length) {
       L.push("", "collect:");
@@ -297,7 +316,12 @@ const Emit = (() => {
     const topKnown = new Set(["endpoint", "commit", "status", "langs", "problem_classes", "collect",
                               "glossary", "escalate", "solutions"]);
     const d = {anchor: "", endpoint: m.endpoint || "", commit: "", status: m.status || "active",
-               langs: (m.langs || []).join(", "), classes: (m.problem_classes || []).slice(),
+               langs: (m.langs || []).join(", "),
+               // Either shape: the string every manifest used to be, or the
+               // mapping that can carry a sentence.
+               classes: (m.problem_classes || []).map(c => typeof c === "string"
+                 ? {id: c, describes: ""}
+                 : {id: (c || {}).id || "", describes: (c || {}).describes || ""}),
                probes: [], solutions: [], glossary: ((m.glossary || {}).keep || []).join(", "),
                escalate: {on: false, reason: "", queue: "", target: "", reply_via: []},
                extra: rest(m, topKnown)};
@@ -377,7 +401,7 @@ const Emit = (() => {
       out.langs = texts;
       return out;
     });
-    if (!d.classes.length) d.classes = [""];
+    if (!d.classes.length) d.classes = [{id: "", describes: ""}];
     return d;
   }
 
@@ -401,10 +425,22 @@ const fieldId = () => "f" + (++uid);
    the person presses Check. */
 const KEY = "podshl.build.draft";
 const blank = () => ({anchor: "", endpoint: "", commit: "", status: "active", langs: "en",
-  classes: [""], probes: [], solutions: [], glossary: "",
+  classes: [{id: "", describes: ""}], probes: [], solutions: [], glossary: "",
   escalate: {on: false, reason: "", queue: "", target: "", reply_via: []}});
 let D = blank();
-try { const saved = JSON.parse(localStorage.getItem(KEY) || "null"); if (saved) D = Object.assign(blank(), saved); } catch (_) {}
+try {
+  const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (saved) {
+    D = Object.assign(blank(), saved);
+    // An afternoon's work saved before classes could carry a sentence. Without
+    // this the form reads `.id` off a string, every class renders empty, and
+    // the draft looks lost.
+    D.classes = (D.classes || []).map(c => typeof c === "string"
+      ? {id: c, describes: ""}
+      : {id: (c || {}).id || "", describes: (c || {}).describes || ""});
+    if (!D.classes.length) D.classes = [{id: "", describes: ""}];
+  }
+} catch (_) {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (_) {} };
 
 let READS = {ops: [], catalogue: [], tools: [], roots: [], derived: [], programs: {}};
@@ -422,6 +458,9 @@ function input(obj, key, label, opts) {
   if (o.rows) i.rows = o.rows;
   i.id = id; i.autocomplete = "off";
   if (o.placeholder) i.placeholder = o.placeholder;
+  // Bounded here as well as at ingest: a sentence refused after publishing is a
+  // round trip through a forge to learn something the form already knew.
+  if (o.maxlength) i.maxLength = o.maxlength;
   i.value = obj[key] === undefined || obj[key] === null ? "" : obj[key];
   i.addEventListener("input", () => { obj[key] = i.value; changed(o.redraw); });
   wrap.appendChild(l); wrap.appendChild(i);
@@ -475,10 +514,15 @@ function renderClasses() {
   const box = $("classes"); box.textContent = "";
   D.classes.forEach((c, i) => {
     const row = el("div", "rowline");
-    const holder = {v: c};
-    const field = input(holder, "v", "Problem class " + (i + 1), {placeholder: "your-project.area.what-breaks"});
-    field.querySelector("input").addEventListener("input", () => { D.classes[i] = holder.v; save(); preview(); });
-    row.appendChild(field);
+    const name = input(c, "id", "Problem class " + (i + 1),
+                       {placeholder: "your-project.area.what-breaks"});
+    name.querySelector("input").addEventListener("input", () => { save(); preview(); });
+    const said = input(c, "describes", "What the person sees",
+                       {placeholder: "Installing fails with “no matching distribution found”",
+                        maxlength: 120});
+    said.querySelector("input").addEventListener("input", () => { save(); preview(); });
+    row.appendChild(name);
+    row.appendChild(said);
     row.appendChild(removeButton(D.classes, c));
     box.appendChild(row);
   });
@@ -563,7 +607,9 @@ function facts() {
 
 function renderSolutions() {
   const box = $("solutions"); box.textContent = "";
-  const classes = () => [["", "choose…"]].concat(D.classes.map(c => c.trim()).filter(Boolean).map(c => [c, c]));
+  // The identifier is what a solution answers; the sentence is only ever shown.
+  const classes = () => [["", "choose…"]].concat(
+    D.classes.map(c => (c.id || "").trim()).filter(Boolean).map(c => [c, c]));
   const factOptions = () => [["", "choose…"]].concat(facts().map(f => [f, f]));
   D.solutions.forEach((s, i) => {
     const card = el("div", "card");
@@ -768,7 +814,7 @@ document.querySelectorAll(".esc-reply").forEach(cb => cb.addEventListener("chang
   changed(false);
 }));
 
-$("add-class").addEventListener("click", () => { D.classes.push(""); changed(true); });
+$("add-class").addEventListener("click", () => { D.classes.push({id: "", describes: ""}); changed(true); });
 $("add-reading").addEventListener("click", () => {
   D.probes.push({kind: "machine", id: "", describes: "", why: "", op: (READS.ops[0] || {}).op, params: {}});
   changed(true);
@@ -785,7 +831,7 @@ $("add-catalogue").addEventListener("click", () => {
   changed(true);
 });
 $("add-solution").addEventListener("click", () => {
-  D.solutions.push({id: "", problem_class: D.classes.find(c => c.trim()) || "", when: [],
+  D.solutions.push({id: "", problem_class: (D.classes.find(c => (c.id || "").trim()) || {}).id || "", when: [],
                     severity: "medium", action: "report_only", params: {}, body: ""});
   changed(true);
 });
@@ -852,7 +898,8 @@ $("load").addEventListener("change", async () => {
 $("example").addEventListener("click", () => {
   D = Object.assign(blank(), {
     anchor: "https://example.org/your-project/", commit: "v1.0.0", langs: "en",
-    classes: ["your-project.install.wrong-archive"],
+    classes: [{id: "your-project.install.wrong-archive",
+               describes: "It will not start — no window, or “cannot execute binary file”"}],
     probes: [
       {kind: "machine", id: "os.name", describes: "Operating system",
        why: "There is one release archive per platform", op: "os_fact", params: {name: "os"}},
