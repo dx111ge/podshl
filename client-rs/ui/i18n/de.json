@@ -556,5 +556,7 @@
   "pub_terms_lost": "Dein Modell hat beim Übersetzen verändert, was so bleiben musste, wie das Projekt es schreibt: {list}. Bevor du einen Befehl ausführst, sieh im Original nach — oben rechts, einen Klick entfernt.",
   "pub_translating": "Dein Modell übersetzt, was das Projekt geschrieben hat …",
   "pub_tr_failed": "Das Projekt schreibt auf Englisch, und dein Modell konnte es nicht übersetzen — es steht hier im Original.",
-  "vendor_translating": "{v} liefert diese Sprache nicht — dein Modell übersetzt …"
+  "vendor_translating": "{v} liefert diese Sprache nicht — dein Modell übersetzt …",
+  "devbuild": "Entwicklungsversion",
+  "devbuild_why": "Ohne Betreiber und ohne gepinnten Log-Schlüssel gebaut, spricht also mit {o} und kann kein veröffentlichtes Verzeichnis prüfen. Mit scripts/build_client.sh oder build_client.ps1 bauen."
 }

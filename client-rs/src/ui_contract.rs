@@ -728,6 +728,34 @@ the binary and its manifest would ship disagreeing about what they are"
                 "the search hit no longer carries the sentences, so the window has only ids");
     }
 
+    /// **A build with no operator compiled in says so, and cannot stop the
+    /// window opening by saying it.**
+    ///
+    /// `cargo test` and a bare `cargo build` rebuild this binary without
+    /// `PODSHL_BUILD_*`, and what comes out is not broken — it is plausible:
+    /// it starts, it draws this window, it points at loopback with no pinned
+    /// key, and every published project falls through to the model. That cost
+    /// an afternoon on 2026-09-14 and caught two more builds on 2026-09-15.
+    ///
+    /// The first version of the marker called `t()` before `loadLanguages()`
+    /// had filled `I18N`, which throws — and a throw in `boot` is the "PODSHL
+    /// could not start" screen. A notice that a build is untrustworthy must
+    /// never be the reason the window will not open.
+    #[test]
+    fn a_development_build_says_so_and_cannot_stop_the_window_opening() {
+        let ui = ui_source();
+        assert!(main_source().contains("\"built\": option_env!(\"PODSHL_BUILD_SERVER_URL\").is_some()"),
+                "the binary no longer reports whether it was built for an operator");
+        let lang = ui.find("applyLang();").expect("the window never applies a language");
+        let marker = ui.find("ep.built === false").expect("a development build is no longer marked");
+        assert!(lang < marker,
+                "the marker reads a sentence before the language files are loaded, which                  throws in boot and shows \"PODSHL could not start\" instead of the window");
+        // Wrapped: the few lines before it open a `try`.
+        let before = &ui[marker.saturating_sub(120)..marker];
+        assert!(before.contains("try{"),
+                "the marker is not wrapped, so a missing sentence would stop the window");
+    }
+
     /// Every sentence the window asks for exists in every language it offers.
     /// `t()` falls back to English and then to the key itself, so a missing one
     /// is not a crash — it is a raw `pub_unreach_h` on somebody's screen.

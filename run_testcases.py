@@ -824,6 +824,11 @@ def _():
     sv("sv_a_notice_states_that_whoever_filed_it_means_it")
 
 
+@case("SV118", "A notice filed behind a backlog is still reachable")
+def _():
+    sv("sv_a_notice_filed_behind_a_backlog_is_still_reachable")
+
+
 @case("SV100", "The decision is made on the operator's own listener")
 def _():
     sv("sv_the_decision_is_made_on_the_operators_own_listener")
@@ -2865,6 +2870,68 @@ def _():
                         for k, v in after["parsed"]["solutions"].items()
                         if v != before["parsed"]["solutions"].get(k)))
         assert after["trees"] == before["trees"] and after["no_tree"] == before["no_tree"], root
+
+
+# **Eight rows in `TESTCASES.md` said `auto` and named nothing here.** The work
+# was done and the tests exist — in the client, in Rust — but no case bound a
+# documented promise to one of them, so the suite reported them missing on every
+# run and exited non-zero for it. A suite that ends red for bookkeeping teaches
+# people to read past red, which is the expensive part. Each row is bound to the
+# test that actually keeps it; rename the test and the case fails, which is the
+# whole point of `cargo(...)`.
+
+
+@case("PR1", "Where this machine says it got the software [rust]")
+def _():
+    cargo("provenance::tests::only_a_real_disagreement_is_worth_saying")
+    cargo("provenance::tests::what_is_not_part_of_who_published_something_is_folded_away")
+    cargo("provenance::tests::a_package_name_that_would_need_escaping_is_refused")
+
+
+@case("PR2", "Every text the window names exists in every language [rust]")
+def _():
+    # Two halves: the binary's own sentences, and the window's.
+    cargo("msg::tests::every_message_the_binary_says_has_a_sentence")
+    cargo("ui_contract::tests::every_language_has_every_sentence")
+
+
+@case("IS1", "A diagnosis has an exit that is not a report to the operator [rust]")
+def _():
+    cargo("issue::tests::the_footer_can_be_switched_off")
+    cargo("issue::tests::measured_and_supplied_are_two_sections")
+
+
+@case("IS2", "Nothing reaches the issue that a report would have held back [rust]")
+def _():
+    cargo("issue::tests::nothing_leaves_that_the_consent_panel_would_have_taken_out")
+    cargo("issue::tests::a_value_cannot_break_out_of_its_row")
+    cargo("issue::tests::a_model_answer_is_marked_before_it_is_quoted")
+
+
+@case("IS3", "A version the machine never reported is named before it is copied [rust]")
+def _():
+    cargo("issue::tests::a_version_the_machine_never_reported_is_named")
+    cargo("issue::tests::it_says_nothing_when_there_is_nothing_to_compare_against")
+    cargo("issue::tests::a_bare_integer_is_not_a_version")
+    cargo("issue::tests::the_mark_is_in_the_text_before_the_answer_it_qualifies")
+
+
+@case("OM1", "The desktop's own agent is the model, with its tools denied [rust]")
+def _():
+    cargo("omarchy::tests::the_only_measured_agent_is_called_with_its_tools_denied")
+    cargo("omarchy::tests::an_agent_name_is_a_program_name_or_it_is_refused")
+
+
+@case("OM2", "Two switches that read like a fence and are not [rust]")
+def _():
+    # The measurement is in the source; what is kept here is its conclusion —
+    # only `--disallowed-tools` refused in both places, and it is what is used.
+    cargo("omarchy::tests::the_only_measured_agent_is_called_with_its_tools_denied")
+
+
+@case("OM3", "The agent is only looked for on an Omarchy desktop [rust]")
+def _():
+    cargo("omarchy::tests::the_agent_is_only_looked_for_on_an_omarchy_desktop")
 
 
 @case("RS1", "Every Rust test passes, named by a case or not [rust]")

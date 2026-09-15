@@ -556,5 +556,7 @@
   "pub_terms_lost": "While translating, your model changed words that had to stay as the project wrote them: {list}. Before you run a command, check the original — one click away, top right.",
   "pub_translating": "Your model is translating what the project wrote …",
   "pub_tr_failed": "The project writes in English and your model could not translate it — it is shown here as written.",
-  "vendor_translating": "{v} does not serve this language — your model is translating …"
+  "vendor_translating": "{v} does not serve this language — your model is translating …",
+  "devbuild": "development build",
+  "devbuild_why": "Built without an operator or a pinned log key, so it talks to {o} and cannot verify a published directory. Build it with scripts/build_client.sh or build_client.ps1."
 }

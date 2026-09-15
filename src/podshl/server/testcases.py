@@ -4405,6 +4405,79 @@ def sv_an_inclusion_proof_is_for_the_head_the_caller_holds():
 
 # ------------------------------------------------- the four decisions in `0012`
 
+def _route_all_pending(operator, auth):
+    """Every pending notice as the operator's own listener serves them.
+
+    The in-process twin of this is `_all_pending`. Both exist because a case
+    that files a notice and then looks for it must not be asserting that fewer
+    than a hundred were already waiting.
+    """
+    import httpx
+
+    out, offset = [], 0
+    while True:
+        page = httpx.get(f"{operator}/notices?limit=200&offset={offset}",
+                         headers=auth, timeout=10).json()["pending"]
+        out.extend(page)
+        if len(page) < 200:
+            return out
+        offset += 200
+
+
+def _all_pending(conn):
+    """Every pending notice, not the first page of them.
+
+    A case that files a notice and then looks for it in `pending(conn)` is
+    asserting that fewer than a hundred were already waiting. On 2026-09-15
+    that stopped being true in a development database and three cases went red
+    for a reason that had nothing to do with what they test.
+    """
+    from . import takedown
+    out, offset = [], 0
+    while True:
+        page = takedown.pending(conn, 500, offset)
+        out.extend(page)
+        if len(page) < 500:
+            return out
+        offset += 500
+
+
+def sv_a_notice_filed_behind_a_backlog_is_still_reachable():
+    """**A queue worked from the front must not hide its back.**
+
+    `pending` was oldest first with a hard limit and no offset, so the
+    hundred-and-first undecided notice was on no page at all: an operator with
+    a backlog could not see, and therefore could not act on, anything filed
+    after the queue filled up. The order is right; what was missing was a way
+    through. Found because three cases that file a notice and then look for it
+    went red in a development database, which is the same defect wearing a
+    test's clothes.
+    """
+    from . import takedown
+    with db.tx() as conn:
+        host = _fresh_host("backlog")
+        _anchor(conn, host)
+        for _ in range(3):
+            takedown.receive(conn, reason_code="trademark_claim",
+                             notifier=dict(NOTIFIER, name="S", contact="c"),
+                             anchor_host=host)
+        mine = takedown.receive(conn, reason_code="copyright_claim",
+                                notifier=dict(NOTIFIER, name="Last", contact="c"),
+                                anchor_host=host)["notice"]
+
+        first = [n["id"] for n in takedown.pending(conn, 2, 0)]
+        second = [n["id"] for n in takedown.pending(conn, 2, 2)]
+        assert first and second and not set(first) & set(second), (
+            f"paging returns the same rows twice: {first} {second}")
+
+        assert takedown.pending_count(conn) >= 4, "the queue cannot count itself"
+
+        reachable = {n["id"] for n in _all_pending(conn)}
+        assert mine in reachable, (
+            "a notice filed behind a page of backlog is on no page at all, so "
+            "the operator can never act on it")
+
+
 def sv_a_notice_waits_for_a_person_and_a_decision_can_be_reversed():
     """SV97. `POST /notice` takes no authentication, and it cannot: a notice is
     filed by a stranger. It also performed the takedown in the same request —
@@ -4440,7 +4513,7 @@ def sv_a_notice_waits_for_a_person_and_a_decision_can_be_reversed():
         assert not log_store.for_anchor(conn, aid), \
             "filing wrote a takedown to the log before anybody decided"
 
-        waiting = {n["id"]: n for n in takedown.pending(conn)}
+        waiting = {n["id"]: n for n in _all_pending(conn)}
         assert filed["notice"] in waiting, \
             "the notice is not on the queue, so nobody can act on it"
 
@@ -4748,7 +4821,20 @@ def sv_the_decision_is_made_on_the_operators_own_listener():
     # asking and how to answer them.
     queue = httpx.get(f"{operator}/notices", headers=auth, timeout=10)
     assert queue.status_code == 200, queue.text
-    waiting = {n["id"]: n for n in queue.json()["pending"]}
+    body_q = queue.json()
+    # The route has to offer the way through, not just the library. `pending`
+    # grew an offset and this route did not, for one commit, and a case that
+    # only called the function passed over it.
+    assert "total" in body_q and body_q["total"] >= 1, (
+        f"the queue cannot say how long it is, so nobody can page it: {body_q}")
+    first = httpx.get(f"{operator}/notices?limit=1&offset=0", headers=auth, timeout=10).json()
+    second = httpx.get(f"{operator}/notices?limit=1&offset=1", headers=auth, timeout=10).json()
+    if body_q["total"] > 1:
+        assert first["pending"] and second["pending"], (first, second)
+        assert first["pending"][0]["id"] != second["pending"][0]["id"], (
+            "offset changes nothing, so the queue is one page and the rest is unreachable")
+
+    waiting = {n["id"]: n for n in _route_all_pending(operator, auth)}
     assert nid in waiting, f"the notice is not on the operator's queue: {queue.text}"
     assert waiting[nid]["notifier"]["name"] == "A Stranger", waiting[nid]
 
@@ -4840,7 +4926,7 @@ def sv_a_notice_states_that_whoever_filed_it_means_it():
         filed = takedown.receive(conn, reason_code="trademark_claim", anchor_host=host,
                                  notifier=dict(NOTIFIER, name="S", contact="c"))
         assert filed["action"] == "pending", filed
-        waiting = {n["id"]: n for n in takedown.pending(conn)}
+        waiting = {n["id"]: n for n in _all_pending(conn)}
         assert waiting[filed["notice"]]["good_faith_stated"] is True, (
             "the queue does not show the person deciding whether the statement "
             f"was given: {waiting[filed['notice']]}")

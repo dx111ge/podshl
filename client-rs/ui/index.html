@@ -108,6 +108,11 @@
   ul.plain li::before{content:"·";color:var(--ok);font-weight:700}
   /* A list the person picks from rather than reads: the control is the marker,
      so the bullet beside it is one mark too many. */
+  /* A build with no operator compiled in is a development build. It is a fine
+     thing to be and a terrible thing to be silently, because it looks exactly
+     like a release and quietly cannot verify anything. */
+  .devbuild{margin-left:.5rem;padding:.08rem .45rem;border:1px solid var(--warn);
+            border-radius:.6rem;color:var(--warn);font-size:.78rem;white-space:nowrap}
   ul.plain.choices li::before{content:none}
   ul.plain.choices label{display:flex;gap:.55rem;align-items:baseline;cursor:pointer}
   ul.plain .lbl{font-weight:500}
@@ -211,6 +216,7 @@
   <div class="idbar" id="idbar">
     <span class="dot" id="dot"></span>
     <span class="who" id="who"></span>
+    <span class="devbuild" id="devbuild" hidden></span>
     <details id="proofbox" hidden>
       <summary id="proofsum"></summary>
       <div class="proof" id="proof"></div>
@@ -2543,6 +2549,25 @@ window.addEventListener("load", async () => {
   else { const l=await invoke("os_locale"); if(I18N[l.code]) LANG=l.code; else LANG="en"; }
   $("lang").value=LANG;
   applyLang();
+  // Said on screen, not only in the log. `cargo test` rebuilds this binary
+  // without `PODSHL_BUILD_*` and what comes out points at loopback with no
+  // pinned key — a client that starts, draws this window, and cannot verify a
+  // published directory, so every project falls through to the model. It has
+  // cost this project days. A development build now looks like one.
+  //
+  // **After the language files, not before.** `t()` reads `I18N.en`, which is
+  // empty until `loadLanguages()` returns — calling it here first threw, and a
+  // throw in `boot` is the "PODSHL could not start" screen. A marker about a
+  // build being untrustworthy must never be the reason the window will not
+  // open, so it is also wrapped.
+  try{
+    if(ep.built === false || ep.has_key === false){
+      const chip = $("devbuild");
+      chip.textContent = t("devbuild");
+      chip.title = t("devbuild_why", {o: ep.operator});
+      chip.hidden = false;
+    }
+  }catch(_){}
   setTimeout(()=>$("problem").focus(), 60);
   syncHint(await refreshLlmChip());
 

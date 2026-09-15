@@ -308,15 +308,34 @@ def reinstate(conn, notice_id: int) -> dict:
     }
 
 
-def pending(conn, limit: int = 100) -> list[dict]:
+def pending(conn, limit: int = 100, offset: int = 0) -> list[dict]:
     """What is waiting for a person, oldest first. The notifier is included:
     this is the operator's own listener, and a decision needs to know who is
-    asking and how to answer them."""
+    asking and how to answer them.
+
+    **Oldest first and a hundred at a time hid every new notice behind a
+    backlog.** The order is right, because a queue is worked from the front,
+    but without an offset the hundred-and-first notice was not on a later page
+    — it was on no page at all, and an operator holding a hundred undecided
+    notices would never see one filed today. Found on 2026-09-15 because two
+    cases that file a notice and then look for it stopped finding it, which is
+    the same defect wearing a test's clothes: they were the operator, and the
+    operator could not see it either.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "SELECT n.id, n.received_at, n.reason_code, n.notifier, n.good_faith_stated, "
             "       a.host, a.value "
             "FROM notice n JOIN anchor a ON a.id = n.anchor_id "
-            "WHERE n.action = 'pending' ORDER BY n.received_at, n.id LIMIT %s",
-            (max(1, min(limit, 500)),))
+            "WHERE n.action = 'pending' ORDER BY n.received_at, n.id "
+            "LIMIT %s OFFSET %s",
+            (max(1, min(limit, 500)), max(0, offset)))
         return cur.fetchall()
+
+
+def pending_count(conn) -> int:
+    """How many are waiting, whatever one page of them shows. A list that
+    cannot say how long it is cannot be paged through by whoever reads it."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM notice WHERE action = 'pending'")
+        return cur.fetchone()["n"]

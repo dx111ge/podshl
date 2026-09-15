@@ -785,6 +785,20 @@ fn endpoints() -> Value {
     json!({
         "operator": from("PODSHL_SERVER_URL", option_env!("PODSHL_BUILD_SERVER_URL").unwrap_or("http://127.0.0.1:8725")),
         "index": from("PODSHL_INDEX_URL", option_env!("PODSHL_BUILD_INDEX_URL").unwrap_or("http://127.0.0.1:8723")),
+        // **Whether anything was compiled into this binary at all.**
+        //
+        // `cargo test` and a bare `cargo build` rebuild the same path without
+        // `PODSHL_BUILD_*` set, and what comes out is not a broken client — it
+        // is a plausible one, pointing at loopback with no pinned key, drawing
+        // the same window. It cost this project an afternoon on 2026-09-14 and
+        // caught the author of this comment twice more on 2026-09-15, once from
+        // `cargo test`, which nobody thinks of as a build.
+        //
+        // So the binary says which it is, and the window says it on screen. A
+        // development build is a perfectly good thing to be; being one silently
+        // is not.
+        "built": option_env!("PODSHL_BUILD_SERVER_URL").is_some(),
+        "has_key": option_env!("PODSHL_BUILD_LOG_KEY").is_some(),
     })
 }
 

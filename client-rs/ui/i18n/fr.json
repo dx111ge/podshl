@@ -556,5 +556,7 @@
   "pub_terms_lost": "En traduisant, votre modèle a modifié ce qui devait rester tel que le projet l’écrit : {list}. Avant d’exécuter une commande, vérifiez l’original — à un clic, en haut à droite.",
   "pub_translating": "Votre modèle traduit ce que le projet a écrit …",
   "pub_tr_failed": "Le projet écrit en anglais et votre modèle n’a pas pu le traduire — il est affiché tel quel.",
-  "vendor_translating": "{v} ne propose pas cette langue — votre modèle traduit …"
+  "vendor_translating": "{v} ne propose pas cette langue — votre modèle traduit …",
+  "devbuild": "version de développement",
+  "devbuild_why": "Construite sans opérateur ni clé de journal épinglée : elle parle à {o} et ne peut vérifier aucun annuaire publié. Construisez-la avec scripts/build_client.sh ou build_client.ps1."
 }

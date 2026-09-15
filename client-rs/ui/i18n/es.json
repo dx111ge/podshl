@@ -556,5 +556,7 @@
   "pub_terms_lost": "Al traducir, tu modelo cambió lo que debía quedar como lo escribe el proyecto: {list}. Antes de ejecutar un comando, revisa el original — a un clic, arriba a la derecha.",
   "pub_translating": "Tu modelo está traduciendo lo que escribió el proyecto …",
   "pub_tr_failed": "El proyecto escribe en inglés y tu modelo no pudo traducirlo — se muestra tal como está escrito.",
-  "vendor_translating": "{v} no ofrece este idioma — tu modelo está traduciendo …"
+  "vendor_translating": "{v} no ofrece este idioma — tu modelo está traduciendo …",
+  "devbuild": "compilación de desarrollo",
+  "devbuild_why": "Compilada sin operador ni clave de registro fijada, así que habla con {o} y no puede verificar ningún directorio publicado. Compílela con scripts/build_client.sh o build_client.ps1."
 }

@@ -359,6 +359,19 @@ try {
                    document.getElementById('vquery').value='engram';
                    document.getElementById('go').click(); return true })()`);
 
+  // **A panel this walk had never been taught about.** `confirmOrigin` asks
+  // whether to read what this machine's package database says about where the
+  // program came from — added after the walk was written, so the walk sat in
+  // front of it until it timed out and reported "the class picker never came",
+  // which is true and says nothing. The same rot the send-consent panel caused
+  // once already. Skipped rather than answered: the reading is a separate
+  // consent with its own case, and this walk is about the published path.
+  step("decline the provenance reading");
+  await waitFor(`!!document.querySelector('button[data-y=""]')`, "the provenance question");
+  await screenshot("provenance-question");
+  await js(`(()=>{ const b=document.querySelector('button[data-y=""]');
+                   if(!b) return 'no provenance question'; b.click(); return true })()`);
+
   step("pick the problem class");
   await waitFor(`!!document.querySelector('input.pc')`, "the class picker");
   await js(`(()=>{ const want=${JSON.stringify(process.env.CLASS || "")};

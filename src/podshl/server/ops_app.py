@@ -160,10 +160,21 @@ def holds():
 # anybody, and a decision that a person makes is one a person can reverse.
 
 @ops.get("/notices")
-def notices(limit: int = 100):
-    """What is waiting for a decision, oldest first."""
+def notices(limit: int = 100, offset: int = 0):
+    """What is waiting for a decision, oldest first, with `total` so the rest
+    of it can be reached.
+
+    Without the offset a backlog of a hundred made every newer notice
+    unreachable from here — not on a later page, on no page — so the operator
+    could not act on anything filed after the queue filled up. `pending` grew
+    the offset first and this route did not, for one commit, which is its own
+    small lesson: a fix in the library that the only caller cannot ask for is
+    not a fix.
+    """
     with db.read() as conn:
-        return {"pending": takedown.pending(conn, limit)}
+        return {"pending": takedown.pending(conn, limit, offset),
+                "total": takedown.pending_count(conn),
+                "limit": limit, "offset": offset}
 
 
 @ops.post("/notice/{notice_id}/act")
