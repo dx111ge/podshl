@@ -34,6 +34,20 @@ x-operator: &operator
   # Public resolvers rather than the host's, which at home is the router on the
   # LAN — an address `firewall.sh` refuses to every container here. Quad9: no
   # logging of addresses, and a foundation under Swiss law.
+  #
+  # **Measured against that, on 2026-09-15: Quad9 served a wrong A record.** For
+  # `sdota.de` it answered 91.12.73.134 — an address no authoritative server
+  # claimed and nothing listened on — as a live cache entry with a normal TTL,
+  # and its anycast nodes disagreed with each other, so about half of all
+  # lookups got it. Cloudflare, Google, Telekom and both authoritative servers
+  # were correct throughout. The maintainer's router was moved off Quad9 that
+  # day for exactly this.
+  #
+  # Left as it is, deliberately: what this cost was reachability, not integrity.
+  # A crawl that resolves to the wrong address fails TLS or fails the anchor
+  # check; it does not mirror somebody else's files. The privacy argument for
+  # Quad9 is a real one and it is not mine to trade away in a comment. What is
+  # written down here is the evidence, so the next person weighing it has it.
   dns: &public-dns [9.9.9.9, 149.112.112.112]
   read_only: true
   tmpfs: [/tmp]

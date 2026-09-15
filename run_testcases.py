@@ -2581,7 +2581,13 @@ def _():
     Scoped to what is published: the working repository's own notes may name
     each other freely, and `run_testcases.py` holds the list."""
     internal = ("DIRECTION.md", "BENEFITS.md", "OUTREACH.md", "HANDOVER.md",
-                "BASELINE.md", "DISCOVERY.md")
+                "BASELINE.md", "DISCOVERY.md",
+                #: The script that performs the split. It cannot avoid holding
+                #: the list of what is withheld, so publishing it would publish
+                #: exactly that — this case caught it doing so, which is the
+                #: case working. It is a maintainer's tool and nothing in the
+                #: product runs it, so it stays on the side it describes.
+                "scripts/sync_public.sh")
     #: Named, with the reason, rather than exempting a directory. An applied
     #: migration is hash-pinned and cannot be edited — the runner refused this
     #: one when the reference was tidied out of a comment, which is the guard

@@ -17,8 +17,22 @@
 # so a deployment is always a commit somebody can name.
 set -euo pipefail
 
-HOST="${1:?usage: deploy/compose/update.sh <user@host> [remote-path]}"
-REMOTE="${2:-/opt/podshl}"
+HOST="${1:?usage: deploy/compose/update.sh <user@host> [--staging] [remote-path]}"
+
+# **Staging is a second operator on the same host**, with its own project, its
+# own volumes, its own database and no Caddy. It exists because a deployment
+# went from a laptop straight onto the live operator, and on 2026-09-13 a CRLF
+# byte in a migration took it down — there was nowhere for that byte to land
+# first.
+STAGING=""
+COMPOSE_FILES=""
+if [ "${2:-}" = "--staging" ]; then
+  STAGING=1
+  COMPOSE_FILES="-f compose.yaml -f compose.staging.yaml"
+  shift
+fi
+REMOTE="${2:-${STAGING:+/opt/podshl-staging}}"
+REMOTE="${REMOTE:-/opt/podshl}"
 REF="$(git rev-parse --short HEAD)"
 DIRTY="$(git status --porcelain | wc -l)"
 
@@ -34,6 +48,10 @@ fi
 # So: back up if it can, and if it cannot, require that a complete one already
 # exists. Complete means all four files, because a half-written backup is the
 # kind that is discovered during a restore.
+if [ -n "$STAGING" ]; then
+  echo "· staging: no backup, because its database is meant to be replaceable"
+  echo "  (if a migration destroys it, that is the result this instance exists to produce)"
+else
 echo "· backing up first"
 if ! ssh "$HOST" "cd $REMOTE/deploy/compose && sudo ./backup.sh"; then
   echo "· backup could not run — looking for one that is already complete"
@@ -50,16 +68,27 @@ if ! ssh "$HOST" "cd $REMOTE/deploy/compose && sudo ./backup.sh"; then
   }
   echo "  using the existing one; nothing has written since the stack stopped"
 fi
+fi
 
 echo "· copying $REF"
 git archive --format=tar HEAD | ssh "$HOST" "sudo tar -x -C $REMOTE"
 
 echo "· building and migrating"
-ssh "$HOST" "cd $REMOTE/deploy/compose && sudo docker compose up -d --build"
+ssh "$HOST" "cd $REMOTE/deploy/compose && sudo docker compose $COMPOSE_FILES up -d --build"
 
 echo "· what the operator says now"
-ssh "$HOST" "cd $REMOTE/deploy/compose && sudo docker compose logs --tail=12 migrate 2>&1 || true"
+ssh "$HOST" "cd $REMOTE/deploy/compose && sudo docker compose $COMPOSE_FILES logs --tail=12 migrate 2>&1 || true"
 echo
+if [ -n "$STAGING" ]; then
+  echo "deployed $REF to staging. It has no Caddy and no public address;"
+  echo "reach it over the tunnel this deployment already used:"
+  echo "  ssh -L 8735:127.0.0.1:8735 $HOST"
+  echo "  curl -s http://127.0.0.1:8735/index | head -c 120"
+  echo
+  echo "When the migrations and the ingest are right here, run the same command"
+  echo "without --staging."
+  exit 0
+fi
 echo "deployed $REF. Check it from outside, not from the host:"
 echo "  curl -s https://sdota.de/index | head -c 120"
 echo "  curl -s https://sdota.de/example/desktop/solutions/nvidia-wayland-black-windows.md | grep -A2 'when:'"

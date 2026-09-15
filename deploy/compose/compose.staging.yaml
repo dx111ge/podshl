@@ -1,0 +1,52 @@
+# A second operator on the same host, for deploying to before production.
+#
+#   deploy/compose/update.sh <user@host> --staging
+#
+# **Why this exists.** A deployment went from a laptop straight onto the live
+# operator, and on 2026-09-13 a CRLF byte in a migration took it down: the
+# hash-pinned runner refused to continue, and the way back was a backup. There
+# was nowhere for that byte to land first. This is that place.
+#
+# What differs from production, and nothing else does — the point is to run the
+# same migrations and the same ingest against the same image:
+#
+#   * its own compose project, so its volumes and its database are its own
+#   * its own network ranges, because production's are fixed so `firewall.sh`
+#     can name them, and two projects cannot claim the same subnet
+#   * no Caddy: there is one pair of ports 80 and 443 on a host, and they
+#     belong to the operator people actually use. Staging is reached over
+#     loopback, which means over SSH, which is the only way anybody should be
+#     reaching a staging operator anyway
+#   * the server and the ops listener published on loopback ports of their own
+#
+# It reads its own `.env` from its own directory, so its database password and
+# its operator identity are not production's.
+name: podshl-staging
+
+services:
+  server:
+    # Published, because there is no Caddy here to reach it. Loopback only:
+    # this must not be something the internet can find and mistake for the
+    # operator, and the log it signs is not the log anybody should trust.
+    ports: !override
+      - "127.0.0.1:8735:8725"
+
+  ops:
+    ports: !override
+      - "127.0.0.1:8736:8726"
+
+  # Not started. `profiles` keeps it out of `up` unless somebody names the
+  # profile, which nothing here does.
+  caddy:
+    profiles: ["not-on-staging"]
+
+# Production pins these so `firewall.sh` can name them by range. A second
+# project claiming the same subnets fails to start, and would deserve to.
+networks:
+  inside:
+    internal: true
+    ipam:
+      config: [{subnet: 172.31.1.0/24}]
+  outside:
+    ipam:
+      config: [{subnet: 172.31.0.0/24}]
