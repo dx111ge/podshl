@@ -1,5 +1,13 @@
 # PODSHL for Omarchy
 
+> **This is the Omarchy plugin of [PODSHL](https://github.com/dx111ge/podshl)**,
+> an open-source project (AGPL-3.0). The client, the operator, the
+> specification, the tests and the source of this plugin all live there —
+> `omarchy-plugin/` and `packaging/aur/podshl-bin/`. This repository is
+> assembled from them by `scripts/publish_omarchy_plugin.sh`, because
+> `omarchy plugin add` needs the plugin at the root of a repository. Issues and
+> pull requests go to [dx111ge/podshl](https://github.com/dx111ge/podshl).
+
 One bar icon. Click it and the PODSHL client asks the projects you actually run
 what is wrong with your machine — and asks you before it reads anything.
 Right-click opens the project page.

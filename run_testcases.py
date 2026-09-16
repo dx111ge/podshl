@@ -662,14 +662,57 @@ def withheld_documents() -> tuple[str, ...]:
     A parse that comes back short is a broken parse, not a short list: the same
     trap as `git ls-files` answering nothing inside the container, which made
     `P8` pass while proving nothing.
+
+    **The public checkout has no list to read**, because the script is itself
+    withheld — and publishing the list would publish the names it withholds.
+    Both cases failed there on every run for that reason alone. There the
+    answer is an empty list, and `unresolved_documents()` carries the check
+    instead. The public checkout is recognised by the handover being absent as
+    well; a working checkout that lost the script is still a failure.
     """
-    block = re.search(r'^INTERNAL="([^"]*)"',
-                      Path("scripts/sync_public.sh").read_text(encoding="utf-8"), re.M)
+    script = Path("scripts/sync_public.sh")
+    if not script.exists():
+        assert not Path("HANDOVER.md").exists(), (
+            "scripts/sync_public.sh is gone from a working checkout — the withheld "
+            "list has nowhere to come from")
+        return ()
+    block = re.search(r'^INTERNAL="([^"]*)"', script.read_text(encoding="utf-8"), re.M)
     assert block, "scripts/sync_public.sh has no INTERNAL list to read"
     names = tuple(line.strip() for line in block.group(1).splitlines() if line.strip())
     assert len(names) >= 6 and "HANDOVER.md" in names, (
         f"the withheld list parsed as {names} — that is a broken parse, not a short list")
     return names
+
+
+#: Names a published file may mention although no file of that name is in the
+#: tree, each with the reason. Anything else that looks like one of this
+#: project's documents has to exist in the published tree.
+DOCUMENTS_NOT_IN_THE_TREE = {
+    "PLATFORM.md": "written next to each release's files by the release task",
+}
+
+
+def unresolved_documents(files, published_names):
+    """Every `UPPER-CASE.md` a published file names that the published tree does
+    not have.
+
+    `withheld_documents()` can only say which names are internal where the list
+    exists. This asks the question the other way round and needs no list: a
+    reference to a document the reader cannot open is the failure whatever the
+    reason, and it is checkable in the public checkout too. Measured there on
+    2026-09-16: the only names it finds are the two the cases already allow.
+    """
+    pattern = re.compile(r"(?<![\w/.-])([A-Z][A-Z0-9_-]+\.md)\b")
+    found = []
+    for f in files:
+        try:
+            src = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for name in sorted(set(pattern.findall(src))):
+            if name not in published_names and name not in DOCUMENTS_NOT_IN_THE_TREE:
+                found.append((f, name))
+    return found
 
 
 def page_files():
@@ -1681,6 +1724,23 @@ def _():
     assert wrong_os["solution"]["solution_id"] == "wrong-archive-for-this-system", (
         f"the Windows archive on a Linux desktop was not named: {wrong_os['solution']}")
 
+    # **The commonest one, and the matrix did not have it.** An ordinary Intel
+    # Linux desktop holding the ARM build: engram's own `why` calls it the most
+    # common reason, only the opposite direction was published, and this case
+    # checked Windows-on-Linux and never this. Walked on the Omarchy desktop on
+    # 2026-09-16, it answered "find out which archive you have" to somebody who
+    # had just said which. Fixed in engram (`wrong-build-on-an-intel-machine`).
+    wrong_arch = client("ask_published", {
+        "base": "https://sdota.de",
+        "subject": "https://github.com/dx111ge/engram/",
+        "problemClass": "engram.start.wrong-build",
+        "facts": {"os.arch": "x86_64", "os.name": "linux",
+                  "engram.download": "engram-linux-aarch64.zip"},
+        "stated": ["engram.download"]})
+    assert wrong_arch.get("outcome") == "finding", wrong_arch
+    assert wrong_arch["solution"]["solution_id"] == "wrong-build-on-an-intel-machine", (
+        f"the ARM build on an Intel desktop was not named: {wrong_arch['solution']}")
+
     # And the same class where the rule genuinely does not apply: the archive
     # matches the machine, so nothing specific fires and the class's own
     # fallback answers instead of a rule about somebody else's machine. A
@@ -2665,6 +2725,11 @@ def _():
         src = f.read_text(encoding="utf-8")
         for name in internal:
             assert name not in src, f"{f.name} names {name}"
+    skip = {".git", "target", "out", "var", "node_modules", ".venv", "data"}
+    published = {p.name for p in Path(".").rglob("*.md")
+                 if not any(part in skip for part in p.parts)} - set(internal)
+    missing = unresolved_documents(page_files(), published)
+    assert not missing, "a page names a document the public tree does not have: " +         ", ".join(f"{f.name} -> {n}" for f, n in missing)
 
 
 @case("W22", "The operator says which code it is running")
@@ -2804,7 +2869,7 @@ def _():
             continue
         if not path.is_file() or path.suffix not in suffixes:
             continue
-        rel = str(path)
+        rel = path.as_posix()   # `str()` is `scripts\x` on Windows and matched nothing
         if rel in internal or rel == "run_testcases.py":
             continue
         published.append(path)
@@ -2823,10 +2888,16 @@ def _():
         except (UnicodeDecodeError, OSError):
             continue
         for name in internal:
-            if name in src and str(f) not in allowed:
+            if name in src and f.as_posix() not in allowed:
                 offenders.append(f"{f} names {name}")
         if home in src:
             offenders.append(f"{f} carries the maintainer's home path")
+    # The same question without the list, so it means something in the public
+    # checkout too, where the list does not exist.
+    names = {p.name for p in published}
+    for f, name in unresolved_documents(published, names):
+        if f.as_posix() not in allowed:
+            offenders.append(f"{f} names {name}, which is not in the published tree")
     assert not offenders, (
         "published files reach for something the public tree does not have, or "
         "name this machine:\n  " + "\n  ".join(offenders[:10]))
