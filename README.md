@@ -13,7 +13,8 @@ run, no model to pay for, nothing to install per project.
 **Early beta.** The operator runs at **https://sdota.de**. Clients for Windows,
 Linux and macOS: **[download 0.1.5](https://github.com/dx111ge/podshl/releases/latest)**
 (unsigned — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and what
-they send).
+they send). On Omarchy, add the plugin; its bar icon installs the client:
+`omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable`
 
 | You are | Start with |
 |---|---|
