@@ -15,6 +15,11 @@ x-operator: &operator
   build:
     context: ../..
     dockerfile: deploy/compose/Dockerfile
+    args:
+      # Set by `update.sh` from the checkout it is deploying. Empty when
+      # somebody builds by hand, and then the operator says nothing about its
+      # version rather than claiming one it cannot stand behind.
+      PODSHL_VERSION: "${PODSHL_VERSION:-}"
   image: podshl-operator:local
   restart: unless-stopped
   env_file: .env

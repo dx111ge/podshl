@@ -34,6 +34,16 @@ fi
 REMOTE="${2:-${STAGING:+/opt/podshl-staging}}"
 REMOTE="${REMOTE:-/opt/podshl}"
 REF="$(git rev-parse --short HEAD)"
+
+# What the operator will say it is running, and it is the deployed commit's own
+# account of itself: `v0.1.4` on a release, `v0.1.4-2-gcd8b502` two commits past
+# one, a bare hash where no tag has ever been reached.
+#
+# An operator that asks every project to publish the commit it is serving has to
+# publish its own. This is the only place that knows it — the image carries no
+# `.git` — so it goes in as a build argument and comes out of `GET /` and the
+# footer of every page.
+VERSION="$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)"
 DIRTY="$(git status --porcelain | wc -l)"
 
 if [ "$DIRTY" -ne 0 ]; then
@@ -73,8 +83,11 @@ fi
 echo "· copying $REF"
 git archive --format=tar HEAD | ssh "$HOST" "sudo tar -x -C $REMOTE"
 
-echo "· building and migrating"
-ssh "$HOST" "cd $REMOTE/deploy/compose && sudo docker compose $COMPOSE_FILES up -d --build"
+echo "· building and migrating, as $VERSION"
+# `sudo VAR=value cmd` rather than an export: sudo drops the environment, and a
+# version that silently did not arrive would leave the operator claiming an
+# older one — which is worse than claiming none.
+ssh "$HOST" "cd $REMOTE/deploy/compose && sudo PODSHL_VERSION='$VERSION' docker compose $COMPOSE_FILES up -d --build"
 
 echo "· what the operator says now"
 ssh "$HOST" "cd $REMOTE/deploy/compose && sudo docker compose $COMPOSE_FILES logs --tail=12 migrate 2>&1 || true"
@@ -90,6 +103,9 @@ if [ -n "$STAGING" ]; then
   exit 0
 fi
 echo "deployed $REF. Check it from outside, not from the host:"
+echo "  curl -s https://sdota.de/ -H 'Accept: application/json' | grep -o '\"version\":\"[^\"]*\"'"
+echo "  (that must say $VERSION — if it says something older, the build argument"
+echo "   did not arrive and the image was reused)"
 echo "  curl -s https://sdota.de/index | head -c 120"
 echo "  curl -s https://sdota.de/example/desktop/solutions/nvidia-wayland-black-windows.md | grep -A2 'when:'"
 echo "  (that must show session.type alone. It said gpu.driver_version: \"< 555\","

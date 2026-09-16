@@ -92,6 +92,21 @@ NOTICE_CONTACT = os.environ.get("PODSHL_NOTICE_CONTACT")
 # that says the repository is not up yet.
 SOURCE_URL = os.environ.get("PODSHL_SOURCE_URL")
 
+# Which code this operator is running, as `git describe --tags --always` said at
+# the moment the image was built — `v0.1.4` on a release, `v0.1.4-2-gcd8b502`
+# two commits past one.
+#
+# **An operator that asks projects to be auditable has to say what it runs.**
+# The mirror publishes the commit of every project it serves, so that anybody
+# can check the mirror against the source; the same sentence turned on ourselves
+# is this one. Until now the only way to know was to ask the maintainer.
+#
+# Baked in at build time, never read from a file at run time: the image *is* the
+# code, so a value that travels with the image cannot disagree with it. A
+# checkout deployed some other way says nothing rather than guessing, and the
+# page then simply omits the line — a version nobody set is not a version.
+VERSION = os.environ.get("PODSHL_VERSION") or None
+
 
 def spell_out(address: str | None) -> str | None:
     """An email address split so that neither the page nor the API ever carries

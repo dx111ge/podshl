@@ -10,7 +10,7 @@
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href="/">PODSHL</a>
-  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a><a href="/dashboard">Your project</a>
   <a href="/projects">Projects</a><a href="/log">Log</a>
   <a href="/security">Security</a><a href="/notice">Notice</a>
 </div></header>
@@ -78,7 +78,7 @@ somebody has to be able to answer it. See <a href="/privacy">privacy</a>.</p>
 </div>
 
 <footer>
-  <p id="contactline"><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/log">The log</a></p>
+  <p id="contactline"><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/log">The log</a><span id="ver" class="why"></span></p>
 </footer>
 </div>
 
@@ -124,6 +124,22 @@ fetch("/operator", {headers: {"Accept": "application/json"}})
     if (o.configured && o.notice_contact) {
       $("contactline").textContent = "You can also write to " + o.notice_contact + ".";
     }
+  })
+  .catch(() => {});
+</script>
+<script>
+/* What this operator is running, from the server rather than from a copy in
+   this page. The mirror publishes the commit of every project it serves so that
+   anybody can check it against the source; this is the same sentence turned on
+   ourselves, and a page reciting a version of its own would be the copy that
+   drifts. Absent stays absent: a build that was not told its version says
+   nothing here rather than claiming one. */
+fetch("/", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    if (!o.version) return;
+    const n = document.getElementById("ver");
+    if (n) n.textContent = " · this operator runs " + o.version;   /* text, never markup */
   })
   .catch(() => {});
 </script>

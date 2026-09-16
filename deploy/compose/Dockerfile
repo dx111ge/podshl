@@ -33,4 +33,11 @@ COPY --chown=root:root spec/ /opt/podshl/spec/
 ENV PODSHL_SALT_DIR=/var/lib/podshl/salt \
     PODSHL_LOG_KEY=/var/lib/podshl/log.ed25519
 
+# Last, so changing it rebuilds nothing above: what this image is, as
+# `git describe --tags --always` said when it was built. `deploy/compose/update.sh`
+# passes it; a build without one produces an operator that says nothing about
+# its version rather than one that claims the wrong one.
+ARG PODSHL_VERSION=""
+ENV PODSHL_VERSION=$PODSHL_VERSION
+
 USER podshl

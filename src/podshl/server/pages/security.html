@@ -10,7 +10,7 @@
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href="/">PODSHL</a>
-  <a href="/publish">Publish</a><a href="/register">Register</a>
+  <a href="/publish">Publish</a><a href="/register">Register</a><a href="/dashboard">Your project</a>
   <a href="/projects">Projects</a><a href="/log">Log</a>
   <a href="/security">Security</a><a href="/notice">Notice</a>
 </div></header>
@@ -108,7 +108,7 @@ full statement, including what cannot be excluded under German law, is on the
 <p id="security-contact"><a href="/imprint">See the imprint</a>.</p>
 
 <footer>
-  <p><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/notice">Notices</a></p>
+  <p><a href="/imprint">Imprint / Impressum</a> · <a href="/privacy">Privacy / Datenschutz</a> · <a href="/notice">Notices</a><span id="ver" class="why"></span></p>
 </footer>
 </div>
 
@@ -134,6 +134,22 @@ fetch("/operator", {headers: {"Accept": "application/json"}})
       document.getElementById("security-contact").textContent =
         "Report it to " + o.security_contact + ".";
     }
+  })
+  .catch(() => {});
+</script>
+<script>
+/* What this operator is running, from the server rather than from a copy in
+   this page. The mirror publishes the commit of every project it serves so that
+   anybody can check it against the source; this is the same sentence turned on
+   ourselves, and a page reciting a version of its own would be the copy that
+   drifts. Absent stays absent: a build that was not told its version says
+   nothing here rather than claiming one. */
+fetch("/", {headers: {"Accept": "application/json"}})
+  .then(r => r.json())
+  .then(o => {
+    if (!o.version) return;
+    const n = document.getElementById("ver");
+    if (n) n.textContent = " · this operator runs " + o.version;   /* text, never markup */
   })
   .catch(() => {});
 </script>

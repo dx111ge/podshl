@@ -178,6 +178,9 @@ async def index(request: Request):
                            if_none_match=request.headers.get("if-none-match"))
     return JSONResponse({
         "service": "podshl",
+        # What this operator is running. Absent rather than guessed where the
+        # build did not say — see `config.VERSION`.
+        **({"version": config.VERSION} if config.VERSION else {}),
         "holds": ["a public attestation log",
                   "a mirror of public repository content, with the commit it came from",
                   "anonymous cluster counters"],
@@ -1334,6 +1337,31 @@ def claim_revoke(host: str, x_podshl_claim: str | None = Header(default=None)):
     )
 
 
+def _subject_of(conn, anchor_id: int) -> str:
+    """What a report about this anchor carries as its `subject`.
+
+    **A repository is its URL, never its forge.** The client sends `pick.base`
+    for a repository anchor and `pick.domain` for a domain one, and that string
+    is what `clusters.ensure` stores as `subject_host`. The dashboard looked for
+    the host in the path instead — `github.com` — so from the day repository
+    anchors existed (`0018`) every report about a project on a forge was stored
+    correctly, counted correctly, and shown to nobody: the maintainer's own page
+    said nothing recurs while their clusters sat in the table.
+
+    Found on 2026-09-16 by the maintainer asking where the reports are. engram
+    had two clusters and a dashboard reading `0`.
+
+    Matching the bare host for a repository would be the opposite mistake and a
+    worse one: every project on that forge shares it, so `SV21`'s promise — no
+    route produces another vendor's figures — would fall to whoever claimed a
+    repository there first.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT kind, host, value FROM anchor WHERE id = %s", (anchor_id,))
+        a = cur.fetchone()
+    return a["value"] if a["kind"] == "repo" else a["host"]
+
+
 def _claimed_anchor(conn, host: str, token: str | None) -> int:
     """The dashboard is for a claimed anchor and nobody else.
 
@@ -1462,16 +1490,21 @@ def dashboard(host: str, response: Response,
                 # the count of all of them.** This was `LIMIT 100` and said
                 # nothing: a project with 263 saw 100 and had no way to know
                 # the rest existed (`SV106`).
+                # The anchor's own subject, not the host in the path. See
+                # `_subject_of`: on a forge those are different strings and the
+                # host is shared by every project on it.
+                subject = _subject_of(conn, anchor_id)
                 cur.execute(
                     "SELECT count(*) AS n FROM cluster WHERE subject_kind = 'domain' "
-                    "AND subject_host = %s AND peak_epoch_reporters >= %s", (host, K_REPORTERS))
+                    "AND subject_host = %s AND peak_epoch_reporters >= %s",
+                    (subject, K_REPORTERS))
                 total = cur.fetchone()["n"]
                 cur.execute(
                     "SELECT id, problem_class, reports_total, peak_epoch_reporters, signature "
                     "FROM cluster WHERE subject_kind = 'domain' AND subject_host = %s "
                     "AND peak_epoch_reporters >= %s "
                     "ORDER BY peak_epoch_reporters DESC, id LIMIT %s",
-                    (host, K_REPORTERS, MAX_CLUSTERS),
+                    (subject, K_REPORTERS, MAX_CLUSTERS),
                 )
                 rows = cur.fetchall()
                 # Their own source, so their own solutions can be walked against
@@ -1511,7 +1544,7 @@ def dashboard(host: str, response: Response,
                     "  GROUP BY 1, 2, 3"
                     ") per_month GROUP BY model_class HAVING max(n) >= %s "
                     "ORDER BY reporters DESC",
-                    (host, K_REPORTERS))
+                    (subject, K_REPORTERS))
                 model_classes = cur.fetchall()
                 # Which facts arrived typed rather than read, and how often. A
                 # publisher cannot judge their own rule without this: an outcome
@@ -1526,7 +1559,7 @@ def dashboard(host: str, response: Response,
                     "  WHERE c.subject_kind = 'domain' AND c.subject_host = %s "
                     "  GROUP BY 1, 2, 3"
                     ") per_month GROUP BY fact HAVING max(n) >= %s "
-                    "ORDER BY reports DESC LIMIT 50", (host, K_REPORTERS))
+                    "ORDER BY reports DESC LIMIT 50", (subject, K_REPORTERS))
                 stated_facts = cur.fetchall()
             # After the cursor block, because explaining a cluster opens cursors
             # of its own — walking this project's trees against what recurs.

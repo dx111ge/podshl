@@ -651,6 +651,27 @@ PAGES = ["/", "/publish", "/publish/build", "/register", "/dashboard", "/securit
          "/projects", "/log", "/notice", "/imprint"]
 
 
+def withheld_documents() -> tuple[str, ...]:
+    """What `scripts/sync_public.sh` refuses to publish, read from the script.
+
+    One list, in the place that applies it. `P8` and `W9` each kept their own
+    copy and the three drifted the first time the list grew — a file was
+    withheld by the script and still treated as published by the cases, so the
+    one that guards against naming an internal document failed for naming one.
+
+    A parse that comes back short is a broken parse, not a short list: the same
+    trap as `git ls-files` answering nothing inside the container, which made
+    `P8` pass while proving nothing.
+    """
+    block = re.search(r'^INTERNAL="([^"]*)"',
+                      Path("scripts/sync_public.sh").read_text(encoding="utf-8"), re.M)
+    assert block, "scripts/sync_public.sh has no INTERNAL list to read"
+    names = tuple(line.strip() for line in block.group(1).splitlines() if line.strip())
+    assert len(names) >= 6 and "HANDOVER.md" in names, (
+        f"the withheld list parsed as {names} — that is a broken parse, not a short list")
+    return names
+
+
 def page_files():
     return sorted(PAGE_DIR.glob("*.html"))
 
@@ -810,6 +831,11 @@ def _():
 @case("SV106", "The dashboard puts the work first, and says what it cut")
 def _():
     sv("sv106_the_dashboard_puts_the_work_first")
+
+
+@case("SV122", "A repository sees its own reports, and only its own")
+def _():
+    sv("sv122_a_repository_sees_its_own_reports_and_only_its_own")
 
 
 @case("SV121", "A project that never changes is asked about less and less")
@@ -2570,19 +2596,24 @@ def _():
     quietly become a new disclosure route."""
     import re
 
+    # `/` is on every page that carries the navigation, because every one of
+    # them renders the version in its footer from the server's own answer. It
+    # is the page this endpoint already serves and it discloses nothing a
+    # visitor did not just fetch by arriving.
+    version = {"/"}
     allowed = {
         "home.html": {"/", "/stats", "/operator"},
-        "publish.html": {"/example/agent.yaml", "/example/desktop/agent.yaml"},
+        "publish.html": {"/example/agent.yaml", "/example/desktop/agent.yaml"} | version,
         "security.html": {"/", "/operator"},
-        "projects.html": {"/index"},
-        "log.html": {"/log/sth", "/log/entries"},
-        "notice.html": {"/notice", "/operator"},
-        "imprint.html": {"/operator"},
-        "privacy.html": {"/operator"},
+        "projects.html": {"/index"} | version,
+        "log.html": {"/log/sth", "/log/entries"} | version,
+        "notice.html": {"/notice", "/operator"} | version,
+        "imprint.html": {"/operator"} | version,
+        "privacy.html": {"/operator"} | version,
         "imprint-unconfigured.html": set(),
-        "register.html": {"/claim/"},
-        "dashboard.html": {"/dashboard/", "/claim/"},
-        "build.html": {"/vocabulary/", "/validate"},
+        "register.html": {"/claim/"} | version,
+        "dashboard.html": {"/dashboard/", "/claim/"} | version,
+        "build.html": {"/vocabulary/", "/validate"} | version,
     }
     for f in page_files():
         src = f.read_text(encoding="utf-8")
@@ -2624,13 +2655,100 @@ def _():
 def _():
     """`PUBLISHING.md` keeps these in the working repository only. A page citing
     one links a document the public repository does not have. `SERVER.md` and
-    `TESTCASES-SERVER.md` were on this list until the server was published."""
-    internal = ("DIRECTION.md", "BENEFITS.md", "OUTREACH.md", "HANDOVER.md",
-                "BASELINE.md", "DISCOVERY.md")
+    `TESTCASES-SERVER.md` were on this list until the server was published.
+
+    The list comes from `sync_public.sh`, like `P8`'s: this case kept a third
+    copy of it, and a list kept in three places is a list that is wrong in two
+    of them the first time it grows."""
+    internal = withheld_documents()
     for f in page_files():
         src = f.read_text(encoding="utf-8")
         for name in internal:
             assert name not in src, f"{f.name} names {name}"
+
+
+@case("W22", "The operator says which code it is running")
+def _():
+    """An operator that asks every project to publish the commit it serves has
+    to publish its own.
+
+    The mirror states the commit of everything it mirrors, precisely so that a
+    third party can check the mirror against the source. The operator itself
+    said nothing, and the only way to find out what `sdota.de` was running was
+    to ask the maintainer — which is the shape of claim this whole project
+    exists to replace.
+
+    It is baked into the image at build time by `deploy/compose/update.sh`, from
+    `git describe --tags --always`, so the string travels with the code it
+    describes and cannot disagree with it. Absent stays absent: a build nobody
+    told says nothing rather than claiming a version, and the page then renders
+    no line at all.
+    """
+    import podshl.server.config as cfg
+
+    # The chain, end to end, rather than each link on its own.
+    dockerfile = (Path("deploy/compose") / "Dockerfile").read_text(encoding="utf-8")
+    assert "ARG PODSHL_VERSION" in dockerfile and "ENV PODSHL_VERSION" in dockerfile,         "the image takes no version argument"
+    compose = (Path("deploy/compose") / "compose.yaml").read_text(encoding="utf-8")
+    assert "PODSHL_VERSION" in compose, "compose does not pass the version to the build"
+    update = (Path("deploy/compose") / "update.sh").read_text(encoding="utf-8")
+    assert "git describe" in update and "PODSHL_VERSION=" in update,         "the deployment does not compute or pass a version"
+
+    # Said when it is known, and absent when it is not — asked of the route, so
+    # this cannot pass on a config constant the page never reads.
+    from starlette.testclient import TestClient
+
+    from podshl.server.app import app
+
+    before = cfg.VERSION
+    try:
+        cfg.VERSION = "v9.9.9-1-gdeadbee"
+        with TestClient(app) as c:
+            said = c.get("/", headers={"Accept": "application/json"}).json()
+        assert said.get("version") == "v9.9.9-1-gdeadbee", said
+        cfg.VERSION = None
+        with TestClient(app) as c:
+            silent = c.get("/", headers={"Accept": "application/json"}).json()
+        assert "version" not in silent, (
+            f"a build that was not told its version claimed one: {silent.get('version')!r}")
+    finally:
+        cfg.VERSION = before
+
+    # And every page with the navigation renders it, from that answer rather
+    # than from a copy of its own.
+    #
+    # Except the one that fetches nothing at all. `imprint-unconfigured.html` is
+    # what a deployment with no imprint serves in place of every page it owes
+    # one on, with an empty allow-list in `W7` — a 503 that reaches back into
+    # the server is a 503 that can be wrong twice.
+    nav = [f for f in page_files()
+           if 'class="top"' in f.read_text(encoding="utf-8")
+           and f.name != "imprint-unconfigured.html"]
+    assert len(nav) >= 10, f"only {len(nav)} pages to check — is the markup shared?"
+    for f in nav:
+        src = f.read_text(encoding="utf-8")
+        assert 'id="ver"' in src, f"{f.name} has no place to put the version"
+        assert "o.version" in src, f"{f.name} never asks the server for it"
+
+
+@case("W21", "A maintainer can reach their own project from any page")
+def _():
+    """The dashboard existed and no page linked it.
+
+    Every page's navigation read *Publish · Register* and stopped there, and the
+    footers link the imprint, the privacy notice and the log. So a maintainer who
+    had published files and proved control had nowhere to click: `/dashboard` was
+    reachable only by knowing the URL. Found on 2026-09-16 by the maintainer of
+    this project looking for their own reports and not finding a link.
+
+    It goes after *Register* because that is the order the work happens in —
+    publish the files, prove control, then read what comes back.
+    """
+    nav = [f for f in page_files() if 'class="top"' in f.read_text(encoding="utf-8")]
+    assert len(nav) >= 10, f"only {len(nav)} pages carry the navigation — is the markup shared?"
+    for f in nav:
+        assert 'href="/dashboard"' in f.read_text(encoding="utf-8"), (
+            f"{f.name} has the navigation and no way to reach the dashboard from it")
 
 
 @case("P8", "Nothing published names an internal document or this machine")
@@ -2647,15 +2765,20 @@ def _():
     item nobody can run is a wish, so this is the item.
 
     Scoped to what is published: the working repository's own notes may name
-    each other freely, and `run_testcases.py` holds the list."""
-    internal = ("DIRECTION.md", "BENEFITS.md", "OUTREACH.md", "HANDOVER.md",
-                "BASELINE.md", "DISCOVERY.md",
-                #: The script that performs the split. It cannot avoid holding
-                #: the list of what is withheld, so publishing it would publish
-                #: exactly that — this case caught it doing so, which is the
-                #: case working. It is a maintainer's tool and nothing in the
-                #: product runs it, so it stays on the side it describes.
-                "scripts/sync_public.sh")
+    each other freely.
+
+    **The list is read from the script that performs the split**, not kept here
+    beside it. It was kept here, and the two drifted the first time the list
+    grew: `CLAIM-TOKENS.md` went onto `sync_public.sh`'s list and this case went
+    on treating it as published, so it failed for naming an internal document
+    while being one itself. Two copies of "what is withheld" is the failure this
+    whole case exists to catch, one level up.
+
+    Parsed rather than imported, because the script is shell. A parse that comes
+    back short is treated as a broken parse rather than a short list — the same
+    trap as the `git ls-files` one below, where an empty answer made every loop
+    run zero times and the case pass while proving nothing."""
+    internal = withheld_documents()
     #: Named, with the reason, rather than exempting a directory. An applied
     #: migration is hash-pinned and cannot be edited — the runner refused this
     #: one when the reference was tidied out of a comment, which is the guard

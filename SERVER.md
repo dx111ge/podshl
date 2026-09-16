@@ -461,6 +461,21 @@ a property of the **values branched on**, not of the probe: a value drawn from
 the probe's own `choices` is one only the question can produce. Deciding it from
 the probe alone would call a switch a reading that no reading can ever satisfy.
 
+### A dashboard is for an anchor, and on a forge that is not a host
+
+A report carries its subject as the client sends it: the **repository URL** for a
+repository anchor, the bare host for a domain one. The dashboard looked up
+clusters by the host in its own path, so on a forge it looked for `github.com` —
+a string no report has ever carried. Every report about a project on a forge was
+stored correctly, counted correctly, and shown to nobody; the maintainer's own
+page said nothing recurs while their clusters sat in the table.
+
+Matching the bare host would be the opposite mistake and the worse one: every
+project on that forge shares it, so *no route produces another vendor's figures*
+would fall to whoever claimed a repository there first. The subject comes from
+the claimed anchor, and `SV122` checks both directions — its own reports arrive,
+the neighbour's do not.
+
 ### Where a switch is missing announces itself
 
 > **A cluster with a solution whose reports say it worked for some and not
@@ -541,7 +556,14 @@ limits become our capacity, and their outage becomes ours.
   — and it must not start leaving one at the forge instead.
 * **Serve from our database.** One indexed lookup, no external call.
 * **Publish the commit** we are serving, so anyone can check the mirror against
-  the source.
+  the source — **and our own**, which is the same sentence turned on ourselves.
+  `GET /` and the footer of every page say what this operator is running, as
+  `git describe --tags --always` reported at the moment the image was built.
+  Baked in as a build argument rather than read at run time, so the string
+  travels with the code it describes; a build nobody told says nothing rather
+  than claiming a version (`W22`). Until 2026-09-16 the only way to know what an
+  operator ran was to ask whoever runs it, which is the shape of claim this
+  whole project exists to replace.
 
 The property that makes this scale: **ingest load tracks the number of projects,
 request load tracks the number of users, and the two are independent.**

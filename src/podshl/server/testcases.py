@@ -5762,6 +5762,107 @@ def sv_a_repository_goes_from_claim_to_served_card():
         srv.shutdown()
 
 
+def sv122_a_repository_sees_its_own_reports_and_only_its_own():
+    """SV122. The reports were stored, counted, and shown to nobody.
+
+    A report about a project on a forge carries the **repository URL** as its
+    subject — the client sends `pick.base` for a repository anchor, and
+    `clusters.ensure` stores that string. The dashboard looked for the host in
+    its own path instead, `github.com`, which no report has ever carried. So from
+    the day repository anchors existed (`0018`) every such report landed in the
+    table correctly and the maintainer's own page said `0`, for ever.
+
+    Found on 2026-09-16 by the maintainer asking where the reports were. engram
+    had two clusters and a dashboard reading zero, and the answer to "where do I
+    see everything about my project" was "nowhere".
+
+    The other half is why the fix is not "match the host": on a forge the host
+    belongs to everybody. `SV21` promises no route produces another vendor's
+    figures, and matching `github.com` would hand every project there to whoever
+    claimed a repository on it. So both directions are checked — its own reports
+    arrive, and the neighbour's do not.
+    """
+    import http.server
+    import threading
+
+    import httpx
+
+    from .app import report
+
+    base_api = "http://127.0.0.1:8725"
+    tag = secrets.token_hex(4)
+    owner, one, two = f"own-{tag}", f"mine-{tag}", f"theirs-{tag}"
+    published: dict[str, bytes] = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            body = published.get(self.path)
+            self.send_response(200 if body is not None else 404)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body or b"")))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+
+        def log_message(self, *a):  # noqa: A003
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    authority = f"127.0.0.1:{srv.server_address[1]}"
+
+    def claim(repo: str) -> tuple[str, str]:
+        """Claim one repository on this forge. Returns (anchor url, token)."""
+        started = httpx.post(f"{base_api}/claim/{authority}",
+                             json={"repo": f"{owner}/{repo}", "forge": "gitea"},
+                             timeout=10).json()
+        published["/" + f"{owner}/{repo}/raw/HEAD/" + started["commit_this_at"]] =             started["publish"].encode()
+        done = httpx.post(f"{base_api}/claim/{authority}/verify",
+                          json={"repo": f"{owner}/{repo}", "forge": "gitea"},
+                          headers={"X-Podshl-Claim-Proof": started["proof"]}, timeout=20)
+        assert done.status_code == 200, (done.status_code, done.text[:300])
+        return started["anchor"], done.json()["token"]
+
+    try:
+        mine, my_token = claim(one)
+        _theirs, their_token = claim(two)
+
+        # Reported exactly as the window reports: the subject is the repository,
+        # not the forge. k distinct people, so the cluster clears the floor.
+        for i in range(K_REPORTERS):
+            out = report({"pseudonym": f"repo-dash-{tag}-{i}", "subject": mine,
+                          "model_class": "none", "outcome": "unresolved",
+                          "observed": {"os.name": "linux", "app.build": f"{tag}"}})
+            assert isinstance(out, dict) and out["accepted"], out
+
+        def dashboard(token: str) -> dict:
+            r = httpx.get(f"{base_api}/dashboard/{authority}",
+                          headers={"X-Podshl-Claim": token}, timeout=20)
+            assert r.status_code == 200, (r.status_code, r.text[:300])
+            return r.json()
+
+        ours = dashboard(my_token)
+        assert ours["total"] == 1, (
+            f"a repository's own reports did not reach its dashboard: {ours['total']} of 1")
+        assert ours["shown"] == 1 and len(ours["clusters"]) == 1, ours["shown"]
+        assert ours["clusters"][0]["reporters"] == K_REPORTERS, ours["clusters"][0]
+
+        # And the neighbour on the same forge sees none of it. This is the half
+        # that makes "match the host instead" the wrong fix rather than a
+        # simpler one.
+        neighbour = dashboard(their_token)
+        assert neighbour["total"] == 0 and not neighbour["clusters"], (
+            f"another repository on the same forge was shown these reports: {neighbour['total']}")
+    finally:
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE source SET mirror_state = 'withheld' WHERE anchor_id IN "
+                    "(SELECT id FROM anchor WHERE kind = 'repo' AND host = %s)",
+                    (authority.split(":", 1)[0],))
+        srv.shutdown()
+
+
 def sv_a_confusable_owner_is_held_and_the_forge_is_not():
     """On a forge the impersonation is in the owner, and the host is everybody's.
 
