@@ -644,7 +644,20 @@ a different prefix adds a second source rather than moving the first.
 ### The dashboard
 
 `GET /dashboard/{host}` with your token in `X-Podshl-Claim`; the page at
-`/dashboard` fetches the same JSON.
+`/dashboard` fetches the same JSON, and **Your project** in the navigation of
+every page goes there.
+
+On a forge the host in that path is the forge — `github.com` — and it is the
+token that names which repository. The answer is scoped to the anchor the token
+belongs to: two projects on one forge do not see each other's files or each
+other's reports.
+
+**Below five independent reporters a configuration is counted and not shown**,
+and the page says so where the figures would be. That is not a delay in
+displaying your data, it is the floor: a rare constellation with two reporters
+describes the two of them. So a project that has just been enrolled shows its
+files and its trees and no clusters, and that is the system working rather than
+a page waiting to fill in.
 
 It shows what recurs, with the coarse configuration, what was tried, what
 failed, and the distribution of model classes — which is the number that

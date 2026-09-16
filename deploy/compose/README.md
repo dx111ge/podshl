@@ -187,6 +187,8 @@ build reaching everybody who has one.
 | | |
 |---|---|
 | Update | `deploy/compose/update.sh <user@host>` — backs up, `git archive`s **HEAD** (not the working tree, so a deployment is always a commit somebody can name) over `/opt/podshl`, then `sudo docker compose up -d --build`. Migrations run first; the key volume is untouched. It refuses to deploy if the backup fails, because a migration without a way back is not a deployment |
+| Staging first | `update.sh <user@host> --staging` — a second operator at `/opt/podshl-staging`, loopback `:8735`, no Caddy and no backup, because its database is meant to be replaceable. Run it there first whenever a migration is involved: it exists because a CRLF byte in one took the live operator down on 2026-09-13 |
+| Which code is live | `curl -s https://<host>/ -H 'Accept: application/json'` — `version` is what `git describe --tags --always` said when the image was built, passed in by `update.sh` as a build argument. It is also in the footer of every page. If it names something older than the deployment just printed, the build argument did not arrive and the image was reused |
 | Back up | `backup.sh` from cron, daily, copied off the machine. Salts are excluded on purpose |
 | Operator view | `ssh -L 8726:127.0.0.1:8726 <host>`, then `http://127.0.0.1:8726/` with the token |
 | Walk the client | `scripts/build_client.sh <operator>` then `scripts/walk_client.py` — drives the real binary through the flow the window walks, follows the decision tree's questions, and names the step where it stops |
