@@ -8,7 +8,7 @@
 # version it found into one release — and both were caught by hand, the second
 # minutes before publishing. Neither would have survived this.
 #
-# It runs `scripts/ci.sh`, which is the same command a developer runs before
+# It runs `scripts/ci/ci.sh`, which is the same command a developer runs before
 # pushing. There is deliberately no CI-only shell here: a gate that exists only
 # on a server is one nobody runs first, and a gate that exists only on a laptop
 # is one CI cannot enforce.
@@ -16,7 +16,7 @@
 # **Where this runs.** On the public mirror, which is fed by hand after a change
 # is already pushed — so this one reports rather than gates. The gate is
 # `.gitea/workflows/suite.yml`, on the working repository, whose runner is
-# `podshl-builder`, made by `scripts/gitea_runner.sh`.
+# `podshl-builder`, made by `scripts/ci/gitea_runner.sh`.
 #
 # This comment has now been wrong twice about that runner, in both directions.
 # It first said the working repository had none; it was corrected to say an
@@ -59,7 +59,7 @@ jobs:
       # need the network, and they are meant to: a fixture would prove the two
       # halves agree with a file rather than with each other.
       - name: Both suites
-        run: scripts/ci.sh sdota.de
+        run: scripts/ci/ci.sh sdota.de
 
       # The artefacts of a failure, because a red run whose output has scrolled
       # away is a red run nobody can act on.

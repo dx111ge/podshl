@@ -8,7 +8,7 @@ from pathlib import Path
 
 from datasets import load_dataset
 
-OUT = Path(__file__).resolve().parent.parent / "data/raw/tobi_bueck_tickets.parquet"
+OUT = Path(__file__).resolve().parents[2] / "data/raw/tobi_bueck_tickets.parquet"
 
 if OUT.exists():
     print(f"{OUT} already present — nothing to do")

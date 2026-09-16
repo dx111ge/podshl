@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Register the Actions runner that gates the working repository.
 #
-#   scripts/gitea_runner.sh <gitea url>
+#   scripts/ci/gitea_runner.sh <gitea url>
 #
 # The address is not written out here, for the reason
 # `deploy/compose/update.sh` states about its own: `PUBLISHING.md` forbids an
@@ -26,11 +26,11 @@
 # keeps its identity; pass --fresh to discard it and register a new one.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 FRESH=""
 [ "${1:-}" = "--fresh" ] && { FRESH=1; shift; }
-URL="${1:?usage: scripts/gitea_runner.sh [--fresh] <gitea url>}"
+URL="${1:?usage: scripts/ci/gitea_runner.sh [--fresh] <gitea url>}"
 NAME="${GITEA_RUNNER_NAME:-podshl-builder}"
 HOST=${URL#*://}
 

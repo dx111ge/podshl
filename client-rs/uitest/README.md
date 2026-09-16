@@ -54,7 +54,7 @@ They need a client built for a reachable operator, because they walk the real
 one. They fail with an instruction rather than skipping: a suite that quietly
 tests nothing is worse than one that is red.
 
-    pwsh ../../scripts/build_client.ps1 sdota.de -Profile debug   # or build_client.sh
+    pwsh ../../scripts/build/build_client.ps1 sdota.de -Profile debug   # or build_client.sh
     npm test
 
 | variable | |
@@ -75,6 +75,6 @@ DevTools protocol, which is Windows. WebKitGTK, which the Linux `.deb` runs on,
 has no CDP endpoint at all; it exposes WebKit's own remote inspector and nothing
 here speaks that protocol.
 
-So this is a Windows developer's command, not a gate. `scripts/ci.sh` gates on
+So this is a Windows developer's command, not a gate. `scripts/ci/ci.sh` gates on
 everything that can be checked without a desktop, and the flow itself is not in
 that set — which is the open question, not a detail.

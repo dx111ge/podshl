@@ -1,6 +1,6 @@
 """Re-runnable hardware/software baseline check for this box.
 
-Run:  mise exec -- python scripts/check_baseline.py
+Run:  mise exec -- python scripts/ci/check_baseline.py
 """
 from pathlib import Path
 import shutil, subprocess, sys, time

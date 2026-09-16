@@ -31,7 +31,7 @@ its system.
 
 | | Built by | Package | Run and checked |
 |---|---|---|---|
-| **Windows** x64 | `pwsh scripts/build_windows_installer.ps1 -ServerUrl … -IndexUrl … -LogKey …`, on Windows | per-user NSIS setup, no administrator | installed silently, started from an unrelated directory with an empty environment, verified the live operator's signed index with the compiled-in key, uninstalled (`L3`, `L9`, `L10`) |
+| **Windows** x64 | `pwsh scripts/build/build_windows_installer.ps1 -ServerUrl … -IndexUrl … -LogKey …`, on Windows | per-user NSIS setup, no administrator | installed silently, started from an unrelated directory with an empty environment, verified the live operator's signed index with the compiled-in key, uninstalled (`L3`, `L9`, `L10`) |
 | **Linux** x86_64 | `mise run release` — on Windows in the container, see below | binary and `.deb` declaring `libwebkit2gtk-4.1-0`, `libgtk-3-0`; the binary also goes into the AUR package `podshl-bin` | the suite runs on Linux in the container; `podshl-bin` was built, installed and started on Omarchy 4.0.4 |
 | **macOS** arm64 | `.github/workflows/macos.yml`, GitHub's `macos-14` runners, when a release is published | `.dmg` and a zipped `.app` | **built, never run by us** — there is no Mac here (`L4`, `P5`) |
 
@@ -72,7 +72,7 @@ dies on `set -e` before building anything.
 6. **The AUR package**, once the release's files are downloadable — it points
    at them. See below.
 7. **The Omarchy plugin**, on every client release — its `package/PKGBUILD`
-   names the client version — and whenever `omarchy-plugin/` changed: bump
+   names the client version — and whenever `packaging/omarchy-plugin/` changed: bump
    `version` in its `manifest.json` and publish it to its own repository, below.
 
 ## The AUR package, `podshl-bin`
@@ -110,9 +110,9 @@ manifest.json*, and there is no option to name one. So the plugin is published
 as its own small repository, `github.com/dx111ge/omarchy-podshl`. It is
 assembled, never edited:
 
-    scripts/publish_omarchy_plugin.sh ../omarchy-podshl
+    scripts/release/publish_omarchy_plugin.sh ../omarchy-podshl
 
-copies `omarchy-plugin/`, `LICENSE`, and the AUR package's `PKGBUILD` and desktop
+copies `packaging/omarchy-plugin/`, `LICENSE`, and the AUR package's `PKGBUILD` and desktop
 entry into `package/`, and refuses when the PKGBUILD's version is not the
 client's. `install-client.sh` installs `podshl-bin` from the AUR when it is
 there and otherwise builds that `package/PKGBUILD` with makepkg — the AUR closed

@@ -585,5 +585,5 @@
   "pub_tr_failed": "The project writes in English and your model could not translate it — it is shown here as written.",
   "vendor_translating": "{v} does not serve this language — your model is translating …",
   "devbuild": "development build",
-  "devbuild_why": "Built without an operator or a pinned log key, so it talks to {o} and cannot verify a published directory. Build it with scripts/build_client.sh or build_client.ps1."
+  "devbuild_why": "Built without an operator or a pinned log key, so it talks to {o} and cannot verify a published directory. Build it with scripts/build/build_client.sh or build_client.ps1."
 }

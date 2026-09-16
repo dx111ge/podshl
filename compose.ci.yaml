@@ -5,11 +5,11 @@
 # it is exactly right. Inside a CI job it is not: the job is itself a container,
 # its checkout lives in a volume, and the daemon has no such path — so it
 # helpfully creates an empty directory and mounts that. `/app` is then empty and
-# the first thing that runs reports `./scripts/build_client.sh: not found`, which
+# the first thing that runs reports `./scripts/build/build_client.sh: not found`, which
 # reads like a missing file and is a missing filesystem.
 #
 # The checkout is reachable, though: it is a named volume on the same daemon.
-# `scripts/ci.sh` finds its name and adds this file, which mounts that volume
+# `scripts/ci/ci.sh` finds its name and adds this file, which mounts that volume
 # where the bind mount would have gone. Same files, no copy, and nothing changes
 # for anybody running `ci.sh` on their own machine — without the variable set,
 # this file is never passed.

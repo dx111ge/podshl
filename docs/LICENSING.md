@@ -7,9 +7,9 @@ accident.
 
 | What | Licence | File |
 |---|---|---|
-| All code — the client, the server, the tooling, the test suites | **AGPL-3.0-or-later** | [`LICENSE`](LICENSE) |
-| `spec/` — the protocol, its schemas, its vocabularies, its example and its reference monitor | **Apache-2.0** | [`spec/LICENSE-APACHE-2.0`](spec/LICENSE-APACHE-2.0) |
-| `spec/` prose — the specification documents themselves | **CC-BY-4.0** | [`spec/LICENSE-CC-BY-4.0`](spec/LICENSE-CC-BY-4.0) |
+| All code — the client, the server, the tooling, the test suites | **AGPL-3.0-or-later** | [`LICENSE`](../LICENSE) |
+| `spec/` — the protocol, its schemas, its vocabularies, its example and its reference monitor | **Apache-2.0** | [`spec/LICENSE-APACHE-2.0`](../spec/LICENSE-APACHE-2.0) |
+| `spec/` prose — the specification documents themselves | **CC-BY-4.0** | [`spec/LICENSE-CC-BY-4.0`](../spec/LICENSE-CC-BY-4.0) |
 
 ## Why the specification is not copyleft
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 TICKETS = ROOT / "data/raw/tobi_bueck_tickets.parquet"
 OMQ = ROOT / "data/raw/omq/German_emails.csv"
 

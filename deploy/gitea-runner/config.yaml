@@ -1,11 +1,11 @@
 # The runner that gates this repository.
 #
-# `scripts/ci.sh` is `docker compose` from beginning to end -- it builds the
+# `scripts/ci/ci.sh` is `docker compose` from beginning to end -- it builds the
 # image, runs the suite in it and drives a browser in it. So a job here needs a
 # Docker client and a socket to talk to, and the default act_runner job
 # container has neither.
 #
-# Created by `scripts/gitea_runner.sh`, which mounts this file read-only. It is
+# Created by `scripts/ci/gitea_runner.sh`, which mounts this file read-only. It is
 # in git and `var/gitea-runner/` is not, because there is nothing secret in it:
 # the registration token is passed on the command line once and what the runner
 # keeps afterwards lives in its data volume.
@@ -39,7 +39,7 @@ container:
   #
   # And note what `docker_host` does *not* buy. The job's checkout is a named
   # volume, not a host path, so a bind mount of the working directory resolves
-  # on the daemon's filesystem to nothing. `scripts/ci.sh` handles that with
+  # on the daemon's filesystem to nothing. `scripts/ci/ci.sh` handles that with
   # `compose.ci.yaml`; the note is here because this is where somebody will
   # come looking.
   valid_volumes:

@@ -90,12 +90,12 @@ seed_log() {
   # for a while has entries; a fresh one has none, which is why they passed on
   # developers' machines for months and failed the first time this ran in CI.
   say "seeding the log so the operator's own proofs can be verified"
-  python scripts/seed_log.py
+  python scripts/dev/seed_log.py
 }
 
 fixtures() {
   say "trust stub"
-  python scripts/make_trust_stub.py
+  python scripts/dev/make_trust_stub.py
 }
 
 # --- the development-only defaults -------------------------------------------

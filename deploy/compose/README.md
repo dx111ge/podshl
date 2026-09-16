@@ -98,7 +98,7 @@ request; `curl -I https://<name>/` should answer `200`.
 **7. The client.** On Windows:
 
 ```powershell
-pwsh scripts\build_windows_installer.ps1 -ServerUrl https://<name> -LogKey <backup>\log_key.json
+pwsh scripts\build\build_windows_installer.ps1 -ServerUrl https://<name> -LogKey <backup>\log_key.json
 ```
 
 `-IndexUrl` names the responsiveness index (`:8723` in development), which is a
@@ -191,7 +191,7 @@ build reaching everybody who has one.
 | Which code is live | `curl -s https://<host>/ -H 'Accept: application/json'` — `version` is what `git describe --tags --always` said when the image was built, passed in by `update.sh` as a build argument. It is also in the footer of every page. If it names something older than the deployment just printed, the build argument did not arrive and the image was reused |
 | Back up | `backup.sh` from cron, daily, copied off the machine. Salts are excluded on purpose |
 | Operator view | `ssh -L 8726:127.0.0.1:8726 <host>`, then `http://127.0.0.1:8726/` with the token |
-| Walk the client | `scripts/build_client.sh <operator>` then `scripts/walk_client.py` — drives the real binary through the flow the window walks, follows the decision tree's questions, and names the step where it stops |
+| Walk the client | `scripts/build/build_client.sh <operator>` then `scripts/walk/walk_client.py` — drives the real binary through the flow the window walks, follows the decision tree's questions, and names the step where it stops |
 | Client log | `~/.local/state/podshl/client.log` — one line per operator call, anonymised. `PODSHL_LOG=0` turns it off |
 | Logs | `sudo docker compose logs -f server ingest`; the access log is in the `caddy-logs` volume |
 | Restore | on empty volumes only: `restore.sh <backup>` refuses a volume that holds a key or a database with tables |

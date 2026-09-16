@@ -75,7 +75,7 @@ ENV RUSTUP_HOME=/opt/rustup \
     PATH=/opt/cargo/bin:$PATH
 RUN curl -fsSL https://sh.rustup.rs \
   | sh -s -- -y --no-modify-path --profile minimal --default-toolchain 1.94.0
-# `minimal` leaves out rustfmt and clippy, and `scripts/ci.sh` reports both. It
+# `minimal` leaves out rustfmt and clippy, and `scripts/ci/ci.sh` reports both. It
 # once printed "0 places differ" for a tree with 588 of them, because `cargo
 # fmt` errored, the grep matched nothing and `|| true` turned the error into a
 # comfortable number. A check that cannot fail is the thing this project keeps

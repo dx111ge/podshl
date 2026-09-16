@@ -44,6 +44,6 @@ deploy/compose/backups/
 # A path MSYS invented. Passing `-e CARGO_TARGET_DIR=/cargo-target-uitest` from
 # a Windows shell handed the container `C:/Program Files/Git/...`, cargo made
 # the directory, and three build artefacts were committed before anybody
-# noticed. The cause is fixed in `scripts/ci.sh`; this is so the symptom cannot
+# noticed. The cause is fixed in `scripts/ci/ci.sh`; this is so the symptom cannot
 # come back quietly.
 client-rs/C[:]*/

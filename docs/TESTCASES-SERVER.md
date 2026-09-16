@@ -261,7 +261,7 @@ not a trademark register.
 
 A homoglyph is different: `exаmple.org` with a Cyrillic а is not a claim about
 who owns a name, it is a technical trick, and UTS 39 is the technical answer.
-`scripts/fetch_confusables.py` vendors the hostname-relevant 1,565 mappings of
+`scripts/dev/fetch_confusables.py` vendors the hostname-relevant 1,565 mappings of
 the real table — approximating it with a hand-written list of lookalikes would
 be the kind of plausible assertion this project refuses elsewhere.
 

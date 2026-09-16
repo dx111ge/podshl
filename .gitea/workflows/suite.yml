@@ -4,11 +4,11 @@
 # public mirror, which is fed by hand *after* a change is already pushed — so it
 # reports rather than gates. Here it runs before anything leaves.
 #
-# It runs `scripts/ci.sh`, the same command a developer runs. No CI-only shell:
+# It runs `scripts/ci/ci.sh`, the same command a developer runs. No CI-only shell:
 # a gate that exists only on a server is one nobody runs before pushing, and a
 # gate that exists only on a laptop is one CI cannot enforce.
 #
-# The runner is `podshl-builder`, made by `scripts/gitea_runner.sh` and
+# The runner is `podshl-builder`, made by `scripts/ci/gitea_runner.sh` and
 # configured by `deploy/gitea-runner/config.yaml`, with the label
 # `ubuntu-latest`. It is a container on the maintainer's machine, which has two
 # consequences worth stating rather than discovering: it needs the Docker socket
@@ -30,4 +30,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Both suites
-        run: scripts/ci.sh sdota.de
+        run: scripts/ci/ci.sh sdota.de

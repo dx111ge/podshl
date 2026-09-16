@@ -21,7 +21,7 @@
 //   $env:SHOTS = "$env:TEMP\podshl-shots"; $env:UI_LANG = 'de'
 //   $env:ENGRAM_DIR = '<a folder containing engram.exe, not on PATH>'
 //   $env:LOG_FILE = (Resolve-Path ..\examples\engram\harness\fixtures\ollama-server.log)
-//   node ..\scripts\drive_window.mjs
+//   node ..\scripts\walk\drive_window.mjs
 //
 // It needs the stack up with engram enrolled (examples/engram/README.md).
 // `CLASS` and `SYMPTOM` choose the problem class and the answer given.

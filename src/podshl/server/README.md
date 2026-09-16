@@ -1,6 +1,6 @@
 # The server
 
-The operator side of [SERVER.md](../../../SERVER.md). Internal — this does not
+The operator side of [SERVER.md](../../../docs/SERVER.md). Internal — this does not
 go public with the client.
 
     mise run db && mise run migrate && mise run server

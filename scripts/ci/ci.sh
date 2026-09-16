@@ -9,8 +9,8 @@
 # a gate nobody runs before pushing; a gate that only exists on a laptop is one
 # CI cannot enforce. This is both.
 #
-#   scripts/ci.sh                      # against the default operator
-#   scripts/ci.sh sdota.de https://www.sdota.de
+#   scripts/ci/ci.sh                      # against the default operator
+#   scripts/ci/ci.sh sdota.de https://www.sdota.de
 #
 # The second argument is the address to compile in when the name does not
 # resolve the same everywhere — see `build_client.sh`.
@@ -31,7 +31,7 @@
 # which is the failure this file exists to prevent, not one to introduce.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 OPERATOR="${1:-sdota.de}"
 SERVER_URL="${2:-}"
@@ -46,7 +46,7 @@ say() { printf '\n\033[1m· %s\033[0m\n' "$1"; }
 # job it is not: the job is itself a container, its checkout is a volume, the
 # daemon has no `/workspace/...` path, so it creates an empty directory and
 # mounts that. `/app` is then empty and the first step reports
-# `./scripts/build_client.sh: not found` -- which reads as a missing file and is
+# `./scripts/build/build_client.sh: not found` -- which reads as a missing file and is
 # a missing filesystem. That cost a run to find.
 #
 # So when we are inside a container, ask the daemon what our own working
@@ -74,7 +74,7 @@ if [ -f /.dockerenv ]; then
     # had ever looked at.
     #
     # Keeping the key instead would fix the signature and keep the worse
-    # problem: `scripts/seed_log.py` exists *because* a brand-new database is
+    # problem: `scripts/dev/seed_log.py` exists *because* a brand-new database is
     # the case three cases need and developers' machines never have. A database
     # that accumulates across runs is CI quietly giving up the one condition it
     # was the only place able to test. The build cache beside it is kept — that
@@ -92,7 +92,7 @@ say "building a client for $OPERATOR, and checking what landed in it"
 # `--no-deps`: this needs no database, and starting one here only makes the
 # failure modes wider.
 dc run --rm --no-deps --entrypoint sh podshl \
-  -c "cd /app && ./scripts/build_client.sh '$OPERATOR' '$SERVER_URL'"
+  -c "cd /app && ./scripts/build/build_client.sh '$OPERATOR' '$SERVER_URL'"
 
 say "the suite"
 dc run --rm podshl testcases
@@ -119,7 +119,7 @@ dc run --rm --no-deps --entrypoint sh podshl \
   -c "set -e
       export CARGO_TARGET_DIR=/cargo-target-uitest
       cd /app
-      ./scripts/build_client.sh --uitest '$OPERATOR' '$SERVER_URL' >/dev/null
+      ./scripts/build/build_client.sh --uitest '$OPERATOR' '$SERVER_URL' >/dev/null
       cd client-rs/uitest
       # Exported, not merely assigned. A line of bare assignments with no
       # command sets shell variables, and \`node\` is a separate command that
@@ -145,7 +145,7 @@ dc run --rm --no-deps --entrypoint sh podshl -c '
   warn=$(cargo clippy --quiet --all-targets 2>&1 | grep -c "^warning" || true)
   echo "  cargo fmt:    $fmt places differ"
   echo "  cargo clippy: $warn warnings"
-  echo "  Neither gates. See the header of scripts/ci.sh for why."
+  echo "  Neither gates. See the header of scripts/ci/ci.sh for why."
 '
 
 say "green"

@@ -87,7 +87,7 @@ anyone can read the repository it lives in. The half you keep is what makes the
 claim yours rather than any passer-by's. It is shown once and we never publish
 it.
 
-![/register: prove control of the host, then say where your files are](docs/shots/05-register.png)
+![/register: prove control of the host, then say where your files are](shots/05-register.png)
 
 Then **step four: say where your `.podshl/` is.** Proving control of a host does
 not say where your files are, and until you say so nothing is fetched. The
@@ -105,7 +105,7 @@ A token the dashboard does not accept is said as such, under the button — and 
 does not say whether it was mistyped, revoked or expired, because telling anybody
 who asks whether a domain has been claimed is for its owner alone:
 
-![A refused token on the dashboard](docs/shots/06-dashboard-refused.png)
+![A refused token on the dashboard](shots/06-dashboard-refused.png)
 
 **If you still have it and think it leaked**, revoke it from your dashboard.
 That stops every token for the domain — including the one you are holding —
@@ -148,19 +148,19 @@ which is served live at `:8727` when the counterparty is running. Rather not
 write it by hand? `/publish/build` on the operator's server builds this file and
 the solutions from a form, and checks them with the code that ingests them.
 
-![The builder: the form on the left, the files it writes on the right](docs/shots/01-builder.png)
+![The builder: the form on the left, the files it writes on the right](shots/01-builder.png)
 
 **Check with the mirror** sends the files to the same code that ingests them,
 and keeps nothing. What passes there is what the mirror takes:
 
-![The builder's check: accepted, and the decision tree that derives](docs/shots/02-builder-checked.png)
+![The builder's check: accepted, and the decision tree that derives](shots/02-builder-checked.png)
 
 **Already publishing?** Load your `agent.yaml` and solutions into the builder to
 change them. Whatever the form has no field for is kept exactly as you wrote it,
 and it says so — here engram's `ollama.host`, a reading that also asks a
 question:
 
-![An existing file loaded into the builder, with what it keeps as written](docs/shots/04-builder-loaded.png)
+![An existing file loaded into the builder, with what it keeps as written](shots/04-builder-loaded.png)
 
 ```yaml
 endpoint: https://example.org/podshl/
@@ -274,7 +274,7 @@ often the right one, as above.
 In the builder, a solution is one card: the class it answers, the conditions
 that must all hold, what the client may do and why, and the text a person reads.
 
-![A solution in the builder](docs/shots/03-builder-solution.png)
+![A solution in the builder](shots/03-builder-solution.png)
 
 ## What you may ask to be read
 
@@ -316,7 +316,7 @@ graded by what people said after trying it — did not help, needs a distinction
 nobody said, working — with what nothing you published answers as a row of its
 own. The lists page, filter and sort in your browser.
 
-![The dashboard's Problems tab for a project with 263 recurring configurations](docs/shots/07-dashboard-problems.png)
+![The dashboard's Problems tab for a project with 263 recurring configurations](shots/07-dashboard-problems.png)
 
 **Where an answer helped some people and not others**, the row says which fact
 tells the two sides apart — from the configurations on your page and nothing
@@ -324,13 +324,13 @@ else — what a switch on it would do to the reports you already have, and the
 `answers.when` that would say so. It is a suggestion; nothing changes until you
 change your own file.
 
-![An answer that needs a distinction, with the condition to paste](docs/shots/08-dashboard-fork.png)
+![An answer that needs a distinction, with the condition to paste](shots/08-dashboard-fork.png)
 
 **Your files** says what the mirror could not make of what you published: a
 version it refused, and a class whose decision tree did not derive, with the
 reason in terms of the path you wrote.
 
-![What the mirror could not make of your files](docs/shots/09-dashboard-files.png)
+![What the mirror could not make of your files](shots/09-dashboard-files.png)
 
 **Read `decided_on` against `stated` first.** That intersection is the whole
 question. An outcome that turned only on measurements tests your rule, and a
@@ -474,7 +474,7 @@ Yes, and the format is built so that you cannot do anything else:
   owns a name could forbid anyone from saying it out loud, and every project
   here fixes something it did not write.
 
-[spec/example-desktop/](spec/example-desktop/) is that case as actual files,
+[spec/example-desktop/](../spec/example-desktop/) is that case as actual files,
 served live at `/example/desktop/agent.yaml`. Worth reading for its shape as
 well as its licence question: the decisive fact is a single environment
 variable — whether this is a Wayland session at all — and everything else
@@ -485,8 +485,8 @@ thinks to ask for.
 
 ## The full reference
 
-[spec/INTEGRATING.md](spec/INTEGRATING.md) is the normative version of this
+[spec/INTEGRATING.md](../spec/INTEGRATING.md) is the normative version of this
 document — every field, every refusal, and the enterprise branch as well.
-[spec/SPEC.md](spec/SPEC.md) is the protocol itself.
-[spec/example/](spec/example/) is this example as actual files, and
-[spec/example-desktop/](spec/example-desktop/) is the second one.
+[spec/SPEC.md](../spec/SPEC.md) is the protocol itself.
+[spec/example/](../spec/example/) is this example as actual files, and
+[spec/example-desktop/](../spec/example-desktop/) is the second one.

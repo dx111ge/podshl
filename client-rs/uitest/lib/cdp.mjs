@@ -6,7 +6,7 @@
 //
 // Node 22 or newer for the built-in WebSocket — or Node 20 with
 // `--experimental-websocket`, which is what the container has and what
-// `scripts/ci.sh` detects rather than assumes. No dependencies either way.
+// `scripts/ci/ci.sh` detects rather than assumes. No dependencies either way.
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

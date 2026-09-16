@@ -129,7 +129,7 @@ fn cache_path() -> PathBuf {
 ///
 /// An installed client has no checkout beside it, so a release is built with
 /// the key of the operator it is built for (`PODSHL_BUILD_LOG_KEY`, the JWK's
-/// text — `scripts/build_windows_installer.ps1`). The environment still wins,
+/// text — `scripts/build/build_windows_installer.ps1`). The environment still wins,
 /// so a development run is unchanged. The `../var` fallback exists only in a
 /// debug build: in a release it would be a key read relative to whatever
 /// directory the program was started from, and a key anybody can plant beside

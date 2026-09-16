@@ -585,5 +585,5 @@
   "pub_tr_failed": "Le projet écrit en anglais et votre modèle n’a pas pu le traduire — il est affiché tel quel.",
   "vendor_translating": "{v} ne propose pas cette langue — votre modèle traduit …",
   "devbuild": "version de développement",
-  "devbuild_why": "Construite sans opérateur ni clé de journal épinglée : elle parle à {o} et ne peut vérifier aucun annuaire publié. Construisez-la avec scripts/build_client.sh ou build_client.ps1."
+  "devbuild_why": "Construite sans opérateur ni clé de journal épinglée : elle parle à {o} et ne peut vérifier aucun annuaire publié. Construisez-la avec scripts/build/build_client.sh ou build_client.ps1."
 }

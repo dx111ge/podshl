@@ -1,6 +1,6 @@
 <#
     Build the client the way a release is built, and refuse to hand back one
-    that is not. The Windows half of `scripts/build_client.sh`, with the same
+    that is not. The Windows half of `scripts/build/build_client.sh`, with the same
     checks and the same refusals.
 
     `option_env!` is read at compile time and cargo does not rebuild when only
@@ -15,11 +15,11 @@
     on this machine, to somebody who knew about it — twice, because the build
     here was `cargo build` typed by hand and nothing checked the result.
 
-        pwsh scripts\build_client.ps1 sdota.de
-        pwsh scripts\build_client.ps1 sdota.de -Profile debug
+        pwsh scripts\build\build_client.ps1 sdota.de
+        pwsh scripts\build\build_client.ps1 sdota.de -Profile debug
 
     For the installer, which is a different artefact, see
-    `scripts\build_windows_installer.ps1`.
+    `scripts\build\build_windows_installer.ps1`.
 #>
 [CmdletBinding()]
 param(
@@ -52,7 +52,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path -Parent $PSScriptRoot
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 $keyFile = Join-Path $repo "release\$Operator\log_key.json"
 if (-not (Test-Path $keyFile)) { throw "no public log key at $keyFile" }

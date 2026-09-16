@@ -359,7 +359,7 @@ The first walk stopped at the dashboard. The second went through the client's
 own window, on Windows, driven over WebView2's DevTools protocol — DOM events
 only, so nothing collides with whoever is at the keyboard — from "engram's chat
 never answers" to the receipt, in English and in German.
-[`scripts/drive_window.mjs`](../../scripts/drive_window.mjs) repeats it, with
+[`scripts/walk/drive_window.mjs`](../../scripts/walk/drive_window.mjs) repeats it, with
 [`harness/fixtures/ollama-server.log`](harness/fixtures/ollama-server.log) as
 the log a user loads — synthetic, and full of the things the anonymiser has to
 catch.

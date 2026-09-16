@@ -13,8 +13,8 @@
 # build a client for an operator, and it checks the result rather than trusting
 # the build.
 #
-#   scripts/build_client.sh sdota.de
-#   scripts/build_client.sh sdota.de https://www.sdota.de
+#   scripts/build/build_client.sh sdota.de
+#   scripts/build/build_client.sh sdota.de https://www.sdota.de
 #
 # The second argument is the address to compile in when it is not
 # `https://<operator>`, and it exists for one reason: on the network this is
@@ -35,7 +35,7 @@ set -euo pipefail
 UITEST=""
 if [ "${1:-}" = "--uitest" ]; then UITEST=1; shift; fi
 
-OPERATOR="${1:?usage: scripts/build_client.sh [--uitest] <operator> [server-url]   (e.g. sdota.de)}"
+OPERATOR="${1:?usage: scripts/build/build_client.sh [--uitest] <operator> [server-url]   (e.g. sdota.de)}"
 KEYFILE="release/$OPERATOR/log_key.json"
 [ -f "$KEYFILE" ] || { echo "no public log key at $KEYFILE" >&2; exit 1; }
 

@@ -6,9 +6,9 @@ of one was guesswork: there was no log and no way to run the flow. This is both
 halves — it drives the real binary through the same commands the window calls,
 in the same order, and prints what each one answered.
 
-    scripts/walk_client.py                      # against the built client
-    scripts/walk_client.py --client <path>
-    scripts/walk_client.py --subject engram
+    scripts/walk/walk_client.py                      # against the built client
+    scripts/walk/walk_client.py --client <path>
+    scripts/walk/walk_client.py --subject engram
 
 Exit code 0 if the published path answered. Anything else prints the step that
 failed and what it returned, which is the thing that was missing all day.
@@ -43,7 +43,7 @@ def main() -> int:
     a = ap.parse_args()
 
     if not a.client.exists():
-        print(f"no client at {a.client} — build one with scripts/build_client.sh <operator>")
+        print(f"no client at {a.client} — build one with scripts/build/build_client.sh <operator>")
         return 2
 
     ok = True

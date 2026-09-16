@@ -12,11 +12,11 @@
 //
 // Needs Node 22+, ffmpeg on PATH, the stack up with engram enrolled, and:
 //   user, short:  the client started with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=
-//                 --remote-debugging-port=9333 (see scripts/drive_window.mjs),
+//                 --remote-debugging-port=9333 (see scripts/walk/drive_window.mjs),
 //                 ENGRAM_DIR (a folder with engram in it, not on PATH) and
 //                 LOG_FILE (examples/engram/harness/fixtures/ollama-server.log)
 //   maintainer:   Chrome started with --remote-debugging-port=9334, PROJECT_TOKEN
-//                 for the seeded your-project.example (scripts/seed_large_dashboard.py)
+//                 for the seeded your-project.example (scripts/dev/seed_large_dashboard.py)
 // UI_LANG=de records the German cut (client window and subtitles; the operator's
 // pages exist in English only) as *-de.mp4. OUT is the directory it is written to.
 import { writeFileSync, mkdirSync, rmSync, readFileSync, readdirSync } from "node:fs";

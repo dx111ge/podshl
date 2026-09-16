@@ -106,7 +106,7 @@ omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable
 
 From 0.1.5 on, the client needs no model setup there either: it uses the
 desktop's default agent (`~/.config/omarchy/defaults/agent`) until you choose another model. See
-`omarchy-plugin/README.md`.
+`packaging/omarchy-plugin/README.md`.
 
 Without a package manager, the bare binary from the release works too, with
 `webkit2gtk-4.1` and `gtk3` installed:

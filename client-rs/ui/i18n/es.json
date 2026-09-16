@@ -585,5 +585,5 @@
   "pub_tr_failed": "El proyecto escribe en inglés y tu modelo no pudo traducirlo — se muestra tal como está escrito.",
   "vendor_translating": "{v} no ofrece este idioma — tu modelo está traduciendo …",
   "devbuild": "compilación de desarrollo",
-  "devbuild_why": "Compilada sin operador ni clave de registro fijada, así que habla con {o} y no puede verificar ningún directorio publicado. Compílela con scripts/build_client.sh o build_client.ps1."
+  "devbuild_why": "Compilada sin operador ni clave de registro fijada, así que habla con {o} y no puede verificar ningún directorio publicado. Compílela con scripts/build/build_client.sh o build_client.ps1."
 }

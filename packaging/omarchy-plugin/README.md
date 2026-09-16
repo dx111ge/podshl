@@ -3,8 +3,8 @@
 > **This is the Omarchy plugin of [PODSHL](https://github.com/dx111ge/podshl)**,
 > an open-source project (AGPL-3.0). The client, the operator, the
 > specification, the tests and the source of this plugin all live there —
-> `omarchy-plugin/` and `packaging/aur/podshl-bin/`. This repository is
-> assembled from them by `scripts/publish_omarchy_plugin.sh`, because
+> `packaging/omarchy-plugin/` and `packaging/aur/podshl-bin/`. This repository is
+> assembled from them by `scripts/release/publish_omarchy_plugin.sh`, because
 > `omarchy plugin add` needs the plugin at the root of a repository. Issues and
 > pull requests go to [dx111ge/podshl](https://github.com/dx111ge/podshl).
 

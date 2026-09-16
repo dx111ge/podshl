@@ -12,14 +12,14 @@ run, no model to pay for, nothing to install per project.
 
 **Early beta.** The operator runs at **https://sdota.de**. Clients for Windows,
 Linux and macOS: **[download 0.1.5](https://github.com/dx111ge/podshl/releases/latest)**
-(unsigned — [INSTALL.md](INSTALL.md) says how to start them anyway, and what
+(unsigned — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and what
 they send).
 
 | You are | Start with |
 |---|---|
-| **Maintaining an open-source project** | **[ONBOARDING.md](ONBOARDING.md)** — publish the files, register, see what your users run into |
-| **Someone with a broken machine** | **[INSTALL.md](INSTALL.md)** — install the client, and what it does and does not send |
-| Checking how it works | [SERVER.md](SERVER.md), [spec/](spec/SPEC.md), [TESTCASES.md](TESTCASES.md) |
+| **Maintaining an open-source project** | **[ONBOARDING.md](docs/ONBOARDING.md)** — publish the files, register, see what your users run into |
+| **Someone with a broken machine** | **[INSTALL.md](docs/INSTALL.md)** — install the client, and what it does and does not send |
+| Checking how it works | [SERVER.md](docs/SERVER.md), [spec/](spec/SPEC.md), [TESTCASES.md](docs/TESTCASES.md) |
 
 ---
 
@@ -133,7 +133,7 @@ everything on your machine.
   commit it came from; the client verifies the log with the key compiled into
   it, and [spec/monitor/verify_log.py](spec/monitor/verify_log.py) lets anyone
   watch it.
-* **What the operator holds is written down**: [SERVER.md](SERVER.md) and the
+* **What the operator holds is written down**: [SERVER.md](docs/SERVER.md) and the
   privacy notice at [sdota.de/privacy](https://sdota.de/privacy). Reports count
   distinct people, not submissions; the monthly key that could link a report to
   a pseudonym is destroyed when the month ends.
@@ -150,7 +150,7 @@ cd client-rs && cargo run
 ```
 
 How the release packages are built, and what each one has been run on:
-[RELEASING.md](RELEASING.md). How sdota.de is deployed:
+[RELEASING.md](docs/RELEASING.md). How sdota.de is deployed:
 [deploy/](deploy/README.md).
 
 ## What is here
@@ -162,13 +162,16 @@ How the release packages are built, and what each one has been run on:
 | `spec/` | The protocol — prose, both vocabularies, schemas, worked examples, the log monitor |
 | `deploy/` | Docker Compose, firewall and backup for running an operator |
 | `examples/engram/` | A real project taken from nothing to a dashboard, with screenshots and screencasts |
-| `FINDINGS.md` | What was measured before this was built, and what was discarded because of it |
+| `packaging/` | The Arch package `podshl-bin` and the Omarchy plugin, whose own repository is assembled from here |
+| `docs/` | Installing, onboarding, the operator, releasing, the test cases, and [FINDINGS.md](docs/FINDINGS.md) — what was measured before this was built, and what was discarded because of it |
+| `scripts/` | `build/`, `release/`, `ci/`, `walk/` (driving the real window) and `dev/` (fixtures and measurements) |
+| `run_testcases.py` | Every case in `docs/TESTCASES*.md` marked `auto`, by id |
 
 ## Licence, warranty, security
 
 **AGPL-3.0** for the code; **Apache-2.0** for `spec/` code and schemas and
 **CC-BY-4.0** for its prose, so the protocol can be implemented without the
-implementation inheriting a licence — [LICENSING.md](LICENSING.md).
+implementation inheriting a licence — [LICENSING.md](docs/LICENSING.md).
 
 **No warranty.** Support content is written by the projects themselves; the
 operator mirrors it and names the project in every answer. The client bounds

@@ -30,7 +30,7 @@ Environment, all optional:
 At **build** time, `PODSHL_BUILD_SERVER_URL`, `PODSHL_BUILD_INDEX_URL` and
 `PODSHL_BUILD_LOG_KEY` (the public JWK's text) compile one operator into a
 release, because an installed client has nobody to set its environment.
-`scripts/build_windows_installer.ps1` sets them and builds the per-user NSIS
+`scripts/build/build_windows_installer.ps1` sets them and builds the per-user NSIS
 setup (`L3`, `L9`, `L10`).
 | `VS_EXTRA_ROOT` | One more readable root. **Debug builds only** — a release binary does not read it (`EN5`) |
 

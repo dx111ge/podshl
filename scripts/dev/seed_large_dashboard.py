@@ -10,7 +10,7 @@ it will get rather than the shape a fixture author imagined.
 Deterministic, so two runs look alike. Run it inside the container:
 
     docker compose exec -e PYTHONPATH=/app/src -e PODSHL_ALLOW_LOOPBACK=1 \
-        podshl python scripts/seed_large_dashboard.py
+        podshl python scripts/dev/seed_large_dashboard.py
 
 It prints the host and a dashboard token. Development database only: it mints
 a claim directly, the way the suite does.

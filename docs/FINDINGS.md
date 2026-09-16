@@ -1,7 +1,7 @@
 # Findings — AI over ITSM ticket data
 
 Measured 2026-09-07. Three negative results. Reproduce the numbers with
-`mise run measure`; every figure below is printed by `scripts/measure_corpus.py`.
+`mise run measure`; every figure below is printed by `scripts/dev/measure_corpus.py`.
 
 Negative results are the ones that get forgotten and then rediscovered
 expensively, so each is recorded with the evidence *and* with the condition that

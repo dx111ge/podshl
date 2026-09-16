@@ -33,19 +33,19 @@ TOKENIZERS_PARALLELISM = "false"
 
 [tasks.baseline]
 description = "Re-check hardware/software baseline (GPU, precision, 4-bit, disk)"
-run = "python scripts/check_baseline.py"
+run = "python scripts/ci/check_baseline.py"
 
 [tasks.fetch-corpus]
 description = "Download the ticket corpus into data/raw/ (~15 MB, gitignored)"
-run = "python scripts/fetch_corpus.py"
+run = "python scripts/dev/fetch_corpus.py"
 
 [tasks.fetch-confusables]
 description = "Regenerate the UTS 39 subset used for homoglyph detection"
-run = "python scripts/fetch_confusables.py"
+run = "python scripts/dev/fetch_confusables.py"
 
 [tasks.measure]
 description = "Re-measure the corpus numbers cited in FINDINGS.md"
-run = "python scripts/measure_corpus.py"
+run = "python scripts/dev/measure_corpus.py"
 
 [tasks.serve]
 description = "Run the vendor support agent (A2A) on 127.0.0.1:8721"
@@ -83,12 +83,12 @@ run = "cd client-rs && VS_ROOT=../var cargo run --release --quiet -- demo"
 description = "Write var/ans_stub.json — the out-of-band key the client checks the card against"
 # var/ is gitignored, five places read this file and nothing wrote it, so a
 # fresh checkout failed ten client cases on a missing file.
-run = "python scripts/make_trust_stub.py"
+run = "python scripts/dev/make_trust_stub.py"
 
 [tasks.services]
 description = "Start the counterparty: vendor, plain website, index, OSS project"
 run = """
-python scripts/make_trust_stub.py
+python scripts/dev/make_trust_stub.py
 PYTHONPATH=src python -m uvicorn podshl.vendor.app:app --port 8721 --log-level warning &
 PYTHONPATH=src python -m uvicorn podshl.index_service.plain_vendor:app --port 8722 --log-level warning &
 PYTHONPATH=src python -m uvicorn podshl.index_service.app:app --port 8723 --log-level warning &
@@ -185,7 +185,7 @@ override them at run time.
 ## What is not here
 
 Windows and macOS. Tauri release builds do not cross-compile: the Windows
-installer is built on Windows (scripts/build_windows_installer.ps1) and the
+installer is built on Windows (scripts/build/build_windows_installer.ps1) and the
 macOS app on GitHub's macOS runners (.github/workflows/macos.yml).
 
 ## Provenance

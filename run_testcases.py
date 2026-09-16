@@ -652,7 +652,7 @@ PAGES = ["/", "/publish", "/publish/build", "/register", "/dashboard", "/securit
 
 
 def withheld_documents() -> tuple[str, ...]:
-    """What `scripts/sync_public.sh` refuses to publish, read from the script.
+    """What `scripts/release/sync_public.sh` refuses to publish, read from the script.
 
     One list, in the place that applies it. `P8` and `W9` each kept their own
     copy and the three drifted the first time the list grew — a file was
@@ -670,18 +670,33 @@ def withheld_documents() -> tuple[str, ...]:
     instead. The public checkout is recognised by the handover being absent as
     well; a working checkout that lost the script is still a failure.
     """
-    script = Path("scripts/sync_public.sh")
+    script = Path("scripts/release/sync_public.sh")
     if not script.exists():
-        assert not Path("HANDOVER.md").exists(), (
-            "scripts/sync_public.sh is gone from a working checkout — the withheld "
+        assert not Path("internal/HANDOVER.md").exists(), (
+            "the sync script is gone from a working checkout — the withheld "
             "list has nowhere to come from")
         return ()
     block = re.search(r'^INTERNAL="([^"]*)"', script.read_text(encoding="utf-8"), re.M)
-    assert block, "scripts/sync_public.sh has no INTERNAL list to read"
-    names = tuple(line.strip() for line in block.group(1).splitlines() if line.strip())
-    assert len(names) >= 6 and "HANDOVER.md" in names, (
+    assert block, "the sync script has no INTERNAL list to read"
+    entries = [line.strip() for line in block.group(1).splitlines() if line.strip()]
+    # An entry is a file or a directory, and a directory withholds everything
+    # under it — the same rule the script applies.
+    names: list[str] = []
+    for entry in entries:
+        path = Path(entry)
+        if path.is_dir():
+            names += sorted(f.as_posix() for f in path.rglob("*") if f.is_file())
+        else:
+            names.append(path.as_posix())
+    assert len(names) >= 6 and "internal/HANDOVER.md" in names, (
         f"the withheld list parsed as {names} — that is a broken parse, not a short list")
-    return names
+    return tuple(names)
+
+
+def withheld_tokens(names) -> set[str]:
+    """What a published text must not contain: each withheld path, and its file
+    name, because a paragraph is as likely to say `HANDOVER.md` as the path."""
+    return {n for name in names for n in (name, Path(name).name)}
 
 
 #: Names a published file may mention although no file of that name is in the
@@ -1611,7 +1626,7 @@ def client(command: str, args: dict | None = None):
     """
     import subprocess
     assert CLIENT.exists(), (
-        f"no client at {CLIENT} — build one with `scripts/build_client.sh <operator>`. "
+        f"no client at {CLIENT} — build one with `scripts/build/build_client.sh <operator>`. "
         f"These cases walk the real binary; there is nothing to assert without it.")
     r = subprocess.run([str(CLIENT), "invoke", command, json.dumps(args or {})],
                        capture_output=True, text=True, timeout=120)
@@ -1628,7 +1643,7 @@ def _():
 
     `option_env!` is read at compile time and cargo does not rebuild when only an
     environment variable changed, so this is one `cargo build` away at any
-    moment. `scripts/build_client.sh` is the guard; this is the case."""
+    moment. `scripts/build/build_client.sh` is the guard; this is the case."""
     e = client("endpoints")
     assert e["operator"].startswith("https://"), (
         f"the client talks to {e['operator']!r} — built without an operator, so it "
@@ -2536,7 +2551,7 @@ def services_up():
 #: files — the split PUBLISHING.md asks for, made now rather than under time
 #: pressure on publication day. Both are parsed: a row in either that claims
 #: coverage it does not have is the thing this check exists to catch.
-CASE_FILES = ("TESTCASES.md", "TESTCASES-SERVER.md")
+CASE_FILES = ("docs/TESTCASES.md", "docs/TESTCASES-SERVER.md")
 
 
 def documented_auto():
@@ -2723,11 +2738,11 @@ def _():
     internal = withheld_documents()
     for f in page_files():
         src = f.read_text(encoding="utf-8")
-        for name in internal:
+        for name in withheld_tokens(internal):
             assert name not in src, f"{f.name} names {name}"
-    skip = {".git", "target", "out", "var", "node_modules", ".venv", "data"}
+    skip = {".git", "target", "out", "var", "node_modules", ".venv", "data", "internal"}
     published = {p.name for p in Path(".").rglob("*.md")
-                 if not any(part in skip for part in p.parts)} - set(internal)
+                 if not any(part in skip for part in p.parts)}
     missing = unresolved_documents(page_files(), published)
     assert not missing, "a page names a document the public tree does not have: " +         ", ".join(f"{f.name} -> {n}" for f, n in missing)
 
@@ -2823,7 +2838,7 @@ def _():
     published files — a migration, a route's docstring, `SERVER.md` and
     `SECURITY.md` — ended a paragraph with "see HANDOVER.md", which the public
     repository does not contain, and the maintainer's own home path sat in
-    `mise.toml`, `scripts/check_baseline.py` and a comment in the anonymiser.
+    `mise.toml`, `scripts/ci/check_baseline.py` and a comment in the anonymiser.
     The anonymiser exists to take exactly that out of other people's logs.
 
     `PUBLISHING.md`'s checklist says to scan "every time, not once". A checklist
@@ -2887,7 +2902,7 @@ def _():
             src = f.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        for name in internal:
+        for name in sorted(withheld_tokens(internal)):
             if name in src and f.as_posix() not in allowed:
                 offenders.append(f"{f} names {name}")
         if home in src:

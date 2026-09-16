@@ -34,8 +34,8 @@ export function clientPath() {
   ];
   for (const g of guesses) if (existsSync(g)) return g;
   throw new Error(
-    "no client to drive. Build one with `scripts/build_client.ps1 <operator>` or " +
-    "`scripts/build_client.sh <operator>`, or set PODSHL_CLIENT. These tests walk " +
+    "no client to drive. Build one with `scripts/build/build_client.ps1 <operator>` or " +
+    "`scripts/build/build_client.sh <operator>`, or set PODSHL_CLIENT. These tests walk " +
     "the real binary; there is nothing to assert without it.");
 }
 
@@ -61,7 +61,7 @@ export function refuseDevelopmentBuild(bin) {
       `${ep.has_key === false ? "no pinned log key" : "a key"}, so no published project is ` +
       `found and this walk would time out with nothing to read.
 ` +
-      `  Build one that is: scripts/build_client.ps1 <operator>  (or build_client.sh)
+      `  Build one that is: scripts/build/build_client.ps1 <operator>  (or build_client.sh)
 ` +
       `  and point PODSHL_CLIENT at it, because \`cargo test\` overwrites target/debug.
 ` +

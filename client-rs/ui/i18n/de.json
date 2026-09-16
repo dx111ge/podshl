@@ -585,5 +585,5 @@
   "pub_tr_failed": "Das Projekt schreibt auf Englisch, und dein Modell konnte es nicht übersetzen — es steht hier im Original.",
   "vendor_translating": "{v} liefert diese Sprache nicht — dein Modell übersetzt …",
   "devbuild": "Entwicklungsversion",
-  "devbuild_why": "Ohne Betreiber und ohne gepinnten Log-Schlüssel gebaut, spricht also mit {o} und kann kein veröffentlichtes Verzeichnis prüfen. Mit scripts/build_client.sh oder build_client.ps1 bauen."
+  "devbuild_why": "Ohne Betreiber und ohne gepinnten Log-Schlüssel gebaut, spricht also mit {o} und kann kein veröffentlichtes Verzeichnis prüfen. Mit scripts/build/build_client.sh oder build_client.ps1 bauen."
 }

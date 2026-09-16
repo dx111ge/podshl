@@ -1,7 +1,7 @@
 # Three screencasts, in English and German
 
 Recorded from the real surfaces on 2026-09-13 by
-[`scripts/record_videos.mjs`](../../../scripts/record_videos.mjs): the shipped
+[`scripts/walk/record_videos.mjs`](../../../scripts/walk/record_videos.mjs): the shipped
 client window over WebView2's DevTools protocol, and the operator's pages in
 headless Chrome. Nothing is mocked — every number on screen is what the running
 system answered, and the engram binary asked for its version is a real build.

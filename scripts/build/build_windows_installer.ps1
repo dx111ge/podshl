@@ -15,8 +15,8 @@
     stack, and the file name says so, so a loopback build is not mistaken for
     one anybody else can use.
 
-        pwsh scripts\build_windows_installer.ps1
-        pwsh scripts\build_windows_installer.ps1 -ServerUrl https://operator.example -IndexUrl https://operator.example/index -LogKey path\to\log_key.json
+        pwsh scripts\build\build_windows_installer.ps1
+        pwsh scripts\build\build_windows_installer.ps1 -ServerUrl https://operator.example -IndexUrl https://operator.example/index -LogKey path\to\log_key.json
 
     Needs Rust, Node (for the Tauri CLI, fetched by npx) and a network the first
     time, when Tauri downloads NSIS. Not signed: see PLATFORM-windows.md.
@@ -29,7 +29,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path -Parent $PSScriptRoot
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (-not $LogKey) { $LogKey = Join-Path $repo 'var\log_key.json' }
 
 # The key is checked before an hour of compiling rather than after: a build

@@ -14,7 +14,7 @@ description = "Basic Agent — verifies a vendor, collects locally, asks, then a
 # environment variable guarding them would be one variable away from the same
 # thing.
 #
-# So they exist only when this feature is on. `scripts/build_client.sh` and
+# So they exist only when this feature is on. `scripts/build/build_client.sh` and
 # `build_client.ps1` build without it, which is what every release is, so a
 # released binary cannot be asked. Turning it on is a decision made at compile
 # time by whoever builds — not at run time by whatever is running.
