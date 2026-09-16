@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 ( cd "$DEST" && git ls-files -z | xargs -0 -r rm -f )
 mkdir -p "$DEST/package"
 cp omarchy-plugin/manifest.json omarchy-plugin/BarWidget.qml omarchy-plugin/README.md \
-   omarchy-plugin/install-client.sh LICENSE "$DEST/"
+   omarchy-plugin/install-client.sh omarchy-plugin/preview.png LICENSE "$DEST/"
 cp packaging/aur/podshl-bin/PKGBUILD packaging/aur/podshl-bin/podshl-client.desktop "$DEST/package/"
 # LF everywhere, whatever the publishing machine's git does: a shell script and a
 # PKGBUILD with CRLF fail on the desktop they are for.
