@@ -96,11 +96,40 @@ fn path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("podshl").join("llm.json"))
 }
 
+/// The model this client uses.
+///
+/// **A saved choice wins, whatever it is**, including a saved choice of none.
+/// Without one, the desktop's own agent is the model, where `omarchy::offer()`
+/// says it works here: Omarchy names it, it is installed, and how to call it
+/// with its tools denied was measured. That is the design the Omarchy work was
+/// agreed on — no model setup in PODSHL on a desktop that already has one — and
+/// the first fresh install on that desktop still said "No own model", because
+/// the agent was only ever offered in the settings nobody had opened.
+///
+/// Nothing is written: the default is recomputed on every start, so choosing
+/// something else, or Omarchy's default changing, is never shadowed by a file
+/// this function made up. Where the prompt goes is not hidden by this either;
+/// every read panel says so from `is_cloud()`.
 pub fn load() -> Config {
-    path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    let saved = path().and_then(|p| std::fs::read_to_string(p).ok());
+    resolve(saved.as_deref(), crate::omarchy::offer())
+}
+
+fn resolve(saved: Option<&str>, desktop_agent: Option<(String, bool)>) -> Config {
+    if let Some(s) = saved {
+        return serde_json::from_str(s).unwrap_or_default();
+    }
+    match desktop_agent {
+        Some((agent, cloud)) => Config {
+            provider: "omarchy_agent".into(),
+            model: agent,
+            endpoint: String::new(),
+            // What the settings panel picks for this row: `local ? small : cloud`.
+            model_class: if cloud { "cloud" } else { "local_small" }.into(),
+            uses_key: false,
+        },
+        None => Config::default(),
+    }
 }
 
 pub fn save(c: &Config) -> Result<(), String> {
@@ -1762,6 +1791,31 @@ mod tests {
             let got = if provider == "github" { models_url(&cfg(provider)) } else { models_url(&c2) };
             assert_eq!(got, models, "{provider}: model listing path");
         }
+    }
+
+    #[test]
+    fn the_desktop_agent_is_the_model_until_somebody_chooses() {
+        let agent = || Some(("claude".to_string(), true));
+
+        let fresh = resolve(None, agent());
+        assert_eq!(fresh.provider, "omarchy_agent");
+        assert_eq!(fresh.model, "claude");
+        assert!(fresh.configured(), "a fresh Omarchy install still says No own model");
+        assert!(fresh.is_cloud(), "the one measured agent sends the prompt away and must say so");
+        assert_eq!(fresh.model_class, "cloud");
+        assert!(!fresh.uses_key);
+
+        let chosen = r#"{"provider":"ollama","model":"qwen3:4b","endpoint":"",
+                         "model_class":"local_small","uses_key":false}"#;
+        assert_eq!(resolve(Some(chosen), agent()).provider, "ollama",
+                   "the desktop default overrode a saved choice");
+
+        let none = r#"{"provider":"","model":"","endpoint":"","model_class":"","uses_key":false}"#;
+        assert!(!resolve(Some(none), agent()).configured(),
+                "a saved choice of no model was replaced by the desktop agent");
+
+        assert!(!resolve(None, None).configured(),
+                "a model appeared where the desktop names none");
     }
 
     /// The free layer is the answer to "an open-source project will not run a

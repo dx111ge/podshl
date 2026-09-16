@@ -15,9 +15,9 @@ client names the recipient, shows the values, and sends only after you say so.
 
 | Platform | File | State |
 |---|---|---|
-| **Windows** 10/11 x64 | `podshl-client-0.1.4-windows-x64-setup.exe` | Installed and checked against the live operator |
-| **Linux** x86_64 | `PODSHL_0.1.4_amd64.deb`, or the bare `podshl-client-0.1.4-linux-x86_64` | Built and its suite run in a container; the packaged window has not been walked on a Linux desktop |
-| **macOS** Apple Silicon | `podshl-client-0.1.4-macos-arm64.dmg` | Built on GitHub's macOS runners, **never run by us** — a report of how it went is very welcome |
+| **Windows** 10/11 x64 | `podshl-client-0.1.5-windows-x64-setup.exe` | Installed and checked against the live operator |
+| **Linux** x86_64 | `PODSHL_0.1.5_amd64.deb`, or the bare `podshl-client-0.1.5-linux-x86_64` | Built and its suite run in a container; the packaged window has not been walked on a Linux desktop |
+| **macOS** Apple Silicon | `podshl-client-0.1.5-macos-arm64.dmg` | Built on GitHub's macOS runners, **never run by us** — a report of how it went is very welcome |
 
 **None of them is signed.** A signature says who built something, and there is
 no certificate yet. `SHA256SUMS` (and `SHA256SUMS-macos`) in the release say the
@@ -44,7 +44,7 @@ xattr -dr com.apple.quarantine /Applications/PODSHL.app
 ## Linux
 
 ```bash
-sudo apt install ./PODSHL_0.1.4_amd64.deb
+sudo apt install ./PODSHL_0.1.5_amd64.deb
 podshl-client
 ```
 
@@ -54,8 +54,8 @@ hundred-megabyte download would cost what makes a binary of under 7 MB
 auditable. Or run the bare binary with those installed:
 
 ```bash
-chmod +x podshl-client-0.1.4-linux-x86_64
-./podshl-client-0.1.4-linux-x86_64
+chmod +x podshl-client-0.1.5-linux-x86_64
+./podshl-client-0.1.5-linux-x86_64
 ```
 
 **On Wayland the client turns WebKitGTK's DMA-BUF renderer off for itself**, by
@@ -86,13 +86,35 @@ which of these are missing here and what that leaves unreadable.
 ## Arch, and Omarchy
 
 Omarchy is the desktop this client is aimed at first, and the one the workaround
-above was measured on. There is **no AUR package yet** — until there is, use the
-bare binary from the release with `webkit2gtk-4.1` and `gtk3` installed:
+above was measured on. On any Arch system the client is the pacman package
+`podshl-bin` — the released binary, with its desktop entry and icons. It is
+**not in the AUR yet** (registration there is paused); its PKGBUILD is in this
+repository and builds as it is:
+
+```bash
+cp -r packaging/aur/podshl-bin /tmp/podshl-bin
+cd /tmp/podshl-bin && makepkg -si
+```
+
+**On Omarchy, add the plugin instead** and let it do that for you. Its bar icon
+offers the installation on the first click, in Omarchy's own terminal, and
+starts PODSHL afterwards:
+
+```bash
+omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable
+```
+
+From 0.1.5 on, the client needs no model setup there either: it uses the
+desktop's default agent (`~/.config/omarchy/defaults/agent`) until you choose another model. See
+`omarchy-plugin/README.md`.
+
+Without a package manager, the bare binary from the release works too, with
+`webkit2gtk-4.1` and `gtk3` installed:
 
 ```bash
 sudo pacman -S --needed webkit2gtk-4.1 gtk3
-chmod +x podshl-client-0.1.4-linux-x86_64
-./podshl-client-0.1.4-linux-x86_64
+chmod +x podshl-client-0.1.5-linux-x86_64
+./podshl-client-0.1.5-linux-x86_64
 ```
 
 **If you are running a client older than this one and nothing happens when you
@@ -100,7 +122,7 @@ start it**, that is the bug above and not a broken download. Start it from a
 terminal to see the line the icon discards, and then:
 
 ```bash
-WEBKIT_DISABLE_DMABUF_RENDERER=1 ./podshl-client-0.1.4-linux-x86_64
+WEBKIT_DISABLE_DMABUF_RENDERER=1 ./podshl-client-0.1.5-linux-x86_64
 ```
 
 Measured 2026-09-14 on Omarchy 4.0.2 — Hyprland 0.56.2, webkit2gtk 2.52.6,

@@ -12,7 +12,7 @@
 # cannot be asked to describe a window.
 
 endpoint: https://github.com/dx111ge/podshl/issues
-commit: v0.1.4
+commit: v0.1.5
 status: active
 
 langs: [en, de]

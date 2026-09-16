@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "podshl.diagnose",
   "name": "PODSHL",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "author": "Sven Andreas",
   "license": "AGPL-3.0-or-later",
   "description": "Ask the projects you actually run what is wrong — every reading consented, nothing generated, nothing uploaded.",
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "PODSHL",
-    "description": "One bar icon: start a diagnosis against the support the projects on this machine published themselves.",
+    "description": "One bar icon: start a diagnosis against the support the projects on this machine published themselves, or install the client from the AUR when it is missing.",
     "category": "System",
     "aliases": ["podshl", "diagnose", "support"],
     "allowMultiple": false

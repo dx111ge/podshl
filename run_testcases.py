@@ -3153,6 +3153,17 @@ def _():
     cargo("omarchy::tests::the_agent_is_only_looked_for_on_an_omarchy_desktop")
 
 
+@case("OM4", "A fresh install on Omarchy uses the desktop's agent without being asked to [rust]")
+def _():
+    cargo("llm::tests::the_desktop_agent_is_the_model_until_somebody_chooses")
+
+
+@case("OM5", "Asking the agent leaves no transcript behind [rust]")
+def _():
+    cargo("omarchy::tests::the_only_measured_agent_is_called_with_its_tools_denied")
+    cargo("omarchy::tests::the_leftover_session_directory_is_found_and_only_removed_when_empty")
+
+
 @case("RS1", "Every Rust test passes, named by a case or not [rust]")
 def _():
     cargo_all()

@@ -32,7 +32,7 @@ its system.
 | | Built by | Package | Run and checked |
 |---|---|---|---|
 | **Windows** x64 | `pwsh scripts/build_windows_installer.ps1 -ServerUrl … -IndexUrl … -LogKey …`, on Windows | per-user NSIS setup, no administrator | installed silently, started from an unrelated directory with an empty environment, verified the live operator's signed index with the compiled-in key, uninstalled (`L3`, `L9`, `L10`) |
-| **Linux** x86_64 | `mise run release` — on Windows in the container, see below | binary and `.deb` declaring `libwebkit2gtk-4.1-0`, `libgtk-3-0` | the suite runs on Linux in the container; the packaged window has not been walked on a Linux desktop |
+| **Linux** x86_64 | `mise run release` — on Windows in the container, see below | binary and `.deb` declaring `libwebkit2gtk-4.1-0`, `libgtk-3-0`; the binary also goes into the AUR package `podshl-bin` | the suite runs on Linux in the container; `podshl-bin` was built, installed and started on Omarchy 4.0.4 |
 | **macOS** arm64 | `.github/workflows/macos.yml`, GitHub's `macos-14` runners, when a release is published | `.dmg` and a zipped `.app` | **built, never run by us** — there is no Mac here (`L4`, `P5`) |
 
 None of them is signed. Windows SmartScreen names no publisher; macOS Gatekeeper
@@ -69,6 +69,61 @@ dies on `set -e` before building anything.
    the imprint, tokens.
 5. Publish the release on GitHub with the Windows and Linux files attached; the
    macOS workflow builds and attaches its own.
+6. **The AUR package**, once the release's files are downloadable — it points
+   at them. See below.
+7. **The Omarchy plugin**, on every client release — its `package/PKGBUILD`
+   names the client version — and whenever `omarchy-plugin/` changed: bump
+   `version` in its `manifest.json` and publish it to its own repository, below.
+
+## The AUR package, `podshl-bin`
+
+`packaging/aur/podshl-bin/` is the source; the AUR's own git repository
+(`ssh://aur@aur.archlinux.org/podshl-bin.git`) receives a copy of its three
+files, `PKGBUILD`, `.SRCINFO` and `podshl-client.desktop`. It installs the
+**released** Linux binary, so there is nothing to build for it — the operator
+and key are already compiled in.
+
+For a new version, on Arch (or in the `archlinux` image, as a user that is not
+root, with `base-devel pacman-contrib namcap webkit2gtk-4.1 gtk3`):
+
+    cd packaging/aur/podshl-bin
+    # set pkgver, reset pkgrel=1
+    updpkgsums
+    makepkg -f && namcap PKGBUILD && namcap podshl-bin-*.pkg.tar.zst
+    makepkg --printsrcinfo > .SRCINFO
+
+Then check that the binary's sum `updpkgsums` wrote is the one in the release's
+`SHA256SUMS`, commit the three files here, and push the same three to the AUR.
+`namcap` reports nothing on 0.1.4 and 0.1.5; a new warning is a change to look at, not
+noise. Install the built package once and start it before pushing — a package
+that builds is not yet a package that runs.
+
+The package is the bare release binary, **not** the one inside the `.deb`: the
+two differ in exactly three bytes, Tauri's bundle-type marker (`UNK` against
+`DEB`), and this is not a `.deb` install.
+
+## The Omarchy plugin
+
+`omarchy plugin add <url>` clones a repository and looks for `manifest.json`
+**at its root** — measured: a subdirectory is refused with *missing
+manifest.json*, and there is no option to name one. So the plugin is published
+as its own small repository, `github.com/dx111ge/omarchy-podshl`. It is
+assembled, never edited:
+
+    scripts/publish_omarchy_plugin.sh ../omarchy-podshl
+
+copies `omarchy-plugin/`, `LICENSE`, and the AUR package's `PKGBUILD` and desktop
+entry into `package/`, and refuses when the PKGBUILD's version is not the
+client's. `install-client.sh` installs `podshl-bin` from the AUR when it is
+there and otherwise builds that `package/PKGBUILD` with makepkg — the AUR closed
+registration in September 2026, so until an account exists this is the path
+every plugin install takes. **So the plugin repository has to be republished
+with every client release**, or its PKGBUILD points at the previous one.
+
+Before publishing, on an Omarchy desktop: `omarchy plugin validate`, then add it
+from a local clone (`omarchy plugin add file:///…`), **restart the shell** —
+4.0.4 keeps running the previous widget after an update — and click through
+both paths: client missing, and client installed.
 
 ## What a release must not contain
 

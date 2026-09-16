@@ -132,6 +132,12 @@ pub fn headless(agent: &str, prompt: &str) -> Option<Headless> {
             args: vec![
                 "-p".into(),
                 prompt.into(),
+                // Without it every call left its whole transcript, prompt
+                // included and so every consented reading, under
+                // ~/.claude/projects/: 29 of them on the first desktop, 76 KB
+                // each. Measured with Claude Code 2.1.273: with it, only an
+                // empty directory is left, which `forget_session` removes.
+                "--no-session-persistence".into(),
                 "--disallowed-tools".into(),
                 // Every tool that reaches the machine or the network. Named in
                 // full rather than by category: a category is a promise the CLI
@@ -200,6 +206,7 @@ pub async fn ask(agent: &str, prompt: &str) -> Result<String, String> {
         .output()
         .await;
     let _ = std::fs::remove_dir_all(&dir);
+    forget_session(&dir);
     let out = out.map_err(|e| format!("{}: {e}", h.program))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
@@ -209,11 +216,73 @@ pub async fn ask(agent: &str, prompt: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-fn _unused(_: &Path) {}
+/// Where Claude Code files a session started in `cwd`: every character that is
+/// not a letter or a digit becomes `-`, so `/tmp/podshl-agent-1-ab` is
+/// `~/.claude/projects/-tmp-podshl-agent-1-ab`.
+fn session_dir(home: &Path, cwd: &Path) -> PathBuf {
+    let slug: String = cwd.to_string_lossy().chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    home.join(".claude").join("projects").join(slug)
+}
+
+/// Remove what `--no-session-persistence` still leaves: a directory holding an
+/// empty `memory/`. `remove_dir` refuses anything that is not empty, so a
+/// directory the agent did write into stays exactly as it is.
+fn forget_session(cwd: &Path) {
+    if let Some(home) = dirs::home_dir() {
+        forget_session_in(&home, cwd);
+    }
+}
+
+fn forget_session_in(home: &Path, cwd: &Path) {
+    let dir = session_dir(home, cwd);
+    let _ = std::fs::remove_dir(dir.join("memory"));
+    let _ = std::fs::remove_dir(&dir);
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_leftover_session_directory_is_found_and_only_removed_when_empty() {
+        let home = std::env::temp_dir().join(format!("podshl-home-{:016x}", rand::random::<u64>()));
+        let cwd = Path::new("/tmp/podshl-agent-42-00ab");
+        let dir = session_dir(&home, cwd);
+        assert!(dir.ends_with(".claude/projects/-tmp-podshl-agent-42-00ab"), "{dir:?}");
+
+        // What the flag leaves: nothing but an empty memory/. Gone afterwards.
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        forget_session_in(&home, cwd);
+        assert!(!dir.exists(), "the empty shell was left behind");
+
+        // Something the agent did write is left alone.
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("session.jsonl"), "{}").unwrap();
+        forget_session_in(&home, cwd);
+        assert!(dir.join("session.jsonl").exists(), "a directory with content was removed");
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// The real call, on a desktop that has the agent, and what it leaves.
+    /// Ignored because it spends a completion on somebody's account:
+    /// `cargo test -- --ignored asking_the_agent_leaves_no_session_behind`.
+    #[tokio::test]
+    #[ignore]
+    async fn asking_the_agent_leaves_no_session_behind() {
+        let agent = default_agent().expect("not an Omarchy desktop with a default agent");
+        let answer = ask(&agent, "Answer with the single word: ready.").await.unwrap();
+        assert!(answer.to_lowercase().contains("ready"), "{answer}");
+
+        let prefix = format!("-tmp-podshl-agent-{}-", std::process::id());
+        let projects = dirs::home_dir().unwrap().join(".claude/projects");
+        let left: Vec<_> = std::fs::read_dir(&projects).into_iter().flatten().flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(&prefix))
+            .collect();
+        assert!(left.is_empty(), "left behind under {projects:?}: {left:?}");
+    }
 
     #[test]
     fn an_agent_name_is_a_program_name_or_it_is_refused() {
@@ -272,6 +341,8 @@ mod tests {
         assert!(!h.args.iter().any(|a| a == "--permission-mode"),
                 "default-deny is a directory boundary, not a tool fence — measured");
         assert!(h.cloud, "Claude Code sends the prompt off this machine and must say so");
+        assert!(h.args.iter().any(|a| a == "--no-session-persistence"),
+                "every call would leave its transcript, readings included, under ~/.claude");
 
         assert!(headless("opencode", "x").is_none(),
                 "an agent nobody measured is offered");

@@ -1,0 +1,58 @@
+# Maintainer: Sven Andreas <sven.andreas@gmail.com>
+#
+# The released Linux binary, not a build from source: it is the same file the
+# GitHub release and its SHA256SUMS carry, with sdota.de's address and the
+# public key of its transparency log compiled in. A source build would need
+# those set as build variables to talk to anything but loopback (RELEASING.md).
+#
+# The binary is the bare one, not the one inside the release's .deb. The two
+# differ in exactly three bytes, Tauri's bundle-type marker (UNK against DEB),
+# and this package is not a .deb.
+
+pkgname=podshl-bin
+_bin=podshl-client
+pkgver=0.1.5
+pkgrel=1
+pkgdesc="Ask the projects you run what is wrong with your machine; every reading consented, nothing uploaded without asking"
+arch=('x86_64')
+url="https://github.com/dx111ge/podshl"
+license=('AGPL-3.0-or-later')
+# Every library the binary links, as namcap reads it, rather than only the two
+# that pull the rest in.
+depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'glib2' 'gdk-pixbuf2' 'cairo' 'dbus'
+         'glibc' 'libgcc' 'hicolor-icon-theme')
+optdepends=(
+  'gnome-keyring: store a model API key (any Secret Service provider works)'
+  'pciutils: the PCI device list reading'
+  'nvidia-utils: the NVIDIA card and driver readings'
+  'docker: readings about running containers'
+)
+provides=('podshl')
+conflicts=('podshl')
+options=('!strip' '!debug')
+_raw="https://raw.githubusercontent.com/dx111ge/podshl/v$pkgver"
+source=(
+  "$_bin-$pkgver::$url/releases/download/v$pkgver/$_bin-$pkgver-linux-$CARCH"
+  "LICENSE-$pkgver::$_raw/LICENSE"
+  "icon-32-$pkgver.png::$_raw/client-rs/icons/32x32.png"
+  "icon-128-$pkgver.png::$_raw/client-rs/icons/128x128.png"
+  "icon-256-$pkgver.png::$_raw/client-rs/icons/128x128@2x.png"
+  "$_bin.desktop"
+)
+sha256sums=('c7f87c30ade3dace46f24d563f9d7d7071cb1b41660b427d8af83cd4e8277a84'
+            '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0'
+            '4633d1d532bcf4719ce173d420f649d9fc60abe788a329bf51b4f76951b190f8'
+            '0ded5f06da14c6700741dc4fa3bcdde8ea53c8b1410c11f4504c023d94955c7a'
+            'a54ca58f500ea79efe69c591718b1def452ad98f9f3f60f4f62233ed1e82ecf0'
+            '8dd7df2997e5b5108a66e8ce624ea3e7ed02859f10a97eeb15789d88fbc628ff')
+
+package() {
+  install -Dm755 "$_bin-$pkgver" "$pkgdir/usr/bin/$_bin"
+  install -Dm644 "$_bin.desktop" "$pkgdir/usr/share/applications/$_bin.desktop"
+  local size
+  for size in 32 128 256; do
+    install -Dm644 "icon-$size-$pkgver.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$_bin.png"
+  done
+  install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
