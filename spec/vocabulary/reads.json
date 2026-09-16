@@ -12,7 +12,7 @@
    "risk": "low",
    "describes": "A fact about the operating system itself, read without running anything",
    "params": {
-    "name": "os | arch | version"
+    "name": "os | arch | version | container"
    }
   },
   {

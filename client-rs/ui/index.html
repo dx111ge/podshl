@@ -264,7 +264,11 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">"
    this product's own argument is that a localisation matrix should collapse.
    Adding a language is one object below; the keys are the contract. */
 const I18N = {};
-const LANGUAGES = ["de", "en", "fr", "es"];
+/// Every language there is, as code → the name it calls itself. One small file,
+/// because a directory cannot be listed over `fetch` and in a bundled
+/// application `ui/` is inside the binary rather than on disk. `I7` holds it to
+/// what is actually there.
+let LANGUAGES = {};
 let LANG = "de";
 
 /// One file per language, fetched rather than executed. They were `.js`
@@ -273,12 +277,29 @@ let LANG = "de";
 /// language defines every key needed node, and a key set is exactly the kind of
 /// contract that should not depend on a second toolchain to verify. As JSON the
 /// suite parses the same bytes this line parses.
-async function loadLanguages() {
-  for (const lang of LANGUAGES) {
-    const res = await fetch(`i18n/${lang}.json`);
-    if (!res.ok) throw new Error(`i18n/${lang}.json: ${res.status}`);
-    I18N[lang] = await res.json();
-  }
+///
+/// **Two of them, never all.** This used to fetch every language at startup to
+/// use one: 42 KB each, 169 KB for four — and four is the small case. The
+/// argument this product makes is that the localisation matrix collapses onto
+/// the client, so the number is meant to grow, and a startup cost that grows
+/// with it while the benefit stays at one language is the wrong shape. English
+/// is always loaded, because every sentence falls back to it and the binary's
+/// messages are recognised by their English template; the chosen language is
+/// loaded beside it, and the rest when somebody picks them.
+async function loadTable(lang) {
+  if (I18N[lang]) return I18N[lang];
+  const res = await fetch(`i18n/${lang}.json`);
+  if (!res.ok) throw new Error(`i18n/${lang}.json: ${res.status}`);
+  I18N[lang] = await res.json();
+  return I18N[lang];
+}
+
+async function loadLanguages(chosen) {
+  const res = await fetch("i18n/languages.json");
+  if (!res.ok) throw new Error(`i18n/languages.json: ${res.status}`);
+  LANGUAGES = await res.json();
+  await loadTable("en");
+  if (chosen && chosen !== "en" && LANGUAGES[chosen]) await loadTable(chosen);
 }
 const t = (k, p) => {
   let s = (I18N[LANG] && I18N[LANG][k]) || I18N.en[k] || k;
@@ -343,7 +364,11 @@ function tr(s){
 
 /* ------------------------------------------------------------ plumbing */
 const main = $("main");
-let SKILL=null, BASE=null, FACTS={}, VDOMAIN="", LAST_FINDINGS=[];
+let SKILL=null, BASE=null, FACTS={}, VDOMAIN="", LAST_FINDINGS=[], CARD=null, REJECTED=false;
+// The word this run owes the maintainer, empty until a gap is reached. Reset
+// with everything else: a second walk that finds an answer must not inherit
+// the first one's report that nothing covered it.
+let UNCOVERED="";
 // Which of FACTS a person typed or chose rather than the machine reading it.
 // A claim and a measurement must not be able to wear the same name.
 const STATED=new Set();
@@ -733,7 +758,13 @@ async function confirmOrigin(pick, subject){
 
 async function run(){
   $("go").disabled=true;
+  // Locked while a diagnosis runs, because panels already drawn keep the words
+  // they were drawn with and a switch would leave the screen half in each
+  // language. Locked **with a reason on it**: a grey control that says nothing
+  // is the one thing this window does nowhere else, and it greys out exactly
+  // when somebody might be reaching for it because they cannot read the panel.
   $("lang").disabled=true;
+  $("lang").title=t("lang_locked");
   RUNNING=true;
   try { await runInner(); }
   catch(e){
@@ -742,7 +773,7 @@ async function run(){
     add(`<h3>${t("err_h")}</h3><p>${esc(tr(e && e.message || e))}</p>
          <p class="why">${t("err_retry")}</p>`, "panel stop");
   }
-  finally { RUNNING=false; $("go").disabled=false; $("lang").disabled=false; }
+  finally { RUNNING=false; $("go").disabled=false; $("lang").disabled=false; $("lang").title=""; }
 }
 
 async function runInner(){
@@ -753,7 +784,7 @@ async function runInner(){
   // root, so a directory granted for one diagnosis stayed readable for every
   // diagnosis after it.
   await invoke("end_incident");
-  SKILL=null; FACTS={}; STATED.clear(); DECIDED=[]; LAST_FINDINGS=[];
+  SKILL=null; CARD=null; REJECTED=false; UNCOVERED=""; FACTS={}; STATED.clear(); DECIDED=[]; LAST_FINDINGS=[];
   // Agreement is spent with the incident it was given for. A run that reused
   // the last one's would be sending what somebody said yes to about a different
   // problem, possibly to a party they did not choose this time.
@@ -1400,6 +1431,11 @@ async function publishedPath(pick, problem){
   catch(e){ UNREACHABLE_WHY = tr(e && e.message || e);
     logUi(`publishedPath: published_card failed: ${UNREACHABLE_WHY}`); return "unreachable"; }
   SKILL={id:cls, version:card.commit||"", probes:(card.collect||[]).map(p=>({...p}))};
+  // Kept where the rest of the flow can reach it. The model path needs the
+  // project's own published words, and until now the card died with this
+  // function — so a model was asked about `engram.embedding_changed` without
+  // ever being told what that means or whose project it is.
+  CARD = card;
   // A project owes English and nothing more. Without a model of their own the
   // reader meets its questions and its answer as written, and is told so
   // once rather than left to wonder why the window changed language.
@@ -1536,7 +1572,7 @@ async function publishedPath(pick, problem){
   if(outcome) await offerPublishedReport(pick, outcome);
   // Offered whether or not they reported: the two are different acts. One tells
   // the operator's counts something; this one is theirs to keep.
-  await offerIssueReport(pick, problem, outcome, text, false);
+  await offerIssueReport(pick, problem, outcome, text, false, (card.escalate||{}).target);
   return "answered";
 }
 
@@ -1668,13 +1704,25 @@ async function checkLogEntry(panel, card){
    pseudonym; this goes into an issue tracker anybody can read, for ever, with
    the person's own name on it. So it says what the anonymiser took out, in the
    same words the consent panel uses, about a larger audience. */
-async function offerIssueReport(pick, problem, outcome, answer, fromModel){
+async function offerIssueReport(pick, problem, outcome, answer, fromModel, target){
   const r = await invoke("issue_report", {
     subject: `${pick.vendor}`, problem: problem || "", facts: FACTS,
     stated: [...STATED], outcome: outcome || "", answer: answer || "",
     answerFromModel: !!fromModel, tried: [], footer: true });
   const took = Object.entries(r.replaced || {});
+  // **Where it goes, in the project's own words.** A maintainer writes
+  // `escalate.target` into their manifest, ingest validates and stores it, the
+  // mirror serves it on the card -- and this panel used to say "take this to
+  // the project" without ever saying where. Somebody was handed a finished bug
+  // report and left to find the tracker themselves, past a project that had
+  // already written the address down.
+  //
+  // Shown, not opened: this client cannot open a browser and should not learn
+  // to from a publisher-supplied string. The person copies the text and goes
+  // where it says.
+  const dest = typeof target === "string" && /^https:\/\//.test(target) ? target : "";
   const el = add(`<h3>${t("issue_h")}</h3><p>${t("issue_1")}</p>
+    ${dest?`<p class="why">${esc(t("issue_where",{d:dest}))}</p>`:""}
     <p class="why">${t("issue_en")}</p>
     ${took.length?`<p class="why">${esc(t("issue_took",
         {list: took.map(([k,n])=>`${n}\u00d7 ${label(k).t||k}`).join(", ")}))}</p>`:""}
@@ -1706,6 +1754,71 @@ async function offerIssueReport(pick, problem, outcome, answer, fromModel){
     el.querySelector("#issuecopy").textContent = t("issue_copied");
   };
   await new Promise(res => { el.querySelector("#issueclose").onclick = () => { settle(el); res(); }; });
+}
+
+/* **Nothing published covered this, and somebody has to hear that.**
+
+   Every other report on this path is about an answer: it worked, it did not,
+   it was handed on. This one is about there being no answer — the person was
+   shown what the project wrote up and said none of it is their problem, or the
+   rules ran over the readings and produced nothing.
+
+   It is the one thing a maintainer cannot find out for themselves. Asking the
+   catalogue runs in a read-only transaction and leaves no trace at all, and
+   nobody opens an issue titled "your support page did not have my case on it";
+   they close the window. So the gap in the published answers — which is the
+   only thing that tells a maintainer to write a new one — was the single event
+   that never reached them.
+
+   The two branches send the same word, `uncovered`, and differ in what they
+   carry, which is the honest difference rather than a second label: declining
+   happens at the class picker, before anything is read, so that report holds no
+   readings; rules matching nothing happens after, so that one holds exactly the
+   constellation they failed on.
+
+   Separate from the issue text that follows, and said so on both panels: this
+   is a count with no words in it, that one is words that go nowhere until the
+   person pastes them. Somebody walking the real window read the two as one
+   thing and could not tell what had already been sent. */
+async function offerUncovered(pick, because){
+  const declined = because === "declined";
+  const pv = await invoke("preview_report", {skill: SKILL || null, facts: FACTS,
+    stated: [...STATED], decidedOn: DECIDED,
+    resolvedBy: declined ? "person" : "vendor_skill", outcome: "uncovered"});
+  const measured = Object.keys(pv.report.observed || {}).length
+                 + Object.keys(pv.report.stated || {}).length;
+  const el = add(`<h3>${t(declined ? "unc_declined_h" : "unc_nomatch_h", {v:esc(pick.vendor)})}</h3>
+    <p>${t(declined ? "unc_declined_1" : "unc_nomatch_1", {v:esc(pick.vendor)})}</p>
+    <p class="why">${t("unc_2")}</p>
+    ${measured ? `<details class="more"><summary>${t("report_what")}</summary>
+        <div class="lbl">${t("pub_measured")}</div>${kvl(pv.report.observed)}
+        <div class="lbl mt3">${t("pub_stated")}</div>${kvl(pv.report.stated)}
+        ${pv.held_back.length?`<p class="why mt3">${esc(t("report_held",{list:pv.held_back.map(k=>label(k).t).join(", ")}))}</p>`:""}
+        </details>`
+      : `<p class="why">${t("unc_nothing",{v:esc(pick.vendor)})}</p>`}
+    <div class="btns"><button class="primary allow">${t("unc_yes")}</button>
+      <button class="deny">${t("unc_no")}</button></div>`, "panel decide");
+  if(!await ask(el)){
+    el.className="panel";
+    el.innerHTML=`<h3>${t("report_none_h")}</h3><p>${t("report_none_1")}</p>`;
+    logUi(`uncovered (${because}): the person chose not to tell ${pick.vendor}`);
+    return;
+  }
+  el.className="panel";
+  try{
+    const r=await invoke("send_published_report",{base:SERVER_URL, subject:subjectOf(pick),
+      report: pv.report});
+    if(r.accepted===false || r.code) throw new Error(r.reason||r.code);
+    logUi(`uncovered (${because}) sent about ${subjectOf(pick)} — ${measured} value(s), surfaced=${!!r.surfaced}`);
+    el.innerHTML=`<h3>${t("unc_sent_h")}</h3><p>${r.surfaced
+      ? t("pub_ok_yes",{n:esc(r.reporters), v:esc(pick.vendor)})
+      : t("pub_ok_below")}</p>
+      ${r.counted===false?`<p class="why">${t("pub_ok_again")}</p>`:""}
+      <p class="why">${t("unc_next")}</p>`;
+  }catch(e){
+    logUi(`uncovered (${because}) failed: ${tr(e && e.message || e)}`);
+    el.innerHTML=`<h3>${t("err_h")}</h3><p>${esc(tr(e && e.message || e))}</p>`;
+  }
 }
 
 async function offerPublishedReport(pick, outcome){
@@ -1783,6 +1896,55 @@ async function askOneProbe(p, why, org){
   return true;
 }
 
+/// What the project published about itself, for a model that is about to guess.
+///
+/// **The model used to be told nothing.** It got a problem sentence and a map
+/// of facts called `engram.embedding_changed`, and was asked to reason about
+/// software whose name nobody had given it, using field names whose meaning the
+/// maintainer had written down and we kept. It guessed badly, which is what a
+/// person on the first Omarchy desktop said in those words.
+///
+/// Everything here is already on this machine and already public: it came off
+/// the mirrored card under the same fetch that drove the published path. Only
+/// what the project wrote — never the solution bodies, which is a decision
+/// about volume and a separate one.
+///
+/// **What is deliberately not here is a pointer.** Naming only the repository
+/// would be worse than silence: the agent runs with every tool denied, so it
+/// cannot look anything up, and asked about `github.com/owner/name` a model
+/// answers from whatever it half-remembers — which for an obscure project is
+/// invention that reads like knowledge. `llm.rs` says so in the prompt itself.
+function projectContext(pick){
+  if(!pick) return null;
+  // **Built from the hit first, and the card only if it is there.**
+  //
+  // The first version required `CARD`, and on the path that matters most it is
+  // null: somebody who says "none of these fit" is answering the class picker,
+  // which comes *before* the card is fetched. So the model was handed nothing,
+  // exactly as before, and the log said so — `declined` with no `card` line
+  // above it. The fix looked right and changed nothing, which is the worst
+  // shape a fix can have.
+  //
+  // The hit carries what matters here anyway: the classes, the maintainer's
+  // sentence for each, and the glossary. The card adds what the fields mean,
+  // and is fetched by then on every other path.
+  const { classes: ids, labels } = Flow.publishedAnswers(pick);
+  const classes = ids.map(c => labels[c] ? `${c} — ${labels[c]}` : c);
+  const means = ((CARD && CARD.collect) || []).map(p => {
+    const what = [p.describes, p.why].filter(Boolean).join(" — ");
+    return what ? `${p.id}: ${what}` : "";
+  }).filter(Boolean);
+  if(!classes.length && !means.length) return null;
+  return {
+    name: pick.vendor,
+    anchor: pick.base || "",
+    classes,
+    rejected: REJECTED,
+    means,
+    keep: Flow.publishedGlossary(pick),
+  };
+}
+
 /* -------------------------------------------- no vendor: the model leads */
 async function noVendorPath(pick, problem, reason){
   // "Does not publish a support agent" is only news when nothing else was
@@ -1855,11 +2017,84 @@ async function noVendorPath(pick, problem, reason){
     plan = Flow.planAfter(took, {published, why: UNREACHABLE_WHY});
   }
   if(plan.kind === "done") return;
+
+  // **Somebody said none of these fit. That is an answer, not a request.**
+  //
+  // The window used to start a model here without asking, and on the first
+  // Omarchy desktop it ran on that is exactly what went wrong: the person
+  // rejected three published classes and a cloud agent began questioning them
+  // about a project it had never been told the name of.
+  //
+  // So the two real options are offered, and the good one leads. Taking it to
+  // the project is what "nothing published covers this" actually calls for —
+  // the maintainer learns about a case their rules do not answer, which is the
+  // only way the published answers ever grow. A model guessing is the other
+  // option, named as a guess, for somebody who wants it now.
+  if(plan.kind === "offer-elsewhere"){
+    const cfg0 = await llmGet();
+    // The publisher's own sentence for this case, where they wrote one.
+    // `escalate.reason` exists precisely for "nothing published matched", and
+    // showing it is the difference between us explaining their project and
+    // them explaining it.
+    const why = plan.because === "nofinding" ? ((CARD&&CARD.escalate||{}).reason || "") : "";
+    const el = add(`<h3>${t(plan.because === "nofinding" ? "no_match_h" : "none_fit_h",
+                           {v:esc(pick.vendor)})}</h3>
+      <p>${t(plan.because === "nofinding" ? "no_match_1" : "none_fit_1", {v:esc(pick.vendor)})}</p>
+      ${why?`<p class="why">${esc(t("no_match_said",{v:esc(pick.vendor), r:tr(why)}))}</p>`:""}
+      <p class="why">${t("none_fit_2")}</p>
+      <div class="btns"><button class="primary allow">${t("none_fit_issue")}</button>
+        ${cfg0.configured?`<button class="deny">${t("none_fit_guess",{m:esc(cfg0.label)})}</button>`:""}</div>`,
+      "panel decide");
+    const toProject = await ask(el);
+    el.className="panel";
+    if(toProject || !cfg0.configured){
+      el.innerHTML=`<h3>${t("none_fit_issue_h")}</h3>`;
+      logUi(`${plan.because} -> the issue report, not a model`);
+      // The counted word first, then the words. `tell` comes from `flow.js` so
+      // the page cannot decide on its own to stay quiet about a gap.
+      if(plan.tell === "uncovered") await offerUncovered(pick, plan.because);
+      await offerIssueReport(pick, problem, plan.because, "", false, (CARD&&CARD.escalate||{}).target);
+      return;
+    }
+    el.innerHTML=`<h3>${t("none_fit_guess_h")}</h3>`;
+    logUi(`${plan.because} -> the person asked for a guess anyway`);
+    // **The card, if this path never fetched one.** Declining happens at the
+    // class picker, which is before the card is read — so the model was being
+    // told the project's classes and its glossary but not what a single one of
+    // its fields means. One call, and only once somebody has asked for a guess:
+    // fetching it earlier would be a request nobody needed.
+    if(!CARD){
+      try{
+        CARD = await invoke("published_card",{base:SERVER_URL, host:subjectOf(pick)});
+        logUi(`card fetched for the guess: ${(CARD.collect||[]).length} reading(s) described`);
+      }catch(e){ logUi(`card for the guess failed: ${tr(e && e.message || e)}`); }
+    }
+    // What the person already did with those classes is the strongest thing the
+    // model can be told, and it is knowable only here.
+    REJECTED = plan.because === "declined";
+    // And the gap is still a gap. The maintainer hears it from this exit too —
+    // not as a separate panel, which would be a third consent on a path that
+    // already has two, but as the word on the report this path ends with.
+    UNCOVERED = plan.tell || "";
+  }
+
   if(plan.sayNoAgent) saidNoAgent();
   // A project that publishes answers and is handed to a model anyway — now only
   // ever because the person declined, or because nothing published matched.
   logUi(published ? `falling through to the model DESPITE published answers (${took})`
                   : `falling through to the model, nothing published (${took})`);
+
+  // **What the model is told about the project, said once, before any round.**
+  //
+  // This was logged at `llm_solve`, which is the *last* call on this path —
+  // after every question and every reading. So a walk that stopped anywhere in
+  // the rounds produced a log with no context line in it, and twice that was
+  // read as "the context is missing" when it meant "the walk had not got there
+  // yet". Said here, it is the first thing after the decision to use a model.
+  const PCTX = projectContext(pick);
+  logUi(PCTX
+    ? `model context: ${PCTX.name} classes=${PCTX.classes.length} rejected=${PCTX.rejected} means=${PCTX.means.length} keep=${PCTX.keep.length}`
+    : "model context: NONE — the model is told nothing about the project");
 
   const cfg=await llmGet();
   if(!cfg.configured){
@@ -1926,19 +2161,45 @@ async function noVendorPath(pick, problem, reason){
     const th=add(`<h3><span class="spin"></span>
       ${round===1?t("thinking_pick",{m:esc(cfg.label)}):t("thinking_pick_more",{m:esc(cfg.label)})}</h3>`);
     let chosen=null;
-    try{ chosen=await awaitOrCancel(invoke("llm_choose_reads",{problem, known:FACTS, lang:LANG, round}), th); }
+    logUi(`round ${round}: asking the model what to read`);
+    try{ chosen=await awaitOrCancel(invoke("llm_choose_reads",{problem, known:FACTS, lang:LANG, round, context:PCTX}), th); }
     catch(e){
       if(e instanceof Cancelled) throw e;
       th.className="panel stop";
       th.innerHTML=`<h3>${t("pick_failed_h")}</h3><p>${esc(tr(e))}</p>`; return; }
+    // **What it answered.** "It butts in with nonsense" is about these two
+    // lists, and until now neither was anywhere but on the screen — so a report
+    // of a bad round could not be read without the person retyping it.
+    logUi(`round ${round}: reads=[${(chosen.probes||[]).map(p=>p.id).join(", ")}]`
+        + ` asks=${(chosen.questions||[]).length} `+ JSON.stringify((chosen.questions||[]).map(q=>q.length>90?q.slice(0,90)+"…":q))
+        + `${chosen.done?" done":""}`);
     th.remove();
 
     // Never ask the same thing twice — neither a value already read nor a
     // question already answered. The read side is filtered on the Rust side;
     // questions are free text and are filtered here.
-    const fresh = (chosen.questions||[]).filter(q=>!asked.has(q));
+    // **One question a round, which is what this file already believed.**
+    //
+    // The round prompt says so in its own comment — *"telling it all three at
+    // once produces three shallow questions in one breath; telling it one
+    // produces one good one"* — and then put whatever came back on the screen.
+    // Measured on the first Omarchy desktop: three questions at once, each
+    // over ninety characters, and the instruction asking for one was ignored.
+    // An instruction that needs the model to cooperate is not a bound; `LG8`
+    // learnt that about glossary terms and it is the same lesson.
+    //
+    // Nothing is lost by dropping the rest: the next round asks the next thing,
+    // and the person decides after each round whether there is one.
+    const offered = (chosen.questions||[]).length;
+    const fresh = (chosen.questions||[]).filter(q=>!asked.has(q)).slice(0, 1);
     fresh.forEach(q=>asked.add(q));
     chosen.questions = fresh;
+    // **What was offered and what was shown, both.** The line above this used
+    // to count the model'''s questions before the filter ran, so a log saying
+    // `asks=3` meant three were written and said nothing about how many a
+    // person saw. Measuring at the convenient place rather than the telling one
+    // is the same mistake the context line made twice today.
+    logUi(`round ${round}: model offered ${offered} question(s), shown ${fresh.length}`);
 
     if(chosen.questions && chosen.questions.length){
       const qp=add(`<h3>${t("questions_h",{m:esc(cfg.label)})}</h3><p class="why">${t("questions_1")}</p>
@@ -1946,8 +2207,37 @@ async function noVendorPath(pick, problem, reason){
           ${textInput("hq",q,t("q_ph"),2,id)}</div>`;}).join("")}
         <div class="btns"><button class="primary" id="hqok">${t("next")}</button></div>`);
       await new Promise(res=>{ qp.querySelector("#hqok").onclick=()=>{
-        qp.querySelectorAll(".hq").forEach(i=>{ if(i.value.trim()){
-          FACTS[i.dataset.id]=i.value.trim(); TYPED.add(i.dataset.id); } });
+        // **An empty box is an answer here too.**
+        //
+        // It recorded a value and recorded *nothing* for a skip, so the next
+        // round saw no trace of the question and asked it again in different
+        // words — which is what a person on the first Omarchy desktop met:
+        // round 2 repeating all three of round 1's questions, reworded, and
+        // reporting `done` while it did so. The exact-string dedup above could
+        // not catch a rewording.
+        //
+        // This is the defect `flow.js` names for the published path — *"An
+        // empty answer is an answer … the endpoint was never told and asked
+        // again, for ever"* — in the one panel that never went through
+        // `Flow.readAnswers`. It does now, so a skipped question becomes
+        // `<question>.declined`, travels in `known`, and the model can see it
+        // asked and got nothing.
+        const asked_now = [...qp.querySelectorAll(".hq")].map(i=>({id:i.dataset.id}));
+        const values = {};
+        qp.querySelectorAll(".hq").forEach(i=>{ values[i.dataset.id]=i.value; });
+        const round=Flow.readAnswers(asked_now, values);
+        qp.querySelectorAll(".hq").forEach(i=>
+          i.classList.toggle("invalid", round.invalid.includes(i.dataset.id)));
+        // **Refused before it is applied, like the other three.** A model's
+        // question carries no `pattern`, so today nothing here can be invalid
+        // and this cannot fire. It is written anyway because the contract is
+        // about the *shape*: three panels learned this rule separately, each
+        // after shipping the same defect, and `an_answer_that_misses_its_pattern
+        // _is_asked_again` checks every panel rather than the ones that broke.
+        // A fourth panel that skipped it would be the fourth to learn it.
+        if(!round.ok){ return; }
+        Object.assign(FACTS, round.facts);
+        round.stated.forEach(id=>TYPED.add(id));
         settle(qp); res(); }; });
     }
 
@@ -1969,8 +2259,20 @@ async function noVendorPath(pick, problem, reason){
     const doable=plan.plan.filter(p=>!p.refused);
     if(!doable.length) break;
 
+    // **Where the values actually go, on the panel where that is decided.**
+    //
+    // This said `read_own` whatever the model was: *"they go to your own model
+    // — not to us and not to {v}"*. With a cloud-backed model that is false,
+    // and it is false on the one screen whose entire job is to tell somebody
+    // what leaves their machine before it leaves. The Omarchy default agent is
+    // cloud-backed, so the first desktop this ran on said it.
+    //
+    // The binary already knew: `is_cloud()` asks the agent table rather than
+    // assuming, with a comment about not leaving this sentence quietly wrong.
+    // The window had the value on `cfg` and never read it.
     const rc=add(`<h3>${round===1?t("read_h"):t("read_h_n",{n:round})}</h3>
-      <p>${t("read_own",{m:esc(cfg.label), v:esc(pick.vendor)})}</p>
+      <p${cfg.is_cloud?' class="c-warn"':""}>${t(cfg.is_cloud?"read_own_cloud":"read_own",
+        {m:esc(cfg.label), v:esc(pick.vendor)})}</p>
       <ul class="plain">${doable.map(readItem).join("")}</ul>
       <div class="btns"><button class="primary allow">${t("read_yes",{n:doable.length})}</button>
         <button class="deny">${t("read_no_more")}</button></div>`, "panel decide");
@@ -1987,8 +2289,15 @@ async function noVendorPath(pick, problem, reason){
 
   const th=add(`<h3><span class="spin"></span> ${t("thinking",{m:esc(cfg.label)})}</h3>`);
   let sol=null;
+  // **Whether the model was told anything about the project, in the log.**
+  // Without this the only honest answer to "does it know about engram?" was to
+  // read the source and hope — and the first fix for that looked right and
+  // changed nothing, because the card it depended on had not been fetched yet.
+  // Counts rather than contents: the words are the project public ones, but a
+  // log somebody pastes into an issue stays short.
   try{ sol=await awaitOrCancel(invoke("llm_solve",{problem, facts:FACTS, lang:LANG,
-                                                   typed:[...TYPED]}), th); }
+                                                   typed:[...TYPED],
+                                                   context:PCTX}), th); }
   catch(e){
     if(e instanceof Cancelled) throw e;
     th.className="panel stop";
@@ -2036,7 +2345,8 @@ async function noVendorPath(pick, problem, reason){
         // person has just supplied something, so a follow-up answer is the one
         // most likely to rest on what they said rather than on a measurement.
         try{ const r=await awaitOrCancel(invoke("llm_follow_up",{problem, facts:FACTS,
-                     previous:last, added, lang:LANG, typed:[...TYPED]}), wait);
+                     previous:last, added, lang:LANG, typed:[...TYPED],
+                     context:PCTX}), wait);
           wait.remove();
           last=r.answer; sec=r.sections||null; show(th); bind();
         }catch(e){
@@ -2052,16 +2362,30 @@ async function noVendorPath(pick, problem, reason){
     bind();
   });
 
+  // **What would actually go, asked of the binary that would send it.**
+  //
+  // This showed `subject` and `model_class` under a summary reading "exactly
+  // what would be sent", while the call below handed over every fact the window
+  // held. The readings are coarsened and most are dropped, so nothing leaked —
+  // but the two lines somebody was shown were the two that do not matter, and
+  // the panel said "exactly".
+  const nvp = await invoke("preview_without_vendor",{observed:FACTS}).catch(()=>null);
   const el=add(`<h3>${t("catch_h",{v:esc(pick.vendor)})}</h3><p>${t("catch_1")}</p>
     <p class="why">${t("catch_2")}</p>
-    <details class="more"><summary>${t("report_what")}</summary>${kv({
-      subject: subjectOf(pick), model_class: cfg.model_class })}</details>
+    <details class="more"><summary>${t("report_what")}</summary>${kv(
+      UNCOVERED ? { subject: subjectOf(pick), model_class: cfg.model_class, outcome: UNCOVERED }
+                : { subject: subjectOf(pick), model_class: cfg.model_class })}
+      ${nvp ? kvl(nvp.observed) : ""}
+      ${nvp && nvp.held_back.length
+        ? `<p class="why mt3">${esc(t("report_held",{list:nvp.held_back.map(k=>label(k).t).join(", ")}))}</p>`
+        : ""}</details>
     <div class="btns"><button class="primary allow">${t("report_yes")}</button>
       <button class="deny">${t("report_no")}</button></div>`, "panel decide");
   if(!await ask(el)){ el.innerHTML=`<h3>${t("report_none_h")}</h3><p>${t("report_none_1")}</p>`; return; }
   try{
     const r=await invoke("report_without_vendor",{base:SERVER_URL, subject:subjectOf(pick),
-      modelClass:cfg.model_class, uxSeverity:sol.ux_severity, observed:FACTS});
+      modelClass:cfg.model_class, uxSeverity:sol.ux_severity, observed:FACTS,
+      outcome:UNCOVERED});
     el.className="panel done";
     // `reporters` is distinct people, not submissions, and `surfaced` is the
     // server applying the floor to that figure — so reporting the same thing
@@ -2507,7 +2831,26 @@ function applyLang(){
       <div id="vocablist" class="why"></div>
       <p class="why">${t("vocab_1")}</p>
       <div class="btns"><button class="ghost" id="resetid">${t("reset_id")}</button></div>
-    </details>`, "panel", "intro");
+    </details>
+    <p class="note c-muted">${t("yours_1")}
+      <code id="publishurl">${esc(SERVER_URL)}/publish</code>
+      <button class="ghost" id="copypublish">${t("yours_copy")}</button></p>`, "panel", "intro");
+  // **The address of the operator this client was built for**, not a constant.
+  // A client built for somebody else's operator that pointed people at ours
+  // would be sending them to register with a service they are not using.
+  //
+  // Shown and copyable rather than opened: this client cannot open a browser,
+  // which is the same reason `escalate.target` is shown rather than clicked. A
+  // copy button is what it can honestly offer, and the clipboard is already
+  // here for the issue report.
+  const cp = $("copypublish");
+  if(cp) cp.onclick = async () => {
+    const url = `${SERVER_URL}/publish`;
+    try{ await navigator.clipboard.writeText(url); }
+    catch(_){ const r=document.createRange(); r.selectNode($("publishurl"));
+              getSelection().removeAllRanges(); getSelection().addRange(r); }
+    cp.textContent = t("yours_copied");
+  };
   // The vocabulary is the product's central claim; showing it is not a detail.
   invoke("vocabulary").then(v=>{
     const box=$("vocablist");
@@ -2552,7 +2895,12 @@ for(const id of ["vquery","problem"])
   $(id).addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); if(!$("go").disabled) run(); }});
 
 $("lang").onchange=async()=>{
-  LANG=$("lang").value;
+  const pick=$("lang").value;
+  // Fetched now rather than at startup. A language nobody chooses is never
+  // downloaded, which is the whole point of the index beside these files.
+  try{ await loadTable(pick); }
+  catch(e){ logUi(`language ${pick} failed to load: ${e && e.message || e}`); $("lang").value=LANG; return; }
+  LANG=pick;
   try{ localStorage.setItem("lang", LANG); }catch(_){}
   applyLang();
   syncHint(await refreshLlmChip());
@@ -2582,13 +2930,25 @@ window.addEventListener("load", async () => {
   // not a silent fall back to loopback in the middle of a report.
   const ep = await invoke("endpoints");
   SERVER_URL = ep.operator; INDEX_URL = ep.index;
-  await loadLanguages();
-  $("lang").innerHTML=Object.entries(I18N).map(([k,v])=>`<option value="${k}">${v._name}</option>`).join("");
+  // Which language before the tables, so only two are fetched rather than all.
   let saved=null; try{ saved=localStorage.getItem("lang"); }catch(_){}
-  if(saved && I18N[saved]) LANG=saved;
-  else { const l=await invoke("os_locale"); if(I18N[l.code]) LANG=l.code; else LANG="en"; }
+  const locale = saved ? null : await invoke("os_locale");
+  const wanted = saved || (locale && locale.code) || "en";
+  await loadLanguages(wanted);
+  LANG = LANGUAGES[wanted] ? wanted : "en";
+  $("lang").innerHTML=Object.entries(LANGUAGES).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join("");
   $("lang").value=LANG;
   applyLang();
+  // **A language we do not have is said, not silently swapped.** Somebody whose
+  // system asks for Polish used to get an English window and no word about why
+  // — which reads as a product that ignored them rather than one that has not
+  // been translated yet. In English on purpose: it is the one sentence shown
+  // only to a person we have no language for, so it is read from the English
+  // table whatever the picker ends up on, and translating it is harmless and
+  // pointless.
+  if(locale && locale.code && locale.code !== "en" && !LANGUAGES[locale.code]){
+    add(`<p class="why">${esc(I18N.en.no_language.split("{c}").join(locale.code))}</p>`, "panel");
+  }
   // Said on screen, not only in the log. `cargo test` rebuilds this binary
   // without `PODSHL_BUILD_*` and what comes out points at loopback with no
   // pinned key — a client that starts, draws this window, and cannot verify a

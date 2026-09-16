@@ -16,6 +16,14 @@ use serde_json::{json, Map, Value};
 /// more too; this is so the user hears it before pressing send, not after.
 pub const MAX_DESCRIPTION: usize = 16 * 1024;
 
+/// Every outcome a report may carry, and the whole of it.
+///
+/// Held against the operator's own `OUTCOMES`, which is held against the
+/// database's CHECK: a word this client invents is a report the operator
+/// refuses after the person pressed send, which is the worst moment to find
+/// out.
+pub const OUTCOMES: &[&str] = &["resolved", "unresolved", "escalated", "abstained", "uncovered"];
+
 /// The report as the operator takes it, for a project that published files
 /// rather than running an agent.
 ///
@@ -30,7 +38,18 @@ pub fn for_operator(report: &Value, subject: &str, pseudonym: &str, epoch: &str)
         return Err(m!("report_no_recipient"));
     }
     let outcome = report.get("outcome").and_then(|v| v.as_str()).unwrap_or("");
-    if !["resolved", "unresolved", "escalated", "abstained"].contains(&outcome) {
+    // `uncovered` is the fifth, and it is the one the published path could not
+    // say. The other four all describe what happened *after* an answer: it
+    // worked, it did not, it was handed on, the person stopped. There was no
+    // word for the run that never got an answer at all — the person told us
+    // none of the published problems fitted, or their rules matched nothing —
+    // and asking leaves no trace, because `/diagnose` runs in `db.read()`.
+    //
+    // So the one case a maintainer most needs to hear about was the one case
+    // that could not reach them. A gap in the published answers is invisible
+    // from inside the project: nobody files an issue saying "your support page
+    // did not have my problem on it", they close the window.
+    if !OUTCOMES.contains(&outcome) {
         return Err(m!("report_bad_outcome", o = format!("{outcome:?}")));
     }
     let map = |k: &str| -> Result<Value, String> {
@@ -649,9 +668,18 @@ mod tests {
         assert!(for_operator(&forged, "engram.localhost", "p", "2026-09").is_err(),
                 "free text without its consent was sent");
 
-        let mut bad = built;
+        let mut bad = built.clone();
         bad["outcome"] = json!("maybe");
         assert!(for_operator(&bad, "engram.localhost", "p", "2026-09").is_err());
+
+        // **The run that never got an answer travels too.** Somebody said none
+        // of the published problems fitted; that is a sentence about the
+        // published answers, and until this word existed there was no way for
+        // it to reach the person who wrote them.
+        let mut none_fitted = built;
+        none_fitted["outcome"] = json!("uncovered");
+        let body = for_operator(&none_fitted, "engram.localhost", "p", "2026-09").unwrap();
+        assert_eq!(body["outcome"], "uncovered");
     }
 
     /// T12: a location travels as its last component. The rest of a path is

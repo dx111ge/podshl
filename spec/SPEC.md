@@ -388,7 +388,13 @@ the label that makes the corpus worth having.
   public knowledge means the information was available and the product surface
   failed to convey it.
 - `outcome` is the person's answer to *did it work*, asked after they had the
-  chance to try. A client must not fill it in on their behalf.
+  chance to try. A client must not fill it in on their behalf. The one value
+  that is not an answer about an answer is `uncovered`: nothing the project
+  published covered the problem at all — either its rules matched nothing, or
+  the person was shown its problem classes and said none of them is theirs.
+  Asking leaves no trace at an operator, so without this word the gap in the
+  published answers — the one thing that tells a maintainer to write a new one
+  — is the single event that never reaches them.
 - Free text travels only in `description`, under its own consent naming the
   recipient (`description_consent`), and at most 16 KiB. A client must show the
   exact words before asking, keep them editable, and **replace what has the

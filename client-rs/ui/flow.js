@@ -111,6 +111,49 @@ globalThis.Flow = (function () {
     const ctx = context || {};
     if (outcome === "answered") return { kind: "done" };
     if (outcome === "unreachable") return { kind: "offer-retry", why: ctx.why || "" };
+    // **"None of these fit" is not a request for a guess.** It is a statement
+    // about the classes this project published, and the window used to read it
+    // as permission: the person said no, and a model they never asked for began
+    // interrogating them about a project it had never been told the name of.
+    // Found on the first Omarchy desktop this ran on, by somebody saying none
+    // fit and getting nonsense.
+    //
+    // The better exit already existed and was only offered after the published
+    // path *answered*: the issue report — everything asked and everything read,
+    // anonymised, as markdown for the project's own tracker. That is the honest
+    // answer to "nothing published covers this", and a model that knows nothing
+    // about the project is not.
+    //
+    // So this asks instead of assuming. **And `nofinding` asks too**, which was
+    // decided the other way an hour earlier and corrected by reading the log of
+    // the same desktop: nobody rejected anything there, the person picked a
+    // class, the readings were taken and the publisher's rules said nothing —
+    // and a model started anyway.
+    //
+    // That case is worse rather than milder. A publisher who writes `escalate`
+    // has said in their own manifest what happens when nothing matches —
+    // engram's reads *"Nothing published matches these readings, and it may be
+    // a defect rather than a setup problem"* — and starting a model there does
+    // not fill a gap, it overrides an instruction.
+    //
+    // `none` is left alone: a hit with no published answers at all has nobody
+    // to defer to, so a model is the only thing there is.
+    //
+    // **Both of them are reported, under one word: `uncovered`.** Not as a
+    // by-product of something else — asking leaves no trace at all, because
+    // `/diagnose` runs in a read-only transaction — so unless this says so, a
+    // maintainer never learns that anybody reached the end of their published
+    // answers and found nothing. Nobody files an issue titled "your support
+    // page did not have my problem on it"; they close the window.
+    //
+    // `declined` is reported as well as `nofinding`, and it is the stronger of
+    // the two: rules producing no statement is a gap between rules, while a
+    // person looking at their own machine and saying "none of these is what I
+    // am seeing" is a judgement. Both say the same thing to the person who has
+    // to act on it — *write one down* — so both carry the same word.
+    if (outcome === "declined" || outcome === "nofinding") {
+      return { kind: "offer-elsewhere", because: outcome, tell: "uncovered" };
+    }
     return {
       kind: "to-model",
       // Accurate rather than suppressed: `discover` established that there is
@@ -399,7 +442,11 @@ globalThis.Flow = (function () {
    *  cannot be added in the page without this file knowing about it. */
   const OUTCOMES = ["answered", "declined", "unreachable", "reads", "nofinding", "none"];
 
+  /** Every plan `planAfter` can return, for the same reason. A page that grew a
+   *  branch this file does not know about is a decision back in the page. */
+  const PLANS = ["done", "offer-retry", "offer-elsewhere", "to-model"];
+
   return { publishedAnswers, publishedGlossary, planBefore, planAfter,
            planOnGivingUp, matchesPattern, readAnswers, editable, applyEdits,
-           consent, withheldWords, consentedText, footerToggle, OUTCOMES };
+           consent, withheldWords, consentedText, footerToggle, OUTCOMES, PLANS };
 })();

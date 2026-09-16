@@ -65,8 +65,8 @@ test("a published project answers from its own files, and no model writes it", a
   const seen = await w.panels();
   assert.deepEqual(seen.filter(p => /does not publish a support agent/i.test(p)), [],
     `the window says the project publishes no support agent while offering its answers: ${JSON.stringify(seen)}`);
-  assert.match(w.log(), /ui noVendorPath .* published=true/,
-    `the window did not record reaching the published path:\n${w.log()}`);
+  await w.waitForLog(/ui noVendorPath .* published=true/,
+    "the window to record reaching the published path");
 
   // ---- walk it to the end ------------------------------------------------
   const chosen = await w.evaluate(`(() => {
@@ -120,9 +120,12 @@ test("a published project answers from its own files, and no model writes it", a
   assert.match(answer, /\d+\.\d+/,
     `the answer does not name a commit the project published:\n${answer.slice(0, 300)}`);
 
-  const log = w.log();
-  assert.match(log, /ui publishedPath: answered from the project's own files/,
-    `the window did not record answering from the project's files:\n${log}`);
+  // One settled snapshot for both: the second assertion is a *negative* one,
+  // and a negative read of a log still being written passes for the wrong
+  // reason — the line it looks for may simply not have arrived yet. Waiting
+  // for the positive line first is what makes the absence mean something.
+  const log = await w.waitForLog(/ui publishedPath: answered from the project's own files/,
+    "the window to record answering from the project's own files");
   assert.doesNotMatch(log, /falling through to the model/,
     `a model was reached on a path that had a published answer:\n${log}`);
 });

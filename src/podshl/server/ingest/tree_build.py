@@ -231,6 +231,24 @@ def _build(rules: list[_Rule], decided: set[str], probes: dict[str, dict],
         raise IngestRefused(f"{problem_class}: no comparator for {fact!r}")
 
     ordered = sorted(branches.values(), key=lambda ov: (ov[0] != "eq", json.dumps(ov[1], sort_keys=True)))
+    # **A solution that says nothing about this switch applies under every value
+    # of it, including the ones nobody named.** It used to apply only under the
+    # values somebody else's rule happened to create, because those were the
+    # only children there were — so a reading outside them fell off the tree and
+    # took that solution with it.
+    #
+    # engram published `wrong-archive-for-this-system`: the operating system and
+    # the download, nothing about the architecture. Another rule named
+    # `os.arch: aarch64`, so `os.arch` became the switch and grew one child; on
+    # an ordinary x86_64 Linux desktop nothing matched, the walk stopped at the
+    # answer above, and somebody holding the Windows archive was told to go and
+    # find out which archive they had. The right answer was published, mirrored,
+    # signed, and unreachable.
+    #
+    # So the branches the author named are followed by one for everything else,
+    # carrying exactly the rules that did not constrain this fact. Last, because
+    # a named value must always win over it.
+    unconstrained = [r for r in remaining if fact not in r.when]
     for op, value in ordered:
         # A solution that does not constrain this fact still applies on every
         # branch of it — it simply has nothing to say about this switch.
@@ -264,6 +282,19 @@ def _build(rules: list[_Rule], decided: set[str], probes: dict[str, dict],
             and node.children[0].solution_id and not node.children[0].fallback_only):
         node.solution_id = node.children[0].solution_id
         node.fallback_only = True
+
+    # Appended after that check rather than before it, so a class whose single
+    # named value the problem class already implies keeps its `SV109` fallback:
+    # the catch-all is about values, and that rule is about a question nobody
+    # needs to be asked.
+    if unconstrained:
+        other = _build(unconstrained, decided | {fact}, probes, counter, depth + 1,
+                       problem_class, above=above or node.solution_id is not None)
+        other.parent_id = node.id
+        other.match_op = "any"
+        other.match_value = None
+        other.edge_label = f"{fact} — any other value"
+        node.children.append(other)
     return node
 
 

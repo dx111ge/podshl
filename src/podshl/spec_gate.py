@@ -137,6 +137,33 @@ def check_read(read: dict) -> None:
         raise SpecError(
             f"read op {op!r} is not in the vocabulary — permitted: {sorted(ops)}")
 
+    # **A reading that can never read anything is a broken document, and it used
+    # to pass.** The op was checked and the parameters were not, so
+    # `{op: os_fact, name: name}` was accepted, returned nothing on every
+    # machine, and said nothing about returning nothing. engram shipped it: its
+    # `os.name` probe was silently empty for as long as it existed, every rule
+    # that needed the operating system could never match, and somebody on Linux
+    # holding the Windows archive was told nothing was wrong.
+    #
+    # The `run_tool` branch below already learnt this exact lesson for tools,
+    # down to the sentence about how a measurement becomes a claim. This is the
+    # same gate one door along.
+    #
+    # The permitted names are read out of the vocabulary rather than written
+    # here, so the spec stays the one place a publisher and this check both
+    # look. `client-rs`'s `vocabulary_matches_the_spec` holds that line to what
+    # the client actually implements.
+    if op == "os_fact":
+        ops_by_name = {o["op"]: o for o in v["ops"]}
+        declared = (ops_by_name["os_fact"].get("params") or {}).get("name", "")
+        allowed = [n.strip() for n in str(declared).split("|") if n.strip()]
+        name = read.get("name")
+        if name not in allowed:
+            raise SpecError(
+                f"os_fact cannot answer {name!r} — it answers {sorted(allowed)}. A probe "
+                f"naming anything else reads nothing at all, on every machine, and no rule "
+                f"that needs it can ever match")
+
     if op == "run_tool":
         tools = {t["tool"]: t["args"] for t in v["tools"]}
         tool = read.get("tool")

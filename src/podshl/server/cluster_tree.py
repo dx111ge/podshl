@@ -39,7 +39,19 @@ from .errors import IngestRefused
 #: The whole comparison vocabulary. Deliberately small and total: every operator
 #: here has one meaning, and there is no regular expression, no distance and no
 #: threshold anywhere in it.
-OPS = ("eq", "lt", "le", "gt", "ge", "in")
+#: `any` is the branch for every value the author did not name, and it exists
+#: because a solution that says nothing about a switch still applies underneath
+#: it. Without it such a solution lived only inside the branches some *other*
+#: solution happened to create, and any reading outside those fell off the tree
+#: carrying it — an answer somebody published that could not be reached on the
+#: commonest machine there is. Found on 2026-09-16: engram's
+#: `wrong-archive-for-this-system` constrains the operating system and the
+#: download and says nothing about the architecture, so it sat under
+#: `os.arch eq aarch64` and an ordinary x86_64 desktop was told to go and find
+#: out which archive it had, forever.
+#:
+#: It matches everything, so it is always the last child and never an `eq`.
+OPS = ("eq", "lt", "le", "gt", "ge", "in", "any")
 COMPARATORS = ("string", "number", "version")
 
 
@@ -126,6 +138,12 @@ def matches(value: Any, op: str, expected: Any, comparator: str) -> bool:
     make an unreadable reading indistinguishable from one that genuinely did not
     match, and the two lead to different places.
     """
+    # Every value, including one this comparator could not read — which is the
+    # point: the solutions under this branch do not mention the fact at all, so
+    # there is nothing here that could fail to be comparable.
+    if op == "any":
+        return True
+
     if op == "in":
         if not isinstance(expected, (list, tuple)):
             raise ValueError("`in` needs a list")
@@ -202,6 +220,18 @@ def validate_tree(root: Node) -> None:
         # runtime by taking the first match in declaration order, which the
         # author controls — but two `eq` on the same value is unambiguously a
         # mistake rather than a priority.
+        # And at most one catch-all, always last: two would be a coin flip and
+        # one in front of a named value would hide it.
+        catch = [i for i, c in enumerate(node.children) if c.match_op == "any"]
+        if len(catch) > 1:
+            raise IngestRefused(
+                f"node {node.id} has two catch-all branches on {node.switch_fact} — "
+                f"a user would be waiting on a coin flip")
+        if catch and catch[0] != len(node.children) - 1:
+            raise IngestRefused(
+                f"node {node.id}: the catch-all branch on {node.switch_fact} comes before "
+                f"a named value, which it would match in its place")
+
         seen = []
         for child in node.children:
             if child.match_op == "eq":

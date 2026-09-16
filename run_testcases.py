@@ -812,6 +812,16 @@ def _():
     sv("sv106_the_dashboard_puts_the_work_first")
 
 
+@case("SV121", "A project that never changes is asked about less and less")
+def _():
+    sv("sv121_a_project_that_never_changes_is_asked_about_less_and_less")
+
+
+@case("SV120", "A solution that ignores a switch is reachable under every value of it")
+def _():
+    sv("sv120_a_solution_that_ignores_a_switch_is_reachable_under_every_value_of_it")
+
+
 @case("SV111", "The privacy notice names its controller, and every page links it")
 def _():
     sv("sv111_the_privacy_notice_names_its_controller_and_every_page_links_it")
@@ -1397,6 +1407,12 @@ def _():
     cargo("i18n::tests::every_translation_keeps_the_placeholders_english_declares")
 
 
+@case("I7", "The index names every language and the window loads two of them [rust]")
+def _():
+    cargo("i18n::tests::the_index_names_every_language_and_only_those")
+    cargo("i18n::tests::the_window_takes_its_languages_from_the_index")
+
+
 # ------------------------------------------------------------------- platform
 
 @case("L6", "A closed pipe ends the program quietly, not with a core dump [rust]")
@@ -1621,15 +1637,39 @@ def _():
     assert out.get("confidence") == "rests_on_supplied", (
         "an answer that turned on something a person typed must say so")
 
-    # And the one that must not match: the same class on a machine the rule does
-    # not cover. A published answer that fires anyway is worse than none.
+    # **The case the whole OS reading exists for**, and it was wrong twice over
+    # on 2026-09-16: the probe read nothing because it asked `os_fact` for a
+    # fact it does not answer, and once that was fixed the answer was still
+    # unreachable on an x86_64 desktop, because it says nothing about the
+    # processor and the tree had only branched on the one value another rule
+    # named (`SV120`). Somebody on Linux holding the Windows archive was told
+    # nothing was wrong, both times.
+    wrong_os = client("ask_published", {
+        "base": "https://sdota.de",
+        "subject": "https://github.com/dx111ge/engram/",
+        "problemClass": "engram.start.wrong-build",
+        "facts": {"os.arch": "x86_64", "os.name": "linux",
+                  "engram.download": "engram-windows-x86_64.zip"},
+        "stated": ["engram.download"]})
+    assert wrong_os.get("outcome") == "finding", wrong_os
+    assert wrong_os["solution"]["solution_id"] == "wrong-archive-for-this-system", (
+        f"the Windows archive on a Linux desktop was not named: {wrong_os['solution']}")
+
+    # And the same class where the rule genuinely does not apply: the archive
+    # matches the machine, so nothing specific fires and the class's own
+    # fallback answers instead of a rule about somebody else's machine. A
+    # published answer that fires anyway is worse than none.
     other = client("ask_published", {
         "base": "https://sdota.de",
         "subject": "https://github.com/dx111ge/engram/",
         "problemClass": "engram.start.wrong-build",
-        "facts": {"os.arch": "x86_64", "engram.download": "engram-linux-x86_64.zip"},
+        "facts": {"os.arch": "x86_64", "os.name": "linux",
+                  "engram.download": "engram-linux-x86_64.zip"},
         "stated": ["engram.download"]})
-    assert other.get("outcome") == "no_statement", other
+    assert other.get("outcome") == "finding", other
+    assert other["solution"]["solution_id"] == "find-out-which-archive", (
+        f"an answer about the wrong archive was given to somebody with the right one: "
+        f"{other['solution']}")
 
     # Somebody else's repository on the same forge reaches none of it.
     stranger = client("ask_published", {
@@ -2800,6 +2840,20 @@ def _():
          "glossary": "brain, wheel",
          "escalate": {"on": True, "reason": "Nothing explains it", "queue": "github-issues",
                       "target": "https://github.com/x/proj/issues", "reply_via": ["ticket_url", "none"]}},
+        # **A project that has stopped, which is the one shape the builder could
+        # not express.** `successor` is a key ingest accepts and the form had no
+        # field for, so a maintainer following "Saying a project is finished" in
+        # INTEGRATING.md had to hand-edit the file the builder wrote. Nothing was
+        # lost when they loaded it back — unknown keys are kept verbatim — but
+        # "keeps it if you typed it elsewhere" is not the same as "can write it".
+        {"anchor": "https://example.org/stopped/", "commit": "v9.9.9", "status": "deprecated",
+         "successor": "https://example.org/the-one-that-took-over", "langs": "en",
+         "classes": ["stopped.install.wrong-archive"],
+         "probes": [{"kind": "machine", "id": "os.name", "op": "os_fact", "params": {"name": "os"}}],
+         "solutions": [{"id": "wrong-archive", "problem_class": "stopped.install.wrong-archive",
+                        "when": [{"fact": "os.name", "op": "=", "value": "linux"}],
+                        "severity": "low", "action": "report_only",
+                        "body": "This project has stopped. Use the successor."}]},
         # The example the page itself offers.
         {"anchor": "https://example.org/your-project/", "commit": "v1.0.0", "langs": "en",
          "classes": ["your-project.install.wrong-archive"],
@@ -2830,6 +2884,14 @@ def _():
         f"the builder dropped the sentence a class is picked by:\n{first}")
     assert '- "proj.search.empty"' in first, (
         f"a class with no sentence was promoted to a mapping:\n{first}")
+    stopped = written[1]["agent.yaml"]
+    assert 'status: deprecated' in stopped and \
+           'successor: "https://example.org/the-one-that-took-over"' in stopped, (
+        f"the builder cannot say where a stopped project continues:\n{stopped}")
+    # And never on a project that has not stopped: a successor to something
+    # still running is a claim nobody can act on.
+    assert "successor:" not in first, (
+        f"an active project was given a successor:\n{first}")
     for draft, files in zip(drafts, written):
         solutions = {k: v for k, v in files.items() if k != "agent.yaml"}
         assert len(solutions) == len(draft["solutions"]), files.keys()

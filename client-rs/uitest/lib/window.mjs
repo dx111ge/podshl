@@ -169,6 +169,45 @@ export async function openWindow({ port = 9444, env = {} } = {}) {
       `  the client log:\n${log().split("\n").map(l => "    " + l).join("\n")}`);
   }
 
+  /** Wait until the client log matches, and say what was being waited for.
+   *
+   *  **The log is written behind the DOM, on purpose.** `logUi` is
+   *  `Promise.resolve(invoke("log_line", ...)).catch(() => {})` — fire and
+   *  forget, so that writing a line can never stall or break the flow it is
+   *  describing. The consequence is that the line arrives a moment *after* the
+   *  panel whose appearance proves it happened.
+   *
+   *  Reading the log once, at the instant a panel appears, is therefore a race.
+   *  It was one: on 2026-09-16 the first run of the day reported that the window
+   *  "did not record reaching the published path" about a window that had just
+   *  drawn the published panel, and every run after it passed. A flaky test is
+   *  worse than a red one, because a red one is read and a flaky one is re-run.
+   *
+   *  **Observed once, and it would not reproduce on demand** -- not with a cold
+   *  index cache, not on either version. So this is a fix argued from the code
+   *  rather than one demonstrated by turning it red again, and that is said out
+   *  loud rather than dressed up. Waiting cannot be worse than reading once.
+   *
+   *  This waits instead, and still fails — with the whole log — if the line
+   *  never comes. Returns the log it matched, so a caller can make its *other*
+   *  assertions against one settled snapshot rather than re-reading a moving
+   *  file. */
+  async function waitForLog(re, what, ms = 10000) {
+    const until = Date.now() + ms;
+    for (;;) {
+      const seen = log();
+      if (re.test(seen)) return seen;
+      if (Date.now() >= until) {
+        throw new Error(
+          `timed out after ${ms}ms waiting for ${what} in the client log.\n` +
+          `  looked for: ${re}\n` +
+          `  panels on screen: ${JSON.stringify(await panels())}\n` +
+          `  the client log:\n${seen.split("\n").map(l => "    " + l).join("\n")}`);
+      }
+      await sleep(100);
+    }
+  }
+
   /** The heading of every panel, which is what a person sees. */
   const panels = () => evaluate(
     `[...document.querySelectorAll(".panel")].map(p => (p.querySelector("h3")||p).textContent.trim())`);
@@ -183,5 +222,5 @@ export async function openWindow({ port = 9444, env = {} } = {}) {
     for (let i = 0; i < 20 && !child.killed; i++) await sleep(100);
   }
 
-  return { evaluate, waitFor, panels, log, close, logFile };
+  return { evaluate, waitFor, waitForLog, panels, log, close, logFile };
 }

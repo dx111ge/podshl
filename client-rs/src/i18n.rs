@@ -3,7 +3,18 @@
 //! A support client that speaks one language is not a horizontal layer, and
 //! this product's own argument is that the localisation matrix should collapse
 //! onto the client rather than onto the vendor. So adding a language is one
-//! file and one pull request — and the keys are the contract.
+//! file, one line in `languages.json`, and one pull request — and the keys are
+//! the contract.
+//!
+//! **That promise was not keepable until 2026-09-16.** This repository is
+//! developed in one place and published to another, and the publication copies
+//! over the public checkout — so the first contributed language would have been
+//! deleted by the next release, as one `D` line in a diff somebody was asked to
+//! read. The step that publishes now refuses instead of overwriting, and
+//! `CONTRIBUTING.md` describes the way in. (That script is not named here: it
+//! stays in the working repository, and a published file pointing at something
+//! nobody outside can read is a dangling reference — `P8`, which caught this
+//! paragraph.)
 //!
 //! **A missing key falls back to English silently.** In a consent dialogue that
 //! is the failure that matters: it looks like a design choice rather than a
@@ -26,6 +37,23 @@ pub fn dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("ui").join("i18n")
 }
 
+/// The index beside them: every code, and the name that language calls itself.
+///
+/// **It exists because the window stopped loading all of them.** A table is
+/// 42 KB and the window used to fetch every one at startup to use a single one
+/// — 169 KB for four, and this product's own argument is that the localisation
+/// matrix collapses onto the client, so four is the small case, not the large
+/// one. It now fetches English (the fallback every sentence can fall back to)
+/// and the chosen language, and nothing else. What it still needs from the rest
+/// is one string each, to draw the picker — which is this file.
+///
+/// A directory cannot be listed over `fetch`, and in a bundled application
+/// `ui/` is inside the binary rather than on disk, so the binary cannot list it
+/// either. Hence a file, and hence the test below holding it to the directory:
+/// an index that disagrees with what is there offers a language that will not
+/// load, or hides one that would.
+pub const INDEX: &str = "languages.json";
+
 /// Every language file, by code, parsed. Fails loudly rather than returning an
 /// empty map: no languages at all must never look like no problem.
 pub fn tables() -> BTreeMap<String, Value> {
@@ -35,6 +63,11 @@ pub fn tables() -> BTreeMap<String, Value> {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        // The index is not a language, and reading it as one would invent a
+        // table called `languages` with no `_name` in it.
+        if path.file_name().and_then(|f| f.to_str()) == Some(INDEX) {
             continue;
         }
         let code = path
@@ -50,6 +83,14 @@ pub fn tables() -> BTreeMap<String, Value> {
     }
     assert!(!out.is_empty(), "no language files in {}", d.display());
     out
+}
+
+/// The index, parsed.
+pub fn index() -> BTreeMap<String, String> {
+    let p = dir().join(INDEX);
+    let raw = std::fs::read_to_string(&p)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()));
+    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", p.display()))
 }
 
 #[cfg(test)]
@@ -140,6 +181,41 @@ which in a consent dialogue reads as a design choice rather than a gap"
         }
     }
 
+    /// I7: the index names exactly the languages that exist, by the name each
+    /// one gives itself.
+    ///
+    /// The window draws its picker from the index and fetches a table only when
+    /// it is chosen, so the two failures this prevents are both silent from the
+    /// window's side: a code in the index with no file behind it offers a
+    /// language that fails to load when somebody picks it, and a file with no
+    /// entry is a language nobody can reach. Neither shows up in `I1`, which
+    /// only compares the tables that were found.
+    #[test]
+    fn the_index_names_every_language_and_only_those() {
+        let tables = tables();
+        let index = index();
+
+        let have: Vec<&String> = tables.keys().collect();
+        let listed: Vec<&String> = index.keys().collect();
+        assert_eq!(
+            have, listed,
+            "languages.json lists {listed:?} and the directory holds {have:?} — a code with no \
+             file behind it is a language that fails to load when somebody picks it, and a file \
+             with no entry is one nobody can reach"
+        );
+
+        for (code, table) in &tables {
+            let own = table.get("_name").and_then(|v| v.as_str()).unwrap_or_default();
+            assert_eq!(
+                index.get(code).map(String::as_str),
+                Some(own),
+                "{code} calls itself {own:?} and the index calls it \
+                 {:?} — the picker would show a name the language does not use",
+                index.get(code)
+            );
+        }
+    }
+
     /// Placeholders are part of the contract too: a translation that drops
     /// `{n}` renders a sentence with a hole where the number should be, and
     /// nothing else would catch it.
@@ -175,33 +251,44 @@ which in a consent dialogue reads as a design choice rather than a gap"
         }
     }
 
-    /// The client loads exactly these files by name, so a file nobody loads is
-    /// a translation nobody sees — and a name in the list with no file behind it
-    /// is a startup failure.
+    /// The window finds its languages in the index, and carries no list of its
+    /// own to drift from the directory.
+    ///
+    /// **This case used to say the opposite.** The window declared
+    /// `const LANGUAGES = ["de", "en", "fr", "es"]` and fetched every one of
+    /// them at startup, and this test held that array to the directory. Both
+    /// halves were wrong for a product whose own argument is that the
+    /// localisation matrix collapses onto the client: the array was a second
+    /// place to maintain, and fetching all of them cost 42 KB per language to
+    /// use one — 169 KB at four, and four is the small case.
+    ///
+    /// So the list moved into `languages.json`, where `I7` holds it to the
+    /// files, and the window loads English and the chosen language only. What
+    /// this checks is that it has not grown a private list again, which is the
+    /// one way the index could stop being the truth.
     #[test]
-    fn the_window_loads_every_language_that_exists() {
+    fn the_window_takes_its_languages_from_the_index() {
         let ui = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/index.html"))
             .expect("cannot read index.html");
-        let declared = ui
-            .split("const LANGUAGES = [")
-            .nth(1)
-            .and_then(|s| s.split(']').next())
-            .expect("index.html no longer declares LANGUAGES");
-        for code in tables().keys() {
-            assert!(
-                declared.contains(&format!("\"{code}\"")),
-                "{code}.json exists but the window never loads it"
-            );
-        }
-        for quoted in declared.split(',') {
-            let code = quoted.trim().trim_matches('"').trim();
-            if code.is_empty() {
-                continue;
-            }
-            assert!(
-                dir().join(format!("{code}.json")).exists(),
-                "the window loads {code}, which has no file — that is a startup failure"
-            );
-        }
+        assert!(
+            ui.contains("i18n/languages.json"),
+            "the window no longer reads the index, so nothing says which languages exist"
+        );
+        assert!(
+            !ui.contains("const LANGUAGES = ["),
+            "the window declares its own list of languages again — that is a second place to \
+             maintain, and `I7` cannot see it"
+        );
+        // English is not optional: every sentence falls back to it, and the
+        // binary's messages are recognised by their English template.
+        assert!(
+            ui.contains("loadTable(\"en\")"),
+            "the window does not load English unconditionally, so a missing key in the chosen \
+             language has nothing to fall back to"
+        );
+        assert!(
+            dir().join("en.json").exists(),
+            "there is no English table to fall back to"
+        );
     }
 }

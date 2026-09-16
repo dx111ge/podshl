@@ -1,0 +1,68 @@
+# Support PODSHL publishes about itself.
+#
+# The directory had one project in it, and it was not this one. That is a
+# strange thing for a product whose whole argument is that a project should
+# write its own answers down — so this is the same manifest any other project
+# writes, under the same rules, fetched by the same worker, and wrong in the
+# same ways if we get it wrong.
+#
+# Everything here is taken from `INSTALL.md` and `RELEASING.md`. No symptom is
+# described that is not already documented, and the decisive fact in each class
+# is a reading rather than a question: a person whose window never appeared
+# cannot be asked to describe a window.
+
+endpoint: https://github.com/dx111ge/podshl/issues
+commit: v0.1.4
+status: active
+
+langs: [en, de]
+
+# Ours, and a small model turns each of them into something else. `PODSHL` came
+# back capitalised differently and once as a translated noun; the three
+# technical names are other people's and a translation of them is simply wrong.
+glossary:
+  keep: [PODSHL, WebKitGTK, WebView2, Wayland]
+
+# What a person sees, in the words they would use. Not "DMA-BUF renderer
+# failure" -- somebody whose icon does nothing does not know that is what it is,
+# and if they did they would not need us.
+problem_classes:
+  - id: podshl.start.nothing-happens
+    describes: Nothing happens when I start it - no window, and no error I can see
+  - id: podshl.start.refused-by-the-system
+    describes: Windows or macOS refuses to open it
+  - id: podshl.model.key-not-kept
+    describes: The model settings will not keep my API key
+
+collect:
+  - id: os.name
+    kind: machine
+    describes: Operating system
+    why: The three packages are different files and each system refuses an
+         unsigned one in its own way
+    read: { op: os_fact, name: os }
+
+  # The one reading that decides the first class. An X11 session with the same
+  # build and the same graphics card does not have this problem at all, so an
+  # answer given without reading it would be advice for the wrong half of the
+  # users.
+  - id: session.type
+    kind: machine
+    describes: Whether this is a Wayland or an X11 session
+    why: The window failure this answers exists only under Wayland
+    read: { op: env_var, name: XDG_SESSION_TYPE }
+
+escalate:
+  reason: Nothing published matches this, and a client that will not start is
+          the failure we most need to hear about - there is no diagnosis to
+          run once the window is gone
+  queue: github-issues
+  target: https://github.com/dx111ge/podshl/issues
+  reply_via: [ticket_url, none]
+
+solutions:
+  - solutions/wayland-window-never-appears.md
+  - solutions/start-it-from-a-terminal.md
+  - solutions/windows-smartscreen.md
+  - solutions/macos-quarantine.md
+  - solutions/linux-has-no-secret-service.md

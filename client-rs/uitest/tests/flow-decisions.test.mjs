@@ -78,13 +78,68 @@ test("an operator that could not be reached is not a refusal and not a verdict",
     "a project that publishes answers was announced as publishing none, because the network failed");
 });
 
-test("the person declining is a choice, and the model may follow it", () => {
+test("saying none of them fit is not asking for a guess", () => {
+  // This case said the opposite until 2026-09-16: *"the person declining is a
+  // choice, and the model may follow it"*, asserting `to-model`. A person on the
+  // first Omarchy desktop this ran on rejected three published classes and a
+  // cloud agent began questioning them about a project it had never been told
+  // the name of. "None of these fit" is a statement about the classes, and the
+  // window read it as permission.
   const declined = Flow.planAfter("declined", { published: true });
-  assert.equal(declined.kind, "to-model");
+  assert.equal(declined.kind, "offer-elsewhere");
   assert.equal(declined.because, "declined");
-  // Accurate here: `discover` established there is no Agent Card before any of
-  // this ran, and the published answers did not resolve it.
-  assert.equal(declined.sayNoAgent, true);
+  assert.notEqual(declined.kind, "to-model", "a refusal was read as a request for a guess");
+  // And the maintainer hears it. This is the whole of what the person just
+  // said — your published problems do not include mine — and it is the one
+  // thing that never reached anybody: asking runs in a read-only transaction,
+  // so a run that ends here leaves no trace at the operator whatsoever.
+  assert.equal(declined.tell, "uncovered",
+    "somebody said none of the published problems fitted and nobody was told");
+});
+
+test("rules that said nothing are not an invitation either", () => {
+  // Decided the other way an hour earlier, and corrected by reading the log of
+  // that same desktop. Nobody rejects anything here: a class was picked, the
+  // readings were taken, and the publisher's rules produced no statement.
+  //
+  // It is the worse case rather than the milder one. A publisher who writes
+  // `escalate` has said in their own manifest what happens when nothing matches
+  // — engram's reads "Nothing published matches these readings, and it may be a
+  // defect rather than a setup problem" — so starting a model there does not
+  // fill a gap, it overrides an instruction.
+  const nothing = Flow.planAfter("nofinding", { published: true });
+  assert.equal(nothing.kind, "offer-elsewhere");
+  assert.equal(nothing.because, "nofinding");
+  assert.equal(nothing.tell, "uncovered", "rules that matched nothing told nobody");
+});
+
+test("the two ways of reaching nothing are told to the maintainer as one word", () => {
+  // Deliberately one label for two different events. A maintainer reading a
+  // dashboard is answering one question — is there an answer here I have not
+  // written? — and splitting `uncovered` in two would make them read two
+  // columns to answer it. `because` keeps the distinction for anybody who
+  // wants it; `resolved_by` keeps it in the report.
+  const tells = Flow.OUTCOMES
+    .map(o => Flow.planAfter(o, { published: true }))
+    .filter(p => p.kind === "offer-elsewhere")
+    .map(p => p.tell);
+  assert.deepEqual(tells, ["uncovered", "uncovered"]);
+  // And no other plan claims an outcome it has not got. `to-model` ends in the
+  // model path's own report, `offer-retry` in nothing having happened yet.
+  for (const o of Flow.OUTCOMES) {
+    const plan = Flow.planAfter(o, { published: true });
+    if (plan.kind !== "offer-elsewhere") {
+      assert.equal(plan.tell, undefined, `${o} plans ${plan.kind} and claims to report ${plan.tell}`);
+    }
+  }
+});
+
+test("a hit with no published answers has nobody to defer to", () => {
+  // The line between asking and proceeding. `none` means the project published
+  // nothing that could have matched, so there is no rejected choice and no
+  // instruction being overridden — a model is the only thing there is.
+  assert.equal(Flow.planAfter("none", { published: false }).kind, "to-model");
+  assert.equal(Flow.planAfter("reads", { published: false }).kind, "to-model");
 });
 
 test("an answer ends it, and nothing is said afterwards", () => {
@@ -257,10 +312,13 @@ test("every outcome the page can return is one this file knows", () => {
   for (const r of new Set(returned)) {
     assert.ok(Flow.OUTCOMES.includes(r), `publishedPath returns ${r}, which flow.js does not know`);
   }
-  // And each one has a plan.
+  // And each one has a plan this file knows. The list used to be written out
+  // here, so adding a plan meant editing a test that was about outcomes — and
+  // the day `offer-elsewhere` arrived, this failed saying "declined has no
+  // plan", which is true of the list and false of the code.
   for (const o of Flow.OUTCOMES) {
-    assert.ok(["done", "offer-retry", "to-model"].includes(Flow.planAfter(o, {}).kind),
-      `${o} has no plan`);
+    const kind = Flow.planAfter(o, {}).kind;
+    assert.ok(Flow.PLANS.includes(kind), `${o} plans ${kind}, which flow.js does not list`);
   }
 });
 

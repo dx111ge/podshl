@@ -144,6 +144,32 @@ brain as Wissensspeicher in German* — was measured too, and the models it woul
 reach did not apply it, so the format has no field for one and a manifest that
 writes one is refused. At most 50 terms, each one line of at most 64 characters.
 
+### Where a case goes when nothing you published covers it
+
+```yaml
+escalate:
+  reason: Nothing published matches these readings, and it may be a defect
+          rather than a setup problem
+  queue: github-issues
+  target: https://github.com/you/your-project/issues
+  reply_via: [ticket_url, none]
+```
+
+A diagnosis that finds no answer ends with **Markdown the person takes to you**:
+everything they were asked and everything the machine read, anonymised, shown
+before it is copied and editable first. `target` is the address shown beside it.
+Without it the panel says "take this to the project" and leaves somebody holding
+a finished bug report with nowhere named — which is what it did until
+2026-09-16, to projects that had written the address down.
+
+`reply_via` says what you promise. `ticket_url` means they get a link to follow;
+`none` is a real answer and a better one than silence. There is deliberately no
+inbound channel on their machine, so nothing here can call them back.
+
+**This is not an automatic path into your tracker, and there is not one yet.**
+The person carries it, which is why it works with any tracker at all. `README.md`
+under *Your own ticket system* says what is planned and what is excluded.
+
 ### A solution
 
 YAML front matter and a human body, so one solution is one pull request — the
@@ -458,6 +484,110 @@ rotation or a takeover and we cannot tell which. Shown, because a takeover has
 to register a new key against an existing anchor, and that is exactly what this
 makes visible. **Key continuity is the tripwire; the checking cadence only
 catches abandonment.**
+
+## What you serve, and what a client refuses
+
+`SPEC.md` is the protocol. This is the operational half of it: the four things
+a client asks of you, in the order it asks them, and the exact conditions under
+which it walks away. Every refusal below is one the client implements today, not
+one it might.
+
+### 1. The address
+
+Off this machine, **HTTPS or nothing**. A plain-text base is refused before a
+byte is sent, and loopback is the only exception — `127.0.0.1`, `localhost`,
+`[::1]` and the rest of `127/8`, which have no wire to listen on. A private
+address is not an exception: `http://10.0.0.5` and `http://192.168.0.26` are
+refused like any other.
+
+A plain connection cannot forge a signed remedy, so this is not about your
+answer. It is about the *readings* travelling to you — everything the client
+coarsened and anonymised before transmission — being readable by anybody on the
+path.
+
+### 2. The card
+
+`GET /.well-known/agent-card.json`. Three distinct outcomes, and only one of
+them is your fault:
+
+| What happens | What the client concludes |
+|---|---|
+| 404, or a body that is not JSON | **no agent here.** Not an error, not a refusal — it says you publish no support agent and moves on |
+| Connection refused, DNS failure, timeout | **nobody there.** Reported as unreachable, never as "publishes nothing" |
+| A card, but unsigned or unverifiable | **refused.** This is the only one that is a fault, and it is yours |
+
+That first row matters more than it looks. A project with no card and a project
+whose host is down were once the same sentence to a user, and they are not the
+same thing at all.
+
+### 3. The signature, and where its key comes from
+
+The card carries `signatures`, a detached JWS over the card **with
+`signatures` removed**. The client rebuilds that body itself and verifies
+against it, so anything you add outside the signature changes nothing and
+convinces nobody.
+
+**The key is not in the card.** A card verified against a key it carries proves
+internal consistency and nothing else — it is a signature checking itself. The
+client resolves a key for your host *out of band* and refuses the card outright
+if it has none, naming the source it looked in. Getting a key to that resolver
+is the part that costs you something, and that is the point.
+
+The verified `protected` header is where the client reads `org`, `lei` and
+`kid`. Not the card body — the body is not what was signed over in the eyes of
+anybody checking.
+
+### 4. The exchange
+
+Two messages. `triage` carries the problem and a language and gets back a skill,
+or no skill at all, which is a perfectly good answer. **A malformed skill is
+your fault and is named as yours**: the client parses it the moment it arrives
+rather than letting it surface as an empty probe list after somebody has already
+been asked to allow a reading.
+
+`diagnose` carries the facts, and with them two values you must sign back:
+
+```json
+{ "kind": "diagnose", "skill_id": "...", "facts": { }, "lang": "en",
+  "nonce": "<32 chars, fresh per request>",
+  "facts_sha256": "<sha256 of the JCS-canonicalised facts>" }
+```
+
+A remedy is accepted **only** as the answer to the request that asked for it.
+The client refuses one whose `nonce`, `skill_id` or `facts_sha256` is not the
+one it sent, and refuses one carrying **no nonce at all** — which is what a
+replayed answer, or a vendor predating the binding, looks like. The refusal is
+the same in every case: *this finding is not for this request*.
+
+Sign over what you were asked, not over what you would like to have been asked.
+
+### What you may ask to be read, and what will be refused anyway
+
+Your skill names probes. The client plans every reading **before** it asks
+anybody for consent, and refuses out-of-bounds ones there rather than after —
+offering somebody a choice you would decline anyway is how people are trained to
+click through.
+
+More than **24** machine probes in one skill is refused **as a whole** (`MAX_READS`).
+There
+is no per-item consent that adds up to enumerating a machine.
+
+Individual readings are refused with a kind, and the kinds are worth knowing
+before you write a skill: `absent` (the tool is not on this machine), `denied`
+(the client will not read this at all, consent or no consent — an SSH key, an
+identifying GPU field, an environment variable off the list), `system` (a
+program belonging to the operating system), `outside` (a path that leaves the
+project, including by backing out of it), and `invalid` (everything else — an
+unknown op, a flag that is not allowed, a tool that does not exist).
+
+Free text a person typed **never travels** to you by default, whatever your
+skill asks. It is offered separately, under its own consent, shown verbatim and
+editable first. That is not a setting.
+
+### What none of this buys you
+
+Access. A client that cannot reach us proceeds on the protocol's own trust, and
+that is deliberate rather than an oversight. See below.
 
 ## What you are paying for
 

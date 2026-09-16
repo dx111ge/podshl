@@ -645,13 +645,24 @@ def sv3_an_endpoint_outside_its_anchor_is_refused():
 def sv6_a_read_outside_the_vocabulary_is_refused_at_ingest():
     """SV6, and the sharp case is not an unknown tool but a known one asked to
     do something else: `python3 --version` is a reading, `python3 -c ...` is
-    arbitrary execution, and the difference is one argument."""
+    arbitrary execution, and the difference is one argument.
+
+    **The quietest case is a permitted op with a parameter it cannot answer.**
+    `{op: os_fact, name: name}` was accepted until 2026-09-16: the op was
+    checked and its parameters were not, so the probe read nothing on every
+    machine and said nothing about it. engram shipped exactly that, its
+    `os.name` was silently empty for as long as it existed, and somebody on
+    Linux holding the Windows archive was told nothing was wrong. A refusal at
+    ingest is a sentence the maintainer can act on; silence is a defect they
+    cannot see."""
     for read, why in (
         ({"op": "run_tool", "tool": "curl", "args": []}, "a tool off the allow list"),
         ({"op": "run_tool", "tool": "python3", "args": ["-c", "import os"]},
          "arbitrary code through a permitted tool"),
         ({"op": "read_everything"}, "an invented op"),
         ({"op": "read_file_key", "path": ".ssh/id_ed25519", "key": "x"}, "a denied path"),
+        ({"op": "os_fact", "name": "name"}, "a fact os_fact cannot answer"),
+        ({"op": "os_fact"}, "os_fact with no fact named at all"),
     ):
         m = _example_manifest()
         m["collect"].append({"id": "x", "kind": "machine", "read": read})
@@ -1155,7 +1166,7 @@ def sv29_sv30_sv32_an_answer_that_helped_some_is_shown_where_it_forks():
         b"  - id: os.arch\n    kind: machine\n    describes: Architecture\n"
         b"    why: the archives differ\n    read: { op: os_fact, name: arch }\n"
         b"  - id: os.name\n    kind: machine\n    describes: Operating system\n"
-        b"    why: the installers differ\n    read: { op: os_fact, name: name }\n"
+        b"    why: the installers differ\n    read: { op: os_fact, name: os }\n"
         b"solutions:\n  - solutions/arm.md\n")
     arm = (b"---\nid: arm\nanswers:\n  problem_class: demo.arch\n"
            b"  when:\n    os.arch: aarch64\nseverity: high\n"
@@ -1373,7 +1384,13 @@ def sv106_the_dashboard_puts_the_work_first():
         people("b", "unresolved", k + 1, {"os.name": "linux"})
         people("c", "resolved", k + 2, {"os.name": "linux"})
         people("d", None, k, {"os.name": "linux"})
-        people("e", "resolved", k + 4, {"os.name": "linux"})      # nothing answers "e"
+        # Nothing answers "e" — and since 2026-09-16 that is what these reports
+        # say. `uncovered` is the word for a run that reached the end of what a
+        # project published and found nothing: the person said none of the
+        # published problems is theirs, or the rules matched nothing. It used to
+        # be unsayable, so this configuration arrived labelled `resolved` — a
+        # report claiming an answer worked when there was no answer at all.
+        people("e", "uncovered", k + 4, {"os.name": "linux"})
 
         out = _dashboard(host, token)
         assert out["total"] == 7 and out["shown"] == 7, (out["total"], out["shown"])
@@ -1385,6 +1402,11 @@ def sv106_the_dashboard_puts_the_work_first():
         a = next(g for g in triage["answers"] if g["solution_id"] == "a")
         assert len(a["configurations"]) == 3 and a["worked"] == 2 * k and a["did_not"] == k + 3, a
         assert [rows[i]["typed"]["app.symptom"] for i in triage["not_answered"]] == ["e"], triage
+        # And the word survived the round trip rather than being refused after
+        # somebody pressed send: the CHECK, `OUTCOMES` and the client's own list
+        # have to agree, and the one that is hardest to notice is the database.
+        uncovered = rows[triage["not_answered"][0]]
+        assert uncovered["outcomes"].get("uncovered") == k + 4, uncovered["outcomes"]
         assert triage["summary"] == {"configurations": 7, "answers": 4, "not_answered": 1,
                                      "did_not_help": 1, "needs_a_distinction": 1,
                                      "nobody_said": 1, "working": 1}, triage["summary"]
@@ -1576,6 +1598,153 @@ def sv109_the_person_names_the_symptom_and_the_machine_picks_the_fix():
     out = cluster_tree.walk(root, {"os.name": "linux", "app.symptom.declined": True})
     assert isinstance(out, cluster_tree.Answer) and out.solution_id == "c-any-linux", (
         f"a skip now lands on the specific answer instead of the general one above it: {out}")
+
+
+def sv121_a_project_that_never_changes_is_asked_about_less_and_less():
+    """SV121. The crawl budget, which was a sentence in a docstring and not code.
+
+    Every source that answered was asked again in fifteen minutes, whether or not
+    anything had moved — `SERVER.md` puts the arithmetic on it, ten thousand
+    projects at that interval being eleven requests a second, nearly all `304`
+    about files nobody has touched since last year. Only a *failing* source
+    backed off, while `record_ingest`'s own docstring said "a source unchanged
+    for a month does not need asking every fifteen minutes".
+
+    The interval is a ramp off how long the source has been quiet — a
+    twenty-fourth of it, floored at fifteen minutes and capped at a day — and a
+    change puts it straight back to the floor, because the interesting period is
+    right after one.
+
+    **The cap is the load-bearing part.** Re-verification rides along with
+    ingest, and `stale` at fourteen days is a promise with a clock in it; at a
+    day's cap it holds with a factor of fourteen to spare. It is also why this is
+    a ramp rather than fetching when somebody asks: a fetch on the request path
+    would make our own fetch log a record of who asked about which project and
+    when, and asking is the one thing that leaves no trace here.
+    """
+    import secrets
+
+    from .ingest import store
+
+    class _Fetched:
+        etag = None
+        last_modified = None
+        reason = type("R", (), {"value": "ok"})()
+
+        def content_hash(self):
+            return bytes(32)
+
+    def interval_after(quiet_for: str, changed: bool) -> float:
+        """Minutes until the next fetch, for a source last changed `quiet_for` ago."""
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                # A suffix per run: the database outlives the suite here, and a
+                # case that can only pass once is a case nobody runs twice.
+                tag = secrets.token_hex(4)
+                host = f"quiet-{quiet_for}-{changed}-{tag}.example".replace(" ", "-").lower()
+                cur.execute("INSERT INTO anchor (kind, host, value, challenge_token, status) "
+                            "VALUES ('url', %s, %s, 'x', 'live') RETURNING id",
+                            (host, f"https://{host}/"))
+                anchor_id = cur.fetchone()["id"]
+                cur.execute(
+                    "INSERT INTO source (anchor_id, manifest_url, fetch_prefix, last_changed) "
+                    "VALUES (%s, 'https://quiet.example/.podshl/agent.yaml', "
+                    "        'https://quiet.example/', now() - %s::interval) RETURNING id",
+                    (anchor_id, quiet_for))
+                sid = cur.fetchone()["id"]
+            store.record_ingest(conn, sid, _Fetched(), changed=changed)
+            with conn.cursor() as cur:
+                cur.execute("SELECT EXTRACT(EPOCH FROM (next_fetch_at - now())) / 60 AS m "
+                            "FROM source WHERE id = %s", (sid,))
+                return float(cur.fetchone()["m"])
+
+    # The floor. A project that changed an hour ago is still asked promptly —
+    # right after a change is exactly when the next one is likely.
+    assert 14 <= interval_after("1 hour", False) <= 16, interval_after("1 hour", False)
+    # A week quiet: seven hours rather than fifteen minutes, which is 28 fetches
+    # a week instead of 672.
+    assert 6 * 60 <= interval_after("7 days", False) <= 8 * 60, interval_after("7 days", False)
+    # And the cap, which is what keeps `stale` at fourteen days a promise.
+    assert 23 * 60 <= interval_after("1 year", False) <= 24 * 60 + 1, interval_after("1 year", False)
+    # A change resets it, however long the quiet before it was.
+    assert 14 <= interval_after("1 year", True) <= 16, interval_after("1 year", True)
+
+
+def sv120_a_solution_that_ignores_a_switch_is_reachable_under_every_value_of_it():
+    """SV120. The answer that was published, mirrored, signed — and unreachable.
+
+    A solution says nothing about a fact. Another solution names one value of
+    it, so that fact becomes the switch and the node grows exactly one child —
+    and the first solution, which applies whatever the value is, lived only
+    inside that one child. Every other reading fell off the tree and took the
+    answer with it.
+
+    engram found it on 2026-09-16, on the machine of the person who reported it.
+    `wrong-archive-for-this-system` constrains the operating system and which
+    archive was downloaded and says nothing about the processor architecture;
+    `wrong-build-for-this-machine` names `os.arch: aarch64`. On an ordinary
+    x86_64 Linux desktop holding the Windows archive, nothing matched, the walk
+    stopped at the answer above, and the person was told to go and find out
+    which archive they had — the right answer sitting one branch away, under a
+    processor they did not have.
+
+    The remedy is a last child matching everything the author did not name,
+    carrying exactly the solutions that said nothing about the switch. Checked
+    here from both ends: the value nobody named finds the answer, and a named
+    value still wins over the catch-all rather than being swallowed by it.
+    """
+    from .errors import IngestRefused
+    from .ingest import tree_build
+
+    collect = [{"id": "os.arch", "kind": "machine", "read": {"op": "os_fact", "name": "arch"}},
+               {"id": "os.name", "kind": "machine", "read": {"op": "os_fact", "name": "os"}}]
+    # Says nothing about the architecture: it is true on every processor.
+    anywhere = {"id": "wrong-os", "answers": {"problem_class": "app.start",
+                                              "when": {"os.name": "linux"}}}
+    # Names one, which is what made it the switch.
+    arm_only = {"id": "wrong-arch", "answers": {"problem_class": "app.start",
+                                                "when": {"os.arch": "aarch64"}}}
+    root = tree_build.build("app.start", [anywhere, arm_only], collect)
+
+    # The desktop the defect was found on.
+    out = cluster_tree.walk(root, {"os.name": "linux", "os.arch": "x86_64"})
+    assert isinstance(out, cluster_tree.Answer) and out.solution_id == "wrong-os", (
+        f"an answer that holds on every processor was unreachable on x86_64: {out}")
+
+    # And the named value is still preferred where it applies, rather than the
+    # catch-all matching in its place: `any` is always the last child.
+    out = cluster_tree.walk(root, {"os.name": "windows", "os.arch": "aarch64"})
+    assert isinstance(out, cluster_tree.Answer) and out.solution_id == "wrong-arch", out
+
+    # A tree with no such solution grows no catch-all, so nothing widens that
+    # was narrow before: a reading outside every named value still says nothing.
+    both = tree_build.build("app.start", [
+        {"id": "x", "answers": {"problem_class": "app.start",
+                                "when": {"os.name": "linux", "os.arch": "aarch64"}}},
+        {"id": "y", "answers": {"problem_class": "app.start",
+                                "when": {"os.name": "linux", "os.arch": "x86_64"}}}], collect)
+    assert all(c.match_op != "any" for c in both.children), (
+        "a catch-all was grown where every solution constrains the switch")
+    out = cluster_tree.walk(both, {"os.name": "macos", "os.arch": "x86_64"})
+    assert isinstance(out, cluster_tree.NoStatement), (
+        f"an unnamed operating system was answered by a rule about another one: {out}")
+
+    # The tree is refused if a catch-all is ever placed in front of a named
+    # value, which is the one way this could hide an answer instead of adding
+    # one. Built by hand, because the builder is what is being guarded against.
+    hidden = cluster_tree.Node(id=1, parent_id=None, depth=0, switch_fact="os.arch",
+                               switch_kind="reading", comparator="string", solution_id="above")
+    hidden.children = [
+        cluster_tree.Node(id=2, parent_id=1, depth=1, match_op="any", solution_id="everything"),
+        cluster_tree.Node(id=3, parent_id=1, depth=1, match_op="eq", match_value="aarch64",
+                          solution_id="arm"),
+    ]
+    try:
+        cluster_tree.validate_tree(hidden)
+    except IngestRefused as e:
+        assert "before a named value" in str(e), e
+    else:
+        raise AssertionError("a catch-all in front of a named value was accepted")
 
 
 def sv108_a_draft_is_judged_the_way_ingest_judges_it():

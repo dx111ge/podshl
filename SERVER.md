@@ -470,6 +470,37 @@ The outcome label exists precisely because the report comes *after* the attempt,
 and it points at the place a distinction is missing. The failure of a solution
 is the signal for where the tree needs to fork.
 
+**And `uncovered` is the label for no solution at all.** The other four are
+about an answer: it worked, it did not, it went to a person, the walk declined
+to state anything. A run that reached the end of what a project published and
+found nothing had no word, so it could not be reported — and `/diagnose` runs in
+a read-only transaction, so asking leaves no trace either. The gap was the one
+event a maintainer could never learn about. Two things arrive under it and
+deliberately share a label, because a maintainer reading the dashboard is
+answering one question — *is there an answer here I have not written?* — but
+they are told apart by what they carry: rules that matched nothing were reached
+*after* the readings, so that report holds the constellation they failed on,
+while a person saying "none of these is my problem" says so at the class picker,
+before anything is read, so that report holds no readings at all.
+
+### A solution that ignores a switch still applies under every value of it
+
+A branch is grown for each value some rule *names*. A rule that says nothing
+about the switch applies whatever the value is — and it used to live only inside
+the branches other rules had created, so a reading outside those fell off the
+tree and took that answer with it. Published, mirrored, signed, and unreachable.
+
+engram found it on somebody's desktop on 2026-09-16. Its answer for the wrong
+archive names the operating system and the download and says nothing about the
+processor; another rule names `os.arch: aarch64`. So `os.arch` became the switch,
+grew one child, and on an ordinary x86_64 Linux machine holding the Windows
+archive nothing matched — the walk stopped at the answer above and the person was
+told to go and find out which archive they had.
+
+Each node now ends with one more child, `any`, carrying exactly the rules that
+did not constrain the switch. It is always last, so a named value is always
+preferred, and `validate_tree` refuses a tree where it is not.
+
 ### Fuzziness belongs in the authoring tool, never at runtime
 
 | | |
@@ -490,10 +521,24 @@ owner.**
 Fetching from a forge on the request path would be wrong twice over — their rate
 limits become our capacity, and their outage becomes ours.
 
-* **Ingest on a schedule** with conditional `GET`. Ten thousand projects polled
-  every fifteen minutes is about eleven requests a second, nearly all `304`.
+* **Ingest on a schedule** with conditional `GET`, and the schedule follows how
+  quiet a project is. Fifteen minutes for every source is eleven requests a
+  second at ten thousand projects, and almost all of it is `304` about files
+  nobody has touched since last year — so the interval is a twenty-fourth of
+  the time since the last change, floored at fifteen minutes and capped at a
+  day. A project that changed an hour ago is still asked promptly, because right
+  after a change is when the next one is likely; one untouched for a month is
+  asked daily. The cap is load-bearing: anchor re-verification rides along with
+  ingest and `stale` is a promise at fourteen days, which a daily floor keeps
+  with a factor of fourteen to spare. `SV121`.
   A maintainer who wants a crawl now re-POSTs `/claim/{host}/source`, which
   queues an immediate one; there is no separate refresh button and no webhook.
+
+  **Not "fetch when somebody asks."** That would break three things at once:
+  their rate limits become our capacity, their outage becomes ours, and our own
+  fetch log becomes a record of who asked about which project and when. Asking
+  leaves no trace at the operator — `/diagnose` runs in a read-only transaction
+  — and it must not start leaving one at the forge instead.
 * **Serve from our database.** One indexed lookup, no external call.
 * **Publish the commit** we are serving, so anyone can check the mirror against
   the source.

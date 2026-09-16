@@ -411,6 +411,10 @@ async fn ask_published(base: String, subject: String, problem_class: String,
     if let Some(why) = a2a::insecure_base(&base) {
         return Err(why);
     }
+    clientlog::line(&format!(
+        "ask {} about {} class={} — {} fact(s), {} of them stated",
+        base, subject, problem_class,
+        facts.as_object().map(|o| o.len()).unwrap_or(0), stated.len()));
     let resp = http::client()
         .post(format!("{}/diagnose", base.trim_end_matches('/')))
         .json(&json!({"subject": subject, "problem_class": problem_class,
@@ -435,6 +439,12 @@ fn attach_consented_text(report: Value, text: String, destination: String)
 #[tauri::command]
 async fn send_report(base: String, report: Value, domain: String, lang: Option<String>)
     -> Result<Value, String> {
+    let n = report.get("observed").and_then(|o| o.as_object()).map(|o| o.len()).unwrap_or(0);
+    let s = report.get("stated").and_then(|o| o.as_object()).map(|o| o.len()).unwrap_or(0);
+    let text = report.get("consented_text").is_some();
+    clientlog::line(&format!(
+        "send report to {domain} via {base} — {n} measured, {s} stated{}",
+        if text { ", with the free text agreed separately" } else { "" }));
     flow::send_report(&base, report, &domain, lang.as_deref().unwrap_or("en")).await
 }
 
@@ -509,7 +519,8 @@ fn identity_reset() -> Result<Value, String> {
 
 /// Let the user's model pick from the catalogue for this specific question.
 #[tauri::command]
-async fn llm_choose_reads(problem: String, known: Value, lang: String, round: Option<u32>)
+async fn llm_choose_reads(problem: String, known: Value, lang: String, round: Option<u32>,
+                          context: Option<Value>)
     -> Result<Value, String> {
     let cfg = llm::load();
     let cat = reads::catalogue();
@@ -519,7 +530,12 @@ async fn llm_choose_reads(problem: String, known: Value, lang: String, round: Op
     let remaining = json!(cat.as_array().cloned().unwrap_or_default().into_iter()
         .filter(|c| !have.iter().any(|h| c.get("id").and_then(|v| v.as_str()) == Some(h)))
         .collect::<Vec<_>>());
-    let round = llm::choose_reads(&cfg, &problem, &remaining, &known, &lang,
+    // The project's own words, on the rounds as well as on the answer. These
+    // are the calls a person actually meets: the model choosing what to read
+    // and what to ask. Giving the context only to the final answer left the
+    // questions being asked about a project nobody had named.
+    let round = llm::choose_reads(&cfg, &problem, &remaining, &known,
+                                  &context.unwrap_or(Value::Null), &lang,
                                   round.unwrap_or(1).max(1) as usize).await?;
     let ids = round.read_ids;
     let chosen: Vec<Value> = remaining.as_array().into_iter().flatten()
@@ -537,10 +553,12 @@ async fn llm_choose_reads(problem: String, known: Value, lang: String, round: Op
 
 #[tauri::command]
 async fn llm_follow_up(problem: String, facts: Value, previous: String, added: String,
-                       lang: String, typed: Option<Vec<String>>) -> Result<Value, String> {
+                       lang: String, typed: Option<Vec<String>>,
+                       context: Option<Value>) -> Result<Value, String> {
     let cfg = llm::load();
     let typed = typed.unwrap_or_default();
-    let raw = llm::follow_up(&cfg, &problem, &facts, &previous, &added, &lang).await?;
+    let raw = llm::follow_up(&cfg, &problem, &facts, &previous, &added, &lang,
+                             &context.unwrap_or(Value::Null)).await?;
     // Held to the same sections as the first answer. A follow-up that dropped
     // back to a paragraph would quietly undo the method one question in, which
     // is exactly when a person is most likely to act on what they read.
@@ -561,7 +579,8 @@ async fn llm_translate(texts: Value, to: String, keep: Option<Vec<String>>) -> R
 }
 
 #[tauri::command]
-async fn llm_solve(problem: String, facts: Value, lang: String, typed: Option<Vec<String>>)
+async fn llm_solve(problem: String, facts: Value, lang: String, typed: Option<Vec<String>>,
+                   context: Option<Value>)
     -> Result<Value, String> {
     let cfg = llm::load();
     // `typed` is what the person answered rather than what the machine read.
@@ -570,7 +589,10 @@ async fn llm_solve(problem: String, facts: Value, lang: String, typed: Option<Ve
     // path grades a finding exactly this way. An answer nobody can weigh is
     // what both paths exist to avoid.
     let typed = typed.unwrap_or_default();
-    let answer = llm::solve(&cfg, &problem, &facts, &lang, &typed).await?;
+    // What the project published about itself. Absent on a path where there is
+    // no project — then the model is told nothing about one, which is honest.
+    let context = context.unwrap_or(Value::Null);
+    let answer = llm::solve(&cfg, &problem, &facts, &lang, &typed, &context).await?;
     Ok(json!({ "answer": answer.raw, "sections": answer,
                "model_class": cfg.model_class, "ux_severity": cfg.ux_severity() }))
 }
@@ -586,10 +608,46 @@ async fn llm_solve(problem: String, facts: Value, lang: String, typed: Option<Ve
 /// a report without a pseudonym is refused. The pseudonym is per subject and
 /// per epoch, exactly as the vendor path derives one per vendor: within a
 /// month the subject can be counted, across subjects nothing links.
+/// What the no-vendor report would actually carry, before anybody agrees to it.
+///
+/// **The panel promised "exactly what would be sent" and showed two fields** —
+/// the subject and the model class — while the call beside it handed over every
+/// fact the window held. Most of those do not travel (a reading the catalogue
+/// does not know has no policy and is dropped), so nothing leaked; but a person
+/// deciding whether to send was shown an administrative pair and not the
+/// readings, which are the part the decision is about.
+///
+/// Same coarsening as the send, from the same function, so the two cannot
+/// disagree: a preview computed a second way is a preview that drifts.
+#[tauri::command]
+fn preview_without_vendor(observed: Value) -> Value {
+    let (observed, held) = report::observed_by_catalogue(&observed);
+    json!({ "observed": observed, "held_back": held })
+}
+
 #[tauri::command]
 async fn report_without_vendor(base: String, subject: String,
-                               model_class: String, ux_severity: String, observed: Value)
+                               model_class: String, ux_severity: String, observed: Value,
+                               outcome: Option<String>)
     -> Result<Value, String> {
+    // **The run that reached this through a gap says so.** A model guessing is
+    // the second exit from "nothing published covered this", and the maintainer
+    // needs that fact exactly as much as they need it from the first exit — the
+    // person who took it to the tracker instead. Without the word, the same
+    // event arrives labelled as a report about a project with no published
+    // answers, which is the opposite of what happened.
+    //
+    // Optional because this command is also the catch-all for a project that
+    // publishes nothing at all, where there is no gap to report: nobody wrote
+    // an answer, so none is missing. Checked here against the same list the
+    // operator holds, so a word this window invents is refused before the send
+    // rather than after it.
+    let outcome = outcome.filter(|o| !o.is_empty());
+    if let Some(o) = &outcome {
+        if !report::OUTCOMES.contains(&o.as_str()) {
+            return Err(m!("report_bad_outcome", o = format!("{o:?}")));
+        }
+    }
     // The same coarsening policy the vendor path applies, which this path did
     // not: it posted whatever the window handed it, at full precision, with
     // nothing between the machine and the operator. Without a skill the policy
@@ -598,11 +656,24 @@ async fn report_without_vendor(base: String, subject: String,
     // What was held back is not sent: the operator has no use for a list of
     // readings it is not getting, and naming them would be a fact about this
     // machine arriving by the back door.
-    let (observed, _held) = report::observed_by_catalogue(&observed);
-    let body = json!({ "subject": subject,
+    let (observed, held) = report::observed_by_catalogue(&observed);
+    // **A send leaves a line.** The log calls itself one line per operator call
+    // and had none for any send at all — not this one, not a report to a
+    // vendor, not a question to the operator. On a product whose argument is
+    // that you can see what leaves your machine, the sends were the one thing
+    // it did not write down. Counts and destination, never contents: the
+    // contents were just shown to somebody on a panel they agreed to.
+    clientlog::line(&format!(
+        "send report(no vendor) to {} about {} — {} value(s), {} held back{}",
+        base, subject, observed.len(), held.len(),
+        outcome.as_deref().map(|o| format!(", outcome {o}")).unwrap_or_default()));
+    let mut body = json!({ "subject": subject,
                        "pseudonym": identity::pseudonym(&subject)?,
                        "model_class": model_class, "ux_severity": ux_severity,
                        "observed": observed });
+    if let Some(o) = outcome {
+        body["outcome"] = json!(o);
+    }
     if let Some(why) = a2a::insecure_base(&base) {
         return Err(why);
     }
@@ -632,11 +703,21 @@ fn llm_providers() -> Value {
         if let Some((agent, cloud)) = offer {
             arr.insert(0, json!({
                 "id": "omarchy_agent",
+                // **`name`, because that is the key the window renders.** This
+                // row carried only `label`, so the settings drew it as an empty
+                // option — the first entry in the list, and the selected one on
+                // the desktop this was built for. `tr(undefined)` is the empty
+                // string, so nothing showed and nothing complained.
+                "name": format!("Omarchy default agent ({agent})"),
                 "label": format!("Omarchy default agent ({agent})"),
                 "endpoint": "",
                 "model": agent,
                 "needs_key": false,
                 "cloud": cloud,
+                // Stated rather than absent. The window reads `local` to pick a
+                // model class, and a missing one reads as false by accident — right
+                // for this agent today, wrong the moment a local one is measured.
+                "local": !cloud,
                 "note": "no model setup here — this desktop already has one"
             }));
         }
@@ -1175,7 +1256,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             discover, triage, plan_reads, perform_reads, diagnose, vocabulary, dry_run,
-            execute, applicability, reply_channels, escalate, preview_report, ask_published, attach_consented_text, send_report, search_vendors, refresh_index, index_status, interpreter_conflict, set_project_root, vendor_mismatch, identity_info, identity_reset, vendor_standing, record_report_state, contribute_standing, llm_solve, llm_translate, report_without_vendor, llm_providers, llm_models, llm_probe, llm_test, baseline_facts, os_locale, endpoints, llm_choose_reads, llm_follow_up,
+            execute, applicability, reply_channels, escalate, preview_report, ask_published, attach_consented_text, send_report, search_vendors, refresh_index, index_status, interpreter_conflict, set_project_root, vendor_mismatch, identity_info, identity_reset, vendor_standing, record_report_state, contribute_standing, llm_solve, llm_translate, report_without_vendor, preview_without_vendor, llm_providers, llm_models, llm_probe, llm_test, baseline_facts, os_locale, endpoints, llm_choose_reads, llm_follow_up,
             llm_get, llm_set, end_incident, grant_program_path, load_log_excerpt, anonymise_text,
             facts_as_sent,
             published_card, send_published_report, verify_log_entry,

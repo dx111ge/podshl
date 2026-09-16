@@ -30,6 +30,16 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// What `os_fact` can answer, and the whole of it.
+///
+/// Named rather than left implicit in a `match`, because this is a bound a
+/// publisher reads in the spec and writes against. `engram` wrote
+/// `{op: os_fact, name: name}`, which is not one of these: the probe read
+/// nothing, said nothing about reading nothing, and every rule that needed it
+/// could never match. The person was told their machine was fine while holding
+/// the wrong download.
+pub const OS_FACTS: &[&str] = &["os", "arch", "version", "container"];
+
 pub const MAX_READS: usize = 24;
 /// An enumeration that walks further than this is an inventory sweep, not a
 /// diagnostic, and the user cannot meaningfully review its result.
@@ -1420,6 +1430,10 @@ pub fn perform(read: &Value) -> Option<Value> {
     let op = read.get("op")?.as_str()?;
     let g = |k: &str| read.get(k).and_then(|v| v.as_str()).unwrap_or("");
     match op {
+        // Held to `OS_FACTS`, which the spec is held to in turn: a name outside
+        // it reads nothing, and a publisher who writes one gets told at ingest
+        // rather than shipping a probe that is silently always empty.
+        "os_fact" if !OS_FACTS.contains(&g("name")) => None,
         "os_fact" => match g("name") {
             "os" => Some(json!(std::env::consts::OS)),
             "arch" => Some(json!(std::env::consts::ARCH)),
@@ -2313,6 +2327,16 @@ version = 3.11.9
                 .unwrap();
             assert_eq!(t["args"].as_str().unwrap(), *pat, "argument pattern for {}", t["tool"]);
         }
+
+        // The names `os_fact` answers, held to the spec like the tool list: a
+        // publisher writes against this line, and a name outside it is a probe
+        // that can never read anything.
+        let facts = spec["ops"].as_array().unwrap().iter()
+            .find(|o| o["op"] == "os_fact").expect("the spec has no os_fact op");
+        let listed_facts: Vec<&str> = facts["params"]["name"].as_str().unwrap()
+            .split('|').map(str::trim).collect();
+        assert_eq!(listed_facts, OS_FACTS.to_vec(),
+                   "the facts os_fact answers differ from the spec");
 
         let denied: Vec<&str> = spec["deny"]
             .as_array()

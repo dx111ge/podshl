@@ -1044,12 +1044,20 @@ the binary and its manifest would ship disagreeing about what they are"
     /// P3: an answer that does not fit the publisher's `pattern` is caught in
     /// the window and asked again, before a report is built around it.
     ///
-    /// Three panels ask a person a question and each learned this separately.
+    /// Four panels ask a person a question and each learned this separately.
     /// The hand-off checked it from the start. The question panel did not, and
     /// got it. The need round did not either and was the last to: it had nowhere
     /// to say no, because it resolved the moment somebody clicked, so a value
     /// the vendor had already said would not do went out and came back as
     /// another round of the same question.
+    ///
+    /// **The fourth is the model's own questions**, added 2026-09-16, and it
+    /// arrived carrying the other half of the same defect: it recorded a value
+    /// and recorded nothing for a skip, so the next round saw no trace of the
+    /// question and asked it again in different words. It goes through
+    /// `Flow.readAnswers` now like the other three. No model question carries a
+    /// `pattern`, so its refusal branch cannot fire today — it is written
+    /// because this case counts panels rather than trusting them.
     ///
     /// So the shape is checked for every one of them rather than for the one
     /// that broke: a panel reads a round, and refuses it before it applies it.
@@ -1076,8 +1084,10 @@ the binary and its manifest would ship disagreeing about what they are"
                     "a refused answer does not keep the panel open, so it is simply lost: {}",
                     &after[stop..store]);
         }
-        assert_eq!(panels, 3,
-                   "{panels} panels read a round of answers - the armed question, the need                     round and the hand-off are three, so one has been added or has gone back                     to deciding for itself");
+        assert_eq!(panels, 4,
+                   "{panels} panels read a round of answers - the armed question, the need \
+                    round, the hand-off and the model's own questions are four, so one has been \
+                    added or has gone back to deciding for itself");
 
         // And the pattern is still what decides. `readAnswers` is also the thing
         // that records a decline, so a version of it that had quietly stopped

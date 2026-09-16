@@ -96,7 +96,13 @@ MAX_BODY_DIAGNOSE = 256 * 1024
 #: The outcomes a report may carry. The same list as the CHECK on the column,
 #: repeated here so a wrong value is a sentence to the caller and not a
 #: constraint violation from the database.
-OUTCOMES = ("resolved", "unresolved", "escalated", "abstained")
+#:
+#: `uncovered` is the fourth and the newest (`0020`): nothing the project
+#: published covered this at all -- either its rules produced no statement, or
+#: the person was shown its problems and said none of them is theirs. The other
+#: three all describe what became of an answer, and so had nowhere to put the
+#: case where there was none.
+OUTCOMES = ("resolved", "unresolved", "escalated", "abstained", "uncovered")
 
 #: How many configurations one dashboard response carries, most people first.
 #: The response says how many there are in all, so a cut is visible. Above this

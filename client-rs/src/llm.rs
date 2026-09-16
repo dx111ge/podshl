@@ -73,8 +73,22 @@ impl Config {
             _ => "https://api.openai.com".into(),
         }
     }
+    /// What to call this model on screen.
+    ///
+    /// **The model name alone is not always enough to know what you chose.**
+    /// For the desktop's own agent it collapsed to `claude`, which says nothing
+    /// about whose agent it is or that it runs somewhere else — and that name
+    /// went into the consent sentence, where the difference is the whole point.
+    /// Everywhere else the provider is evident from the model: `qwen3:4b` is
+    /// the local one somebody installed, `claude-opus-5` is the API.
     pub fn label(&self) -> String {
-        if self.model.is_empty() { self.provider.clone() } else { self.model.clone() }
+        if self.model.is_empty() {
+            return self.provider.clone();
+        }
+        if self.provider == "omarchy_agent" {
+            return format!("{} (Omarchy)", self.model);
+        }
+        self.model.clone()
     }
 }
 
@@ -163,6 +177,50 @@ const DIMENSIONS: &[(&str, &str)] = &[
       partial effect locates it."),
 ];
 
+/// One `ASK:` line, as the separate questions it actually contains.
+///
+/// **The prompt says `<one question for the user>` and the model does not obey
+/// it.** Measured on the first Omarchy desktop: two ASK lines came back holding
+/// five questions between them, one of them *"Which Engram download did you
+/// install (the exact archive file name, or the version number and where you
+/// got it), and how do you start it: by double-clicking, from a menu, or by
+/// typing a command in a terminal? If you use a terminal, what exactly does it
+/// print?"* — a paragraph, in a panel with one input box.
+///
+/// So the client splits rather than asks nicely. `LG8` learnt this about
+/// glossary terms and it is the same lesson: *"Telling the model to keep the
+/// term was tried first and worked by luck of phrasing."* An instruction that
+/// needs the model to cooperate is not a bound.
+///
+/// **What this can and cannot do**, stated rather than implied. It splits at
+/// question marks, so three sentences become three questions. It cannot split
+/// *"which download did you install and how do you start it?"*, which is two
+/// questions inside one sentence and has no mechanical seam — that half stays
+/// the prompt's job, and whether the prompt manages it is a thing to measure
+/// and not to assume.
+fn split_questions(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for c in line.chars() {
+        current.push(c);
+        if c == '?' {
+            let q = current.trim().to_string();
+            if !q.is_empty() {
+                out.push(q);
+            }
+            current.clear();
+        }
+    }
+    // Whatever is left has no question mark on it. A trailing fragment is not a
+    // question; a whole line without one is what a model writes when it says
+    // "Tell me about X", and that is still worth asking.
+    let rest = current.trim();
+    if !rest.is_empty() && out.is_empty() {
+        out.push(rest.to_string());
+    }
+    out
+}
+
 /// The sections an answer is held to. English keywords so they can be parsed;
 /// the content is in the user's language, exactly as `READ:` and `ASK:` work.
 const CAUSE: &str = "CAUSE:";
@@ -194,9 +252,72 @@ fn language_name(code: &str) -> &str {
     }
 }
 
-fn prompt(problem: &str, facts: &Value, lang: &str) -> String {
+/// What the project itself published about the thing being diagnosed.
+///
+/// **Without this the model was told nothing about the project at all.** It got
+/// a problem sentence and a map of facts named `engram.embedding_changed`, and
+/// was asked to reason about software whose name it had never been given, with
+/// field names whose meaning the maintainer had written down and we withheld.
+/// It guessed, and the guesses were bad, which is what a person on the first
+/// Omarchy desktop reported in those words.
+///
+/// **Its published words, not a pointer to them.** Naming only the repository
+/// would be worse than nothing: the agent runs with every tool denied, so it
+/// cannot look anything up, and a model asked about `github.com/owner/name`
+/// answers from whatever it half-remembers — confidently, and about an obscure
+/// project, entirely invented. So what goes in is text the project actually
+/// published and the client already holds, and the instruction says plainly
+/// that this is all there is.
+fn project_context(ctx: &Value) -> String {
+    let get = |k: &str| ctx.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    let (name, anchor) = (get("name"), get("anchor"));
+    if name.is_empty() && anchor.is_empty() {
+        return String::new();
+    }
+    let mut out = format!("\nThis is about {name}");
+    if !anchor.is_empty() {
+        out.push_str(&format!(" ({anchor})"));
+    }
+    out.push_str(
+        ". Everything below is what that project published about itself, and it \
+         is the only thing you know about it: you have not read its code, its \
+         documentation or its issues, and you must not draw on anything you \
+         think you remember about it. If these words do not support a cause, \
+         say so.\n",
+    );
+
+    let list = |key: &str, title: &str, out: &mut String| {
+        if let Some(a) = ctx.get(key).and_then(|v| v.as_array()) {
+            if a.is_empty() {
+                return;
+            }
+            out.push_str(&format!("\n{title}\n"));
+            for item in a {
+                if let Some(s) = item.as_str() {
+                    out.push_str(&format!("  - {s}\n"));
+                }
+            }
+        }
+    };
+
+    // The classes are the strongest thing here, because the person has already
+    // said something about them: either none fitted, or one did and the rules
+    // behind it produced nothing. Both are evidence about where the answer is
+    // not.
+    let shown = if ctx.get("rejected").and_then(|v| v.as_bool()).unwrap_or(false) {
+        "The problems it says it can answer. The person has been shown these and          says none of them is what they are seeing, so the cause is most likely          outside this list:"
+    } else {
+        "The problems it says it can answer, and which the person has already been shown:"
+    };
+    list("classes", shown, &mut out);
+    list("means", "What the values above mean, in the maintainer's words:", &mut out);
+    list("keep", "Terms that are this project's own. Use them exactly as written:", &mut out);
+    out
+}
+
+fn prompt(problem: &str, facts: &Value, lang: &str, context: &Value) -> String {
     format!(
-        "A user has this problem: {problem}\n\n\
+        "A user has this problem: {problem}\n{project}\n\
          What is known about their device — values read from it, and answers they \
          gave:\n{known}\n\n\
          Answer in {tongue}, briefly, in EXACTLY these sections, each on its own \
@@ -215,6 +336,7 @@ fn prompt(problem: &str, facts: &Value, lang: &str) -> String {
          in English so they can be found; nothing else does, whatever language this \
          instruction or the value names happen to be in.",
         tongue = language_name(lang),
+        project = project_context(context),
         known = serde_json::to_string_pretty(facts).unwrap_or_default()
     )
 }
@@ -368,7 +490,7 @@ pub fn parse_round(raw: &str, catalogue: &Value) -> Round {
             let t = l.trim();
             if t.to_uppercase().starts_with("ASK:") { t.splitn(2, ':').nth(1) } else { None }
         })
-        .map(|q| q.trim().to_string())
+        .flat_map(|q| split_questions(q))
         .filter(|q| !q.is_empty())
         .take(3)
         .collect();
@@ -428,8 +550,8 @@ mod round_tests {
     fn every_prompt_names_the_language_and_says_it_last() {
         let facts = json!({"gpu.name": "RTX 5070"});
         let prompts = [
-            ("answer", prompt("flicker", &facts, "de")),
-            ("round", round_prompt("flicker", &cat(), &facts, "de", 1)),
+            ("answer", prompt("flicker", &facts, "de", &Value::Null)),
+            ("round", round_prompt("flicker", &cat(), &facts, "de", 1, &Value::Null)),
         ];
         for (which, p) in prompts {
             assert!(p.contains("German"),
@@ -445,7 +567,7 @@ mod round_tests {
         }
         // The code travels when the language is not one of the four, rather
         // than the instruction being dropped.
-        assert!(prompt("x", &facts, "pt-BR").contains("pt"));
+        assert!(prompt("x", &facts, "pt-BR", &Value::Null).contains("pt"));
         assert_eq!(language_name("de-AT"), "German");
     }
 
@@ -497,7 +619,7 @@ mod round_tests {
     fn each_round_carries_one_dimension_of_the_method_in_order() {
         let known = json!({"os": "windows"});
         let seen: Vec<String> = (1..=5)
-            .map(|r| round_prompt("flicker", &cat(), &known, "en", r))
+            .map(|r| round_prompt("flicker", &cat(), &known, "en", r, &Value::Null))
             .collect();
 
         for (i, (key, _)) in DIMENSIONS.iter().enumerate() {
@@ -588,7 +710,7 @@ mod round_tests {
     /// it reads exactly like one that has.
     #[test]
     fn the_answer_must_explain_what_it_does_not_affect() {
-        let p = prompt("flicker", &json!({"gpu.name": "RTX 5070"}), "de");
+        let p = prompt("flicker", &json!({"gpu.name": "RTX 5070"}), "de", &Value::Null);
         for key in [CAUSE, WHY_NOT, RESTS_ON, NEXT, IF_WRONG, ABSTAIN] {
             assert!(p.contains(key), "the answer is not asked for {key}");
         }
@@ -603,11 +725,11 @@ mod round_tests {
     #[test]
     fn the_first_round_is_told_so_even_when_the_platform_is_known() {
         let known = json!({"os": "windows", "arch": "x86_64"});
-        let first = round_prompt("flicker", &cat(), &known, "en", 1);
+        let first = round_prompt("flicker", &cat(), &known, "en", 1, &Value::Null);
         assert!(first.contains("first round"), "{first}");
         assert!(!first.contains("READ: done\n\n"), "the first round is invited to stop: {first}");
         assert!(first.contains("\"windows\""), "what is known is not said");
-        let later = round_prompt("flicker", &cat(), &known, "en", 2);
+        let later = round_prompt("flicker", &cat(), &known, "en", 2, &Value::Null);
         assert!(!later.contains("first round") && later.contains("write: READ: done"), "{later}");
     }
 
@@ -619,13 +741,184 @@ mod round_tests {
 }
 
 /// The prompt for one round, apart from the call so it can be read by a test.
+#[cfg(test)]
+mod question_tests {
+    use super::*;
+
+    /// The real thing, from the first Omarchy desktop this ran on.
+    ///
+    /// Not a made-up example: this is what `claude` returned through the
+    /// Omarchy default agent on 2026-09-16, in one `ASK:` line, into a panel
+    /// with one input box under it.
+    const AS_MEASURED: &str = "What does work, and where else does it fail? Has Engram ever         started on this machine before, and if so, when did it last work? Does it also fail         when you start it from a different user account?";
+
+    #[test]
+    fn one_ask_line_holding_three_questions_becomes_three() {
+        let qs = split_questions(AS_MEASURED);
+        assert_eq!(qs.len(), 3, "still one wall of text: {qs:?}");
+        assert!(qs[0].ends_with('?') && qs[1].ends_with('?') && qs[2].ends_with('?'),
+                "a piece without its question mark: {qs:?}");
+        assert!(qs[1].contains("Has Engram ever"), "{qs:?}");
+        // Nothing is lost on the way: every word the model wrote is still there.
+        let rejoined: String = qs.join(" ");
+        assert_eq!(rejoined.split_whitespace().collect::<Vec<_>>(),
+                   AS_MEASURED.split_whitespace().collect::<Vec<_>>(),
+                   "splitting dropped or changed words");
+    }
+
+    #[test]
+    fn one_question_stays_one() {
+        assert_eq!(split_questions("Since when does it happen?"),
+                   vec!["Since when does it happen?"]);
+        // A line with no question mark is still something to ask.
+        assert_eq!(split_questions("Tell me what the terminal prints"),
+                   vec!["Tell me what the terminal prints"]);
+        assert!(split_questions("   ").is_empty());
+    }
+
+    /// **What this deliberately cannot do**, so nobody reads the case above as
+    /// a claim that the problem is solved. Two questions inside one sentence
+    /// have no seam to cut at, and the measured line had one of those too.
+    /// Splitting is the half that can be enforced; the rest is the prompt's,
+    /// and the prompt is the half that has to be measured rather than trusted.
+    #[test]
+    fn a_compound_question_in_one_sentence_is_not_split() {
+        let one = "Which download did you install and how do you start it?";
+        assert_eq!(split_questions(one).len(), 1,
+                   "this test exists to record a limit, and the limit moved — which is good \
+                    news, but the comment above is now wrong");
+    }
+}
+
+#[cfg(test)]
+mod project_context_tests {
+    use super::*;
+
+    fn ctx() -> Value {
+        json!({
+            "name": "dx111ge/engram",
+            "anchor": "https://github.com/dx111ge/engram/",
+            "classes": ["engram.llm.model-not-pulled — Debate and Chat fail, but storing knowledge and search still work"],
+            "means": ["engram.embedding_changed: Whether the embedding model was changed — nodes are embedded when stored"],
+            "keep": ["Engram", "brain", "Debate", "Chat"]
+        })
+    }
+
+    /// The model is told which project this is, in the project's own words.
+    ///
+    /// It used to be told nothing at all: a problem sentence and a map of facts
+    /// named `engram.*`, about software whose name nobody had given it. The
+    /// maintainer had written down what those fields mean and the client kept
+    /// it to itself.
+    /// **And that the person already rejected them**, where they did.
+    ///
+    /// That is the one piece of evidence only the window has, and it points
+    /// away from everything in the list. A model told only "here are three
+    /// problems" will reach for one of the three; told that all three were put
+    /// to the person and refused, it has to look elsewhere — which is the whole
+    /// reason this path was taken.
+    #[test]
+    fn a_rejected_list_is_named_as_rejected() {
+        let mut c = ctx();
+        c["rejected"] = json!(true);
+        let p = prompt("x", &json!({}), "en", &c);
+        assert!(p.contains("says none of them is what they are seeing"),
+                "the model is not told the list was refused:
+{p}");
+        assert!(p.contains("outside this list"), "{p}");
+
+        let q = prompt("x", &json!({}), "en", &ctx());
+        assert!(!q.contains("says none of them"),
+                "a list nobody rejected was described as rejected:
+{q}");
+    }
+
+    #[test]
+    fn the_model_is_told_whose_project_this_is_and_what_the_fields_mean() {
+        let p = prompt("chat never answers", &json!({"engram.embedding_changed": "yes"}), "en", &ctx());
+        assert!(p.contains("dx111ge/engram"), "the model is not told which project this is:\n{p}");
+        assert!(p.contains("Whether the embedding model was changed"),
+                "the maintainer wrote what the field means and it did not reach the model:\n{p}");
+        assert!(p.contains("Debate and Chat fail"),
+                "the classes the person was already shown are not in the prompt:\n{p}");
+        assert!(p.contains("brain"), "the project's own terms did not reach the model:\n{p}");
+    }
+
+    /// **And told that this is all it knows.**
+    ///
+    /// Naming a repository to a model that cannot fetch it invites the one
+    /// failure worse than ignorance: it answers from what it half-remembers,
+    /// confidently, and for an obscure project that is invention. The agent runs
+    /// with every tool denied, so it *cannot* check — which makes saying so part
+    /// of the prompt rather than a nicety.
+    #[test]
+    fn the_model_is_told_it_has_not_read_the_project() {
+        let p = prompt("x", &json!({}), "en", &ctx());
+        assert!(p.contains("only thing you know about it"),
+                "nothing stops the model drawing on what it thinks it remembers:\n{p}");
+        assert!(p.contains("must not draw on anything you"),
+                "the instruction against recall is gone:\n{p}");
+    }
+
+    /// **Every prompt that reaches a person, not just the last one.**
+    ///
+    /// The context was given to `prompt` first, and `prompt` produces the final
+    /// answer — the thing somebody sees after the questions are over. What they
+    /// actually meet is `round_prompt`, which chooses what to read and what to
+    /// ask, and `follow_up`. Those had none, so the questions came from a model
+    /// that had never been told whose project this was. "It butts in with
+    /// nonsense" was about the rounds, and the fix had been aimed past them.
+    ///
+    /// This is the case that would have caught it, so a fourth prompt added
+    /// later cannot quietly be the one without.
+    #[test]
+    fn all_three_prompts_carry_the_project() {
+        let c = ctx();
+        let one = prompt("x", &json!({}), "en", &c);
+        let two = round_prompt("x", &json!([]), &json!({}), "en", 1, &c);
+        let three = {
+            // `follow_up` is async and talks to a model, so its prompt is built
+            // the same way here rather than called: what is under test is that
+            // the text carries the project, not that the network works.
+            project_context(&c)
+        };
+
+        for (name, text) in [("prompt", &one), ("round_prompt", &two), ("follow_up context", &three)] {
+            assert!(text.contains("dx111ge/engram"),
+                    "{name} does not name the project:\n{text}");
+            assert!(text.contains("only thing you know about it"),
+                    "{name} does not stop the model drawing on what it remembers:\n{text}");
+        }
+    }
+
+    /// No project, no claim about one. The model path also runs where nothing
+    /// was published, and inventing a context there would be the same defect
+    /// pointing the other way.
+    #[test]
+    fn without_a_project_the_prompt_says_nothing_about_one() {
+        let p = prompt("x", &json!({}), "en", &Value::Null);
+        assert!(!p.contains("This is about"), "a project appeared out of nowhere:\n{p}");
+        assert!(!p.contains("only thing you know"), "an instruction about a project that is not there:\n{p}");
+        // The rest of the prompt is unchanged by its absence.
+        assert!(p.contains("A user has this problem"), "{p}");
+    }
+}
+
+/// **The rounds get the same context as the answer, and they get it first.**
+///
+/// Only `prompt` was given it, which is the *last* thing a person sees. What
+/// they actually met was this: a model choosing which readings to take and
+/// asking follow-up questions about a project nobody had named to it. "Claude
+/// butts in with nonsense" described the rounds, and the fix had been aimed at
+/// the answer nobody had reached yet.
 fn round_prompt(problem: &str, catalogue: &Value, known: &Value, lang: &str,
-                round: usize) -> String {
+                round: usize, context: &Value) -> String {
     let list = catalogue.as_array().map(|a| a.iter().map(|c| format!(
         "- {}: {}",
         c.get("id").and_then(|v| v.as_str()).unwrap_or(""),
         c.get("describes").and_then(|v| v.as_str()).unwrap_or("")
     )).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    let project = project_context(context);
 
     // Diagnosis proceeds in rounds. Asking for everything at once forces the
     // model to guess at hardware it has not established yet — it should first
@@ -651,21 +944,28 @@ fn round_prompt(problem: &str, catalogue: &Value, known: &Value, lang: &str,
     // The window has already asked what changed, before any round, because
     // that question is always worth asking and often ends the diagnosis.
     let (_, method) = DIMENSIONS[(round.max(1) - 1).min(DIMENSIONS.len() - 1)];
-    let context = if known.as_object().map_or(true, |o| o.is_empty()) {
+    // `known_block`, not `context`: the parameter of that name is the project's
+    // published words, and two different things sharing one name in one
+    // function is how the wrong one gets used.
+    let known_block = if known.as_object().map_or(true, |o| o.is_empty()) {
         String::new()
     } else {
         format!("You already know this about the device:\n{}\n\n",
                 serde_json::to_string_pretty(known).unwrap_or_default())
     };
     format!(
-        "A user's problem: {problem}\n\n\
-         {context}\
+        "A user's problem: {problem}\n{project}\n\
+         {known_block}\
          The agent can read these values from the device:\n{list}\n\n\
          {stage}\n\n\
          Answer in EXACTLY this format, with no introduction:\n\
          READ: <ids separated by commas, or 'none', or 'done'>\n\
-         ASK: <one question for the user>\n\
+         ASK: <one question, one sentence>\n\
          ASK: <another, optional>\n\n\
+         An ASK line is ONE question and ends at its question mark. Do not join two \
+         questions with 'and', and do not add a follow-up after the question mark: the \
+         person gets one box under each line, and a paragraph cannot be answered in it. \
+         If you need two things, write two ASK lines.\n\n\
          The ASK lines are for everything that is in no tool's output and only the user \
          knows — overclocking, which driver ran before, since when it happens, which \
          monitor, what was changed last. Ask at least one question while you are missing \
@@ -684,8 +984,9 @@ fn round_prompt(problem: &str, catalogue: &Value, known: &Value, lang: &str,
 /// stage the diagnosis is at and which dimension of the method this round must
 /// cover. A model asked to remember where it is in a method does not.
 pub async fn choose_reads(cfg: &Config, problem: &str, catalogue: &Value, known: &Value,
+                         context: &Value,
                           lang: &str, round: usize) -> Result<Round, String> {
-    let p = round_prompt(problem, catalogue, known, lang, round);
+    let p = round_prompt(problem, catalogue, known, lang, round, context);
     let raw = match cfg.provider.as_str() {
         // The desktop's agent answers the prompt itself, with every tool
         // denied and from an empty directory — see `omarchy.rs` for what was
@@ -705,13 +1006,14 @@ pub async fn choose_reads(cfg: &Config, problem: &str, catalogue: &Value, known:
 /// stopping is not a diagnosis — "the values are not enough" has to be able
 /// to lead somewhere.
 pub async fn follow_up(cfg: &Config, problem: &str, facts: &Value, previous: &str,
-                       added: &str, lang: &str) -> Result<String, String> {
+                       added: &str, lang: &str, context: &Value) -> Result<String, String> {
     // The same sections as the first answer, and for the same reason. A
     // follow-up that dropped back to a paragraph would undo the method one
     // question in - which is exactly when a person is most likely to act on
     // what they read, because they have just given the thing that was missing.
+    let project = project_context(context);
     let p = format!(
-        "Problem: {problem}\n\n\
+        "Problem: {problem}\n{project}\n\
          Your answer so far was:\n{previous}\n\n\
          What is known about their device:\n{known}\n\n\
          What the user added:\n{added}\n\n\
@@ -1183,11 +1485,11 @@ mod glossary_tests {
 }
 
 pub async fn solve(cfg: &Config, problem: &str, facts: &Value, lang: &str,
-                   typed: &[String]) -> Result<Answer, String> {
+                   typed: &[String], context: &Value) -> Result<Answer, String> {
     if !cfg.configured() {
         return Err(m!("no_model"));
     }
-    let p = prompt(problem, facts, lang);
+    let p = prompt(problem, facts, lang, context);
     let raw = match cfg.provider.as_str() {
         // The desktop's agent answers the prompt itself, with every tool
         // denied and from an empty directory — see `omarchy.rs` for what was
@@ -1414,7 +1716,7 @@ pub async fn probe(cfg: &Config) -> Result<usize, String> {
 /// the user asks for it.
 pub async fn test(cfg: &Config) -> Result<(String, u128), String> {
     let started = std::time::Instant::now();
-    let answer = solve(cfg, "Answer with the single word: ready.", &json!({}), "en", &[]).await?;
+    let answer = solve(cfg, "Answer with the single word: ready.", &json!({}), "en", &[], &Value::Null).await?;
     Ok((answer.raw.chars().take(120).collect(), started.elapsed().as_millis()))
 }
 

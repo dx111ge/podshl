@@ -56,9 +56,16 @@
         <input type="text" id="commit" placeholder="v1.2.0" autocomplete="off"></div>
       <div><label for="status">Status</label>
         <select id="status"><option value="active">active</option><option value="deprecated">deprecated</option></select></div>
+      <div id="succbox" hidden><label for="successor">Where it continues</label>
+        <input type="text" id="successor" placeholder="https://example.org/the-project-that-took-over"
+               autocomplete="off"></div>
       <div><label for="langs">Languages</label>
         <input type="text" id="langs" placeholder="en, de" autocomplete="off"></div>
     </div>
+    <p class="why" id="succwhy" hidden>A project that has stopped is not a wrong
+    project, and saying where it continues is the one thing only you can do. A
+    client shows a deprecated project as deprecated either way; with this it can
+    also say where to go instead.</p>
     <p class="why">English is the one obligation. A reader in another language gets
     your words through their own model, marked as a translation.</p>
   </section>
@@ -201,6 +208,12 @@ const Emit = (() => {
     L.push("endpoint: " + q((d.endpoint || "").trim() || (d.anchor || "").trim()));
     if ((d.commit || "").trim()) L.push("commit: " + q(d.commit.trim()));
     L.push("status: " + (d.status === "deprecated" ? "deprecated" : "active"));
+    // Only with `deprecated`, because a successor to a project that has not
+    // stopped is a claim nobody can act on, and ingest stores whatever it is
+    // given here.
+    if (d.status === "deprecated" && (d.successor || "").trim()) {
+      L.push("successor: " + q(d.successor.trim()));
+    }
     kept(L, "", d.extra);
     const langs = clean((d.langs || "").split(","));
     L.push("langs: " + JSON.stringify(langs.includes("en") ? langs : ["en"].concat(langs)));
@@ -318,8 +331,9 @@ const Emit = (() => {
     const rest = (obj, skip) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => !skip.has(k)));
 
     const topKnown = new Set(["endpoint", "commit", "status", "langs", "problem_classes", "collect",
-                              "glossary", "escalate", "solutions"]);
+                              "glossary", "escalate", "solutions", "successor"]);
     const d = {anchor: "", endpoint: m.endpoint || "", commit: "", status: m.status || "active",
+               successor: typeof m.successor === "string" ? m.successor : "",
                langs: (m.langs || []).join(", "),
                // Either shape: the string every manifest used to be, or the
                // mapping that can carry a sentence.
@@ -428,7 +442,7 @@ const fieldId = () => "f" + (++uid);
    not one closed tab away from gone; nothing about it reaches the server until
    the person presses Check. */
 const KEY = "podshl.build.draft";
-const blank = () => ({anchor: "", endpoint: "", commit: "", status: "active", langs: "en",
+const blank = () => ({anchor: "", endpoint: "", commit: "", status: "active", successor: "", langs: "en",
   classes: [{id: "", describes: ""}], probes: [], solutions: [], glossary: "",
   escalate: {on: false, reason: "", queue: "", target: "", reply_via: []}});
 let D = blank();
@@ -686,8 +700,12 @@ function renderSolutions() {
 }
 
 function renderTop() {
-  ["anchor", "endpoint", "commit", "langs", "glossary"].forEach(k => { $(k).value = D[k] || ""; });
+  ["anchor", "endpoint", "commit", "langs", "glossary", "successor"].forEach(k => { $(k).value = D[k] || ""; });
   $("status").value = D.status;
+  // Shown only where it means something. A successor box beside an active
+  // project is a question nobody asked.
+  $("succbox").hidden = D.status !== "deprecated";
+  $("succwhy").hidden = D.status !== "deprecated";
   $("esc-on").checked = !!D.escalate.on;
   $("esc").hidden = !D.escalate.on;
   $("esc-queue").value = D.escalate.queue || "";
@@ -809,7 +827,13 @@ $("check").addEventListener("click", () => {
 
 ["anchor", "endpoint", "commit", "langs", "glossary"].forEach(k =>
   $(k).addEventListener("input", () => { D[k] = $(k).value; changed(false); }));
-$("status").addEventListener("change", () => { D.status = $("status").value; changed(false); });
+$("status").addEventListener("change", () => {
+  D.status = $("status").value;
+  $("succbox").hidden = D.status !== "deprecated";
+  $("succwhy").hidden = D.status !== "deprecated";
+  changed(false);
+});
+$("successor").addEventListener("input", () => { D.successor = $("successor").value; changed(false); });
 $("esc-on").addEventListener("change", () => { D.escalate.on = $("esc-on").checked; changed(true); });
 [["esc-queue", "queue"], ["esc-target", "target"], ["esc-reason", "reason"]].forEach(([id, k]) =>
   $(id).addEventListener("input", () => { D.escalate[k] = $(id).value; changed(false); }));
