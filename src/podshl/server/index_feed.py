@@ -108,6 +108,9 @@ def entries(conn) -> list[dict]:
         labels = card.get("class_labels") or {}
         if not isinstance(labels, dict):
             labels = {}
+        gloss = card.get("glossary") or {}
+        keep = gloss.get("keep") if isinstance(gloss, dict) else None
+        keep = [t for t in keep if isinstance(t, str)] if isinstance(keep, list) else []
         out.append({
             "host": r["host"],
             # Display only, and never shown without `host` — the same rule the
@@ -128,6 +131,26 @@ def entries(conn) -> list[dict]:
             # absent entirely when nobody wrote any — a client falls back to
             # the identifier, which is what every client did before.
             "class_labels": {c: labels[c] for c in classes if c in labels},
+            # **The glossary travels with the labels, because the labels need
+            # it and nothing else can supply it in time.** A client translates
+            # `class_labels` to put the question in the reader's language, and
+            # that question comes *before* the consent under which the card is
+            # fetched -- so at the only moment the terms are wanted, the card
+            # that holds them has not been asked for. The result was the
+            # failure `LG8` exists to prevent, on the first publisher sentence
+            # a person ever reads: engram's `brain` arriving as an organ.
+            #
+            # Nothing is disclosed by moving it here. These are the project's
+            # own published words out of its own `agent.yaml`, and this index
+            # is public and signed. Bounded at ingest already -- `MAX_TERMS`
+            # and `MAX_TERM` in `ingest/manifest.py` -- so no new limit is
+            # needed and none is invented here.
+            #
+            # Flattened to `glossary_keep` rather than nested, the way
+            # `class_labels` is flattened out of the card: an index entry is a
+            # flat projection of a card, and `keep` is the only key a glossary
+            # has.
+            "glossary_keep": keep,
             "search_tokens": _tokens(r["host"], r["anchor_url"] or "", classes, r["kind"]),
             "langs": sorted(r["langs"] or []),
             # The publisher's own word, and the only one that is authoritative.

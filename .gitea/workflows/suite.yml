@@ -8,7 +8,8 @@
 # a gate that exists only on a server is one nobody runs before pushing, and a
 # gate that exists only on a laptop is one CI cannot enforce.
 #
-# The runner is `local-builder`, registered to this Gitea with the label
+# The runner is `podshl-builder`, made by `scripts/gitea_runner.sh` and
+# configured by `deploy/gitea-runner/config.yaml`, with the label
 # `ubuntu-latest`. It is a container on the maintainer's machine, which has two
 # consequences worth stating rather than discovering: it needs the Docker socket
 # to build and run the stack, and it is not a clean machine — a suite that

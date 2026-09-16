@@ -347,6 +347,10 @@ let SKILL=null, BASE=null, FACTS={}, VDOMAIN="", LAST_FINDINGS=[];
 // Which of FACTS a person typed or chose rather than the machine reading it.
 // A claim and a measurement must not be able to wear the same name.
 const STATED=new Set();
+/// What has been agreed to leave this machine, and to whom. See `Flow.consent`:
+/// the point is that a send asks the gate for its facts rather than reaching
+/// for whatever object is in scope.
+const CONSENT=Flow.consent();
 // Which facts the answer actually turned on, where the producer said so. With
 // STATED it is what tells a publisher whether an outcome tests their rule or
 // tests whether somebody answered a question correctly.
@@ -482,8 +486,9 @@ const replacedLine = rep => Object.keys(rep).length
   ? t("anon_done", {list: Object.entries(rep).map(([k,c])=>t("anon_"+k,{n:c})).join(", ")})
   : t("anon_none");
 /// The answers a person typed, which they may still change on the way out.
-const editableIn = obj => Object.keys(obj).filter(k =>
-  TYPED_IDS().has(k) && typeof obj[k] === "string" && obj[k].trim());
+/// The rule is `Flow.editable`; what this adds is where the window keeps the
+/// two sets of ids that record who supplied a value.
+const editableIn = obj => Flow.editable(obj, TYPED_IDS());
 
 function label(id){
   // `<probe id>.declined` is a fact on the wire and therefore a line on the
@@ -749,6 +754,10 @@ async function runInner(){
   // diagnosis after it.
   await invoke("end_incident");
   SKILL=null; FACTS={}; STATED.clear(); DECIDED=[]; LAST_FINDINGS=[];
+  // Agreement is spent with the incident it was given for. A run that reused
+  // the last one's would be sending what somebody said yes to about a different
+  // problem, possibly to a party they did not choose this time.
+  CONSENT.clear();
   // And a translation belongs to the question it was made for.
   TRANSLATED=false; $("origtab").hidden=true; document.body.classList.remove("orig");
   const problem=$("problem").value.trim();
@@ -837,7 +846,7 @@ async function runInner(){
   // travels: a fact that arrives after the panel is drawn cannot be sent
   // without being shown, because there is nothing left that could send it.
   const sent=await asSent(FACTS);
-  const SHOWN=sent.facts;
+  let SHOWN=sent.facts;
   const send=add(`<h3>${t("send_h",{v:esc(d.org)})}</h3><p>${t("send_1")}</p>
     <ul class="plain">${Object.keys(SHOWN).map(k=>{const l=label(k);
       return `<li><span><span class="lbl">${esc(l.t)}</span><br><span class="why">${esc(l.w)}</span></span></li>`;}).join("")}</ul>
@@ -861,16 +870,18 @@ async function runInner(){
       ? t("send_none_llm",{v:esc(d.org)}) : t("send_none_nollm",{v:esc(d.org)})}</p>`;
     return;
   }
-  send.querySelectorAll("textarea.sv").forEach(a=>{
-    const v=a.value.trim(), k=a.dataset.id;
-    if(v) SHOWN[k]=v; else { delete SHOWN[k]; SHOWN[k+".declined"]=true; }
-  });
+  const edits={};
+  send.querySelectorAll("textarea.sv").forEach(a=>{ edits[a.dataset.id]=a.value; });
+  SHOWN=Flow.applyEdits(SHOWN, edits);
+  // This panel, and nothing else, is why anything may go to the vendor.
+  CONSENT.grant("vendor", SHOWN);
 
   // The vendor endpoint may answer "I still need X" instead of a finding. That
   // is how a decision tree gets walked without guessing: where two problems look
   // alike, it asks for the fact that separates them. Same loop the local model
   // already drives, so the client has one mechanism rather than two.
-  let rem=(await invoke("diagnose",{base:BASE, skillId:SKILL.id, facts:SHOWN, lang:LANG})).remedy;
+  let rem=(await invoke("diagnose",{base:BASE, skillId:SKILL.id,
+    facts:CONSENT.factsFor("vendor"), lang:LANG})).remedy;
   await translateRemedy(rem);
   for(let round=1; rem.need && rem.need.length; round++){
     // `SPEC.md` is normative: an endpoint that receives `<id>.declined` must
@@ -904,14 +915,37 @@ async function runInner(){
                  <option value="">${esc(t("q_pick"))}</option>
                  ${p.choices.map(c=>`<option>${esc(c)}</option>`).join("")}</select>`
             : textInput("nq", p.id, p.example||t("q_ph"), 1, id)}
-        </div>`;}).join("")}`:""}
+        </div>`;}).join("")}
+        <p class="note c-stop" data-msg="nq"></p>`:""}
       <div class="btns"><button class="primary allow">${t("need_send")}</button>
         <button class="ghost" id="needskip">${t("need_skip")}</button>
         <button class="deny">${t("need_stop")}</button></div>`, "panel decide");
 
+    // The mark goes the moment somebody starts correcting the answer, so it
+    // never stands over a value that is already different.
+    el.querySelectorAll(".nq").forEach(i=>
+      i.addEventListener("input",()=>i.classList.remove("invalid")));
     const answer=await new Promise(res=>{
       const done=v=>{settle(el);res(v);};
-      el.querySelector(".allow").onclick=()=>done("answer");
+      el.querySelector(".allow").onclick=()=>{
+        // **This round checked no patterns at all.** The other two panels have
+        // since the day a vendor's `pattern` first mattered; this one asks the
+        // endpoint's questions and took whatever was typed, so a value the
+        // vendor had already said would not do went out anyway and came back as
+        // another round of the same question. It was left out of the move that
+        // put the rule in one place because it had nowhere to say no — it
+        // resolved on the click. It does not resolve now until the round is good.
+        const values={};
+        el.querySelectorAll(".nq").forEach(i=>{ values[i.dataset.id]=i.value||""; });
+        const round=Flow.readAnswers(human, values);
+        el.querySelectorAll(".nq").forEach(i=>
+          i.classList.toggle("invalid", round.invalid.includes(i.dataset.id)));
+        const note=el.querySelector("[data-msg=nq]");
+        if(!round.ok){ if(note) note.textContent=t("q_pattern"); return; }
+        if(note) note.textContent="";
+        Object.assign(FACTS, round.facts);
+        done("answer");
+      };
       el.querySelector("#needskip").onclick=()=>done("skip");
       el.querySelector(".deny").onclick=()=>done("stop");
       el.querySelector(".deny").focus();
@@ -927,10 +961,8 @@ async function runInner(){
       // again forever.
       rem.need.forEach(p=>{ FACTS[p.id+".declined"]=true; });
     } else {
-      el.querySelectorAll(".nq").forEach(i=>{
-        const v=(i.value||"").trim();
-        if(v) FACTS[i.dataset.id]=v; else FACTS[i.dataset.id+".declined"]=true;
-      });
+      // The typed answers went in above, under the check that let the panel
+      // close. What is left is what the machine was allowed to read.
       if(machine.length){
         const c=await invoke("perform_reads",{probes:machine, allow:machine.map(p=>p.id)});
         Object.assign(FACTS, c.facts);
@@ -942,7 +974,9 @@ async function runInner(){
     // what may be sent. `SHOWN` means one thing everywhere: what has been put
     // in front of them and agreed to.
     Object.assign(SHOWN, FACTS);
-    rem=(await invoke("diagnose",{base:BASE, skillId:SKILL.id, facts:SHOWN, lang:LANG})).remedy;
+    CONSENT.grant("vendor", SHOWN);
+    rem=(await invoke("diagnose",{base:BASE, skillId:SKILL.id,
+      facts:CONSENT.factsFor("vendor"), lang:LANG})).remedy;
     await translateRemedy(rem);
   }
   LAST_FINDINGS = rem.findings || [];
@@ -1194,28 +1228,23 @@ async function askQuestions(open, probes){
   await new Promise(res=>{
     const fin=()=>{settle(qa);res();};
     qa.querySelector("#qaok").onclick=()=>{
-      // P3: an answer that does not fit the publisher's declared `pattern` is
-      // caught here and asked again — not after a report was built around it.
-      // The hand-off has checked this since it was written; the questions
-      // never did.
-      let bad=false;
-      qa.querySelectorAll(".ai").forEach(i=>{
-        const p=open.find(x=>x.id===i.dataset.id), v=(i.value||"").trim();
-        i.classList.remove("invalid");
-        if(p && p.pattern && v && !matchesPattern(p.pattern, v)){ i.classList.add("invalid"); bad=true; }
-      });
+      // What an answer, a skip and a value that does not fit the publisher's
+      // `pattern` each mean is `Flow.readAnswers` — the same rule the hand-off
+      // uses. That is the point of moving it: these two panels each had their
+      // own copy and disagreed about it three times, and every disagreement was
+      // a defect somebody hit.
+      const values={};
+      qa.querySelectorAll(".ai").forEach(i=>{ values[i.dataset.id]=i.value||""; });
+      const round=Flow.readAnswers(open, values);
+      qa.querySelectorAll(".ai").forEach(i=>
+        i.classList.toggle("invalid", round.invalid.includes(i.dataset.id)));
       const note=qa.querySelector("[data-msg=qa]");
-      if(bad){ if(note) note.textContent=t("q_pattern"); return; }
-      qa.querySelectorAll(".ai").forEach(i=>{
-        const v=i.value.trim();
-        // A question left empty is a question answered "I don't know", and
-        // `SPEC.md` makes that a wire fact: `<probe id>.declined`. This panel
-        // recorded an answer and recorded *nothing* for a skip, so the
-        // endpoint was never told and asked again — forever, on any card whose
-        // firmware carries no serial. The need loop had always written it; the
-        // panel that arms a question from `when_missing` never did.
-        if(v){ FACTS[i.dataset.id]=v; STATED.add(i.dataset.id); }
-        else { FACTS[i.dataset.id+".declined"]=true; } }); fin(); };
+      // P3: caught here and asked again, not after a report was built around it.
+      if(!round.ok){ if(note) note.textContent=t("q_pattern"); return; }
+      if(note) note.textContent="";
+      Object.assign(FACTS, round.facts);
+      round.stated.forEach(id=>STATED.add(id));
+      fin(); };
     const again=qa.querySelector("#qaread");
     if(again) again.onclick=async()=>{
       const machine=open.filter(p=>p.kind==="machine");
@@ -1226,16 +1255,6 @@ async function askQuestions(open, probes){
       qa.className="panel";
       qa.innerHTML=`<h3>${t("read_after_all_h")}</h3>${kv(r.facts)}`; res(); };
   });
-}
-
-/// A publisher's `pattern`, anchored the way the client anchors every pattern.
-/// One that is not a valid expression constrains nothing rather than blocking
-/// a person on somebody else's typo.
-function matchesPattern(pattern, v){
-  let re;
-  try{ re=new RegExp("^(?:"+String(pattern).replace(/^\^|\$$/g,"")+")$"); }
-  catch(_){ return true; }
-  return re.test(v);
 }
 
 function logBox(p, lab){
@@ -1322,10 +1341,15 @@ async function publishedPath(pick, problem){
   // original one click away. This was the first publisher sentence a person
   // meets and it was the one left in English.
   //
-  // No glossary yet: the card is fetched further down, under a consent this
-  // question comes before, so there is nothing to keep terms out of. A term
-  // the model changes here is recoverable — the original is beside it, and the
-  // identifier under it never moves.
+  // **The glossary is here now, and it used to be the one place it was not.**
+  // It lives on the card, the card is fetched further down under a consent
+  // this question comes before, and so the first publisher sentence anybody
+  // reads was the only one translated with nothing keeping its terms — which
+  // is exactly the failure `LG8` measures: `brain` arriving as an organ. The
+  // index entry carries it beside `answer_labels` now, because that is the
+  // same data on the same trip, already fetched and already signed, and
+  // reading a directory asks the project nothing.
+  const KEEP_EARLY = Flow.publishedGlossary(pick);
   const labels_t = {};
   const toTranslate = classes.filter(c => labels[c]);
   if(toTranslate.length && await publisherModel()){
@@ -1333,10 +1357,13 @@ async function publishedPath(pick, problem){
     try{
       const src = {};
       toTranslate.forEach((c,i)=>{ src["c"+i] = labels[c]; });
-      const {texts:out} = await awaitOrCancel(translateKeeping(src, []), th);
+      const {texts:out, lost} = await awaitOrCancel(translateKeeping(src, KEEP_EARLY), th);
       toTranslate.forEach((c,i)=>{ if(out["c"+i]) labels_t[c] = out["c"+i]; });
       th.remove();
       if(Object.keys(labels_t).length) showTranslated();
+      // Said rather than hidden, the same as every other publisher
+      // translation. A term the model dropped anyway is the reader's business.
+      if(lost && lost.length) add(termsLostLine(lost), "panel");
     }catch(e){
       if(e instanceof Cancelled) throw e;
       // The publisher's English is a worse answer than their German and a far
@@ -1399,7 +1426,7 @@ async function publishedPath(pick, problem){
   // As on the vendor path: what the panel showed is the object that travels,
   // rather than a second read of one that could have moved since.
   const sent=await asSent(FACTS);
-  const SHOWN=sent.facts;
+  let SHOWN=sent.facts;
   const tx=add(`<h3>${t("pub_send_h",{o:esc(operatorHost())})}</h3>
     <p>${t("pub_send_1",{v:esc(pick.vendor), o:esc(operatorHost())})}</p>
     <ul class="plain">${Object.keys(SHOWN).map(k=>{const l=label(k);
@@ -1420,10 +1447,12 @@ async function publishedPath(pick, problem){
     logUi("publishedPath: the person refused to send, which is an answer");
     return "answered";
   }
-  tx.querySelectorAll("textarea.sv").forEach(a=>{
-    const v=a.value.trim(), k=a.dataset.id;
-    if(v) SHOWN[k]=v; else { delete SHOWN[k]; SHOWN[k+".declined"]=true; }
-  });
+  const edits={};
+  tx.querySelectorAll("textarea.sv").forEach(a=>{ edits[a.dataset.id]=a.value; });
+  SHOWN=Flow.applyEdits(SHOWN, edits);
+  // The operator is a third party the person was not told about until this
+  // panel named it, so this panel is the whole of why anything may go there.
+  CONSENT.grant("operator", SHOWN);
 
   // The third outcome — "I still need X" — is answered through the same loop
   // the vendor path uses, so a question here costs no second mechanism. An
@@ -1433,7 +1462,7 @@ async function publishedPath(pick, problem){
   for(let round=0; round<3; round++){
     try{
       out=await invoke("ask_published",{base:SERVER_URL, subject:subjectOf(pick),
-        problemClass:cls, facts:SHOWN, stated:[...STATED]});
+        problemClass:cls, facts:CONSENT.factsFor("operator"), stated:[...STATED]});
     }catch(e){
       UNREACHABLE_WHY = tr(e && e.message || e);
       logUi(`publishedPath: ask_published failed on round ${round}: ${UNREACHABLE_WHY}`);
@@ -1442,8 +1471,10 @@ async function publishedPath(pick, problem){
     if(out.outcome!=="need") break;
     if(!await askOneProbe(out.need[0], out.need_reason, pick.vendor)) break;
     // Asked in the operator's name and answered, so it goes the way the panel
-    // above said it would.
+    // above said it would — and is granted again, because the gate holds a copy
+    // and an answer nobody showed must not ride along on the next round.
     Object.assign(SHOWN, FACTS);
+    CONSENT.grant("operator", SHOWN);
   }
 
   if(!out || out.outcome!=="finding"){
@@ -1656,12 +1687,14 @@ async function offerIssueReport(pick, problem, outcome, answer, fromModel){
     <div class="btns"><button class="primary" id="issuecopy">${t("issue_copy")}</button>
       <button class="deny" id="issueclose">${t("issue_close")}</button></div>`, "panel decide");
   const box = el.querySelector("#issuemd");
-  const withFooter = r.markdown;
-  const noFooter = withFooter.replace(/\n---\n\*Assembled by PODSHL[^]*$/, "");
-  box.value = withFooter;
+  box.value = r.markdown;
+  // The words are the binary's, returned beside the markdown they are in. This
+  // used to be the same sentence written out again here as a regex, twice, and
+  // the way that breaks is silent in the direction that matters: reword it in
+  // `issue.rs` and unchecking the box removes nothing while the label goes on
+  // saying it did.
   el.querySelector("#issuefoot").onchange = e => {
-    const keep = box.value.replace(/\n---\n\*Assembled by PODSHL[^]*$/, "");
-    box.value = e.target.checked ? keep + withFooter.slice(noFooter.length) : keep;
+    box.value = Flow.footerToggle(box.value, r.footer, e.target.checked);
   };
   el.querySelector("#issuecopy").onclick = async () => {
     // What is copied is what is in the box, not what was generated: the person
@@ -2123,26 +2156,19 @@ async function handover(plan, vendorName){
     // never stands over a value that is already different.
     need.querySelectorAll(".rq").forEach(i=>i.addEventListener("input",()=>i.classList.remove("invalid")));
     await new Promise(res=>{ need.querySelector("#rqok").onclick=()=>{
-      let bad=false;
-      need.querySelectorAll(".rq").forEach(i=>{
-        const p=plan.require.find(x=>x.id===i.dataset.id);
-        const v=(i.value||"").trim();
-        i.classList.remove("invalid");
-        if(!v){
-          // Required, and now genuinely answerable as empty: the choices used
-          // to arrive with the first one selected, so this could not happen
-          // and was never checked. An unanswered required field must not open
-          // a case in somebody's name.
-          i.classList.add("invalid"); bad=true; return;
-        }
-        if(p && p.pattern && !matchesPattern(p.pattern, v)){
-          i.classList.add("invalid"); bad=true; return;
-        }
-        extra[i.dataset.id]=v;
-      });
+      // `required`: here an empty box is not a decline, it is unanswered, and
+      // an unanswered required field must not open a case in somebody's name.
+      // That is the one thing this round does differently from the questions
+      // panel, and it is now the one place either of them says so.
+      const values={};
+      need.querySelectorAll(".rq").forEach(i=>{ values[i.dataset.id]=i.value||""; });
+      const round=Flow.readAnswers(plan.require, values, {required:true});
+      need.querySelectorAll(".rq").forEach(i=>
+        i.classList.toggle("invalid", round.invalid.includes(i.dataset.id)));
       const note=need.querySelector("[data-msg=rq]");
-      if(note) note.textContent = bad ? t("q_pattern") : "";
-      if(bad) return;                       // caught here, not after a case is opened
+      if(note) note.textContent = round.ok ? "" : t("q_pattern");
+      if(!round.ok) return;                   // caught here, not after a case is opened
+      Object.assign(extra, round.facts);
       settle(need);
       res();
     };});
@@ -2217,8 +2243,10 @@ async function handover(plan, vendorName){
    as it will be sent. Sending nothing is the default and costs the user
    nothing. */
 async function offerFreeText(pv, d, destination){
-  const stated = pv.report.stated || {};
-  const ids = Object.keys(stated).filter(k => stated[k] === null && (FACTS[k]||"").trim());
+  // Supplied-and-withheld, and there are still words to offer. Not `dropped`:
+  // that also holds machine readings, and a box to retype one of those is the
+  // opposite of what the reading panel promises.
+  const ids = Flow.withheldWords(pv.report, FACTS);
   if(!ids.length) return pv.report;
 
   // Anonymised before it is shown, not after it is agreed to. Nobody reliably
@@ -2247,9 +2275,11 @@ async function offerFreeText(pv, d, destination){
     el.className="panel"; el.innerHTML=`<h3>${t("free_none_h")}</h3><p>${t("free_none_1")}</p>`;
     return pv.report;
   }
-  const text = [...el.querySelectorAll(".ft")]
-    .map(a=>`${a.dataset.id}: ${a.value.trim()}`)
-    .filter(x=>!x.endsWith(": ")).join("\n\n");
+  const typed = {};
+  for(const a of el.querySelectorAll(".ft")) typed[a.dataset.id] = a.value;
+  // An emptied box is a withdrawal, and every box emptied attaches nothing at
+  // all rather than a consent recorded against no text.
+  const text = Flow.consentedText(ids, typed);
   if(!text) return pv.report;
   try{
     const r = await invoke("attach_consented_text",

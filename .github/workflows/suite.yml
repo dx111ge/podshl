@@ -15,9 +15,17 @@
 #
 # **Where this runs.** On the public mirror, which is fed by hand after a change
 # is already pushed — so this one reports rather than gates. The gate is
-# `.gitea/workflows/suite.yml`, on the working repository, which has a runner
-# (`local-builder`) that was there all along; the first version of this comment
-# said it did not, which was wrong and was worth checking rather than assuming.
+# `.gitea/workflows/suite.yml`, on the working repository, whose runner is
+# `podshl-builder`, made by `scripts/gitea_runner.sh`.
+#
+# This comment has now been wrong twice about that runner, in both directions.
+# It first said the working repository had none; it was corrected to say an
+# existing `local-builder` had been there all along. Both were wrong:
+# `local-builder` was registered to the same Gitea but not where this repository
+# could use it, and on 2026-09-16 asking the server showed it was not registered
+# anywhere at all. It has been removed. The lesson is in the correction rather
+# than the fact — a healthy container proves a daemon is running, not that
+# anything can reach it, and only the server can say who is registered.
 #
 # Both are worth having. This one runs on a clean machine and the Gitea one does
 # not, and the difference between them is exactly the class of failure that

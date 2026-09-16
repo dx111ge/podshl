@@ -140,6 +140,14 @@ fn version_tokens(text: &str) -> Vec<String> {
     out
 }
 
+/// The line a copied issue carries about how it was made.
+///
+/// A constant because two places need the same words: the markdown this builds,
+/// and the panel's checkbox that takes them out again. The panel is handed this
+/// string rather than a pattern that hopes to match it.
+pub const FOOTER: &str = "---\n*Assembled by PODSHL on my own machine. The readings above were \
+                          taken with my permission and anonymised before I saw them.*\n";
+
 /// The issue text, and what the anonymiser took out of it.
 ///
 /// Everything that could carry a path, an account or an address is anonymised
@@ -235,15 +243,19 @@ pub fn build(
         md.push_str("### The answer I was given\n\nNothing published covered this.\n\n");
     }
 
+    // Stated once, here, and handed back whole. The panel has a checkbox for
+    // this, and it used to strip the footer with a regex of its own -- the same
+    // sentence written twice, in two languages, one of which would have gone on
+    // claiming to remove text the other had stopped producing.
     if footer {
-        md.push_str(
-            "---\n*Assembled by PODSHL on my own machine. The readings above were \
-             taken with my permission and anonymised before I saw them.*\n",
-        );
+        md.push_str(FOOTER);
     }
 
     json!({
         "markdown": md,
+        // What the checkbox takes out and puts back, so the page never has to
+        // recognise it.
+        "footer": FOOTER,
         // Returned as well as written into the text, so the panel can say it
         // before anybody scrolls — "marked before anything is copied".
         "unstated_versions": invented,
@@ -394,5 +406,22 @@ mod tests {
         assert!(on["markdown"].as_str().unwrap().contains("PODSHL"));
         assert!(!off["markdown"].as_str().unwrap().contains("PODSHL"),
                 "the footer stayed after it was switched off");
+    }
+
+    /// The panel's checkbox does not call this twice; it takes the footer off
+    /// the end of the text it already has and puts it back. That is only the
+    /// same document if the footer is exactly a suffix -- so this is the
+    /// property the page is allowed to rely on, checked here rather than
+    /// assumed there.
+    #[test]
+    fn the_footer_is_exactly_a_suffix() {
+        let on = build("s", "", &facts(), &[], "finding", "", false, &[], true);
+        let off = build("s", "", &facts(), &[], "finding", "", false, &[], false);
+        let with = on["markdown"].as_str().unwrap();
+        let without = off["markdown"].as_str().unwrap();
+        assert_eq!(with, format!("{without}{FOOTER}"),
+                   "switching the footer off is not the same as removing it from the end");
+        assert_eq!(on["footer"].as_str().unwrap(), FOOTER,
+                   "the panel is handed the words, so it never has to recognise them");
     }
 }

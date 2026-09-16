@@ -17,12 +17,31 @@ DevTools protocol. A browser automation stack here would be a second browser.
 | **3a** the page, headless | `tests/flow-headless.test.mjs` — the shipped page in a browser, `invoke` bridged to the real binary | in CI |
 | **3b** the real window | `tests/published-path.test.mjs` — WebView2 over the DevTools protocol | **Windows, by hand** |
 
-**Layer 2 is begun, not finished.** `ui/flow.js` holds the decisions that were
-wrong twice: what a hit publishes, what to say when nothing is published, and
-what to do with each outcome the published path returns. The consent ordering,
-the question rounds and the report assembly are still inside the page's 2200
-lines. They belong here too, one at a time, each move covered by 3a — which is
-what made this move safe to start.
+**Layer 2 is done.** `ui/flow.js` holds the decisions that were wrong twice, or
+written out two and three times:
+
+* what a search hit publishes, what to say when nothing is published, and what
+  to do with each outcome the published path returns;
+* what a round of answers means — a skip is `<id>.declined`, an unanswered
+  *required* field is not a skip, a publisher's `pattern` is anchored and a
+  broken one constrains nothing. All three panels that ask a person a question
+  go through it;
+* what editing a value before it goes means — only a person's own words are
+  editable, emptying a box withdraws the answer rather than sending an empty
+  one, and an edit naming something the panel did not show is ignored;
+* who may receive what. `Flow.consent()` is a gate: a panel that showed a
+  snapshot and got a yes grants it, naming who for, and a send asks the gate.
+  A send with no panel in front of it throws instead of sending quietly;
+* report assembly. `preview_report` in Rust decides what a report holds and
+  what is withheld, so the open question was whether a decision was left in the
+  page at all. There were three, and they are here now: which withheld facts
+  still have words to offer — `stated[id] === null`, never `dropped`, because
+  that also holds machine readings and a box to retype one of those is what the
+  reading panel refuses; what an emptied free-text box means; and what the
+  footer checkbox does, with the footer's words coming from the binary that
+  wrote them rather than a second copy of the sentence living here.
+
+Each move was covered by 3a, which is what made starting safe.
 
 The `invoke` surface is settled and is not what blocks the rest: three commands
 a released client must not have are compiled in only under `--features uitest`,

@@ -103,6 +103,12 @@ pub fn search(query: &str) -> Value {
                     // recorded and sent is the identifier the publisher's rules
                     // answer, and what a person reads is their sentence for it.
                     "answer_labels": e.class_labels.clone(),
+                    // Beside the labels because it is for the labels: the page
+                    // translates them before the card that would hold this has
+                    // been asked for. Empty from an operator that has not been
+                    // updated, which reads as "no terms" and is what every
+                    // client did before.
+                    "glossary_keep": e.glossary_keep.clone(),
                     "status": e.status.clone(),
                     "how": m!("how_published")
                 }))

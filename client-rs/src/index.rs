@@ -49,6 +49,21 @@ pub struct Entry {
     /// falls back to the identifier rather than showing nothing.
     #[serde(default)]
     pub class_labels: std::collections::BTreeMap<String, String>,
+    /// The project's own words, kept as written by whatever model translates
+    /// its text (`LG8`).
+    ///
+    /// Here rather than only on the card, because the card is fetched under a
+    /// consent that comes *after* the question `class_labels` asks, and the
+    /// labels are translated to put that question in the reader's language. At
+    /// the one moment the terms are needed, nothing else has them. They are the
+    /// publisher's own published words and this index is public, so carrying
+    /// them discloses nothing; ingest bounds them, so nothing here has to.
+    ///
+    /// Absent from every index built before this existed, which is the whole
+    /// reason for `serde(default)` — an older operator serves entries without
+    /// it and a client reads them exactly as it did yesterday.
+    #[serde(default)]
+    pub glossary_keep: Vec<String>,
     #[serde(default)]
     pub search_tokens: Vec<String>,
     #[serde(default)]
@@ -414,6 +429,33 @@ mod tests {
         assert!(!is_stale(&i, 1_000_000 + MAX_AGE_MS - 1), "fresh index called stale");
         assert!(is_stale(&i, 1_000_000 + MAX_AGE_MS), "an index past its age was called current");
         assert!(is_stale(&i, 500_000), "a clock that went backwards was read as freshness");
+    }
+
+    /// An entry from an operator that has not been updated still reads.
+    ///
+    /// `glossary_keep` was added so the first question's labels could be
+    /// translated with the project's own terms kept, and every index signed
+    /// before that lacks it. A client that refused those, or that read a
+    /// missing list as anything but "no terms", would stop working against
+    /// every operator in the world on the day this shipped.
+    #[test]
+    fn an_entry_without_a_glossary_is_an_entry_with_no_terms() {
+        let old: Entry = serde_json::from_value(serde_json::json!({
+            "host": "github.com",
+            "anchor_url": "https://github.com/dx111ge/engram/",
+            "problem_classes": ["engram.llm.model-not-pulled"],
+            "class_labels": {"engram.llm.model-not-pulled": "Search returns nothing"}
+        }))
+        .expect("an index from before the glossary did not parse");
+        assert!(old.glossary_keep.is_empty(), "a missing glossary is no terms, not a failure");
+
+        let new: Entry = serde_json::from_value(serde_json::json!({
+            "host": "github.com",
+            "problem_classes": [],
+            "glossary_keep": ["brain", ".brain"]
+        }))
+        .expect("an index with a glossary did not parse");
+        assert_eq!(new.glossary_keep, vec!["brain".to_string(), ".brain".to_string()]);
     }
 
     /// The interop case: the index this client verifies is the one the server

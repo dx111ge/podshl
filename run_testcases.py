@@ -566,8 +566,31 @@ def rust_results(target=None):
         f"changed output format, and either way nothing below has been checked:\n"
         + (out.stdout[-2000:] + out.stderr[-2000:]))
     _RUST[key] = found
-    _RUST[key + ":raw"] = out.stdout + out.stderr
+    _RUST[key + ":raw"] = _rust_detail(out)
     return found
+
+
+def _rust_detail(out):
+    """What to show when a Rust test failed.
+
+    Not `stdout + stderr` sliced from the end, which is what this was. `cargo`
+    writes the compiler's output to stderr and `libtest` writes the panic to
+    stdout, and the compiler's output is thousands of lines long — so the last
+    2000 characters of the two concatenated were reliably 2000 characters of
+    "Downloaded tokio v1.53.1". CI went red on 2026-09-15 with a failing case
+    and no reason attached to it at all, and the reason was never in the log.
+    A red suite that cannot say why teaches people to read past red.
+
+    The panic is what somebody needs. The compiler's last words are kept after
+    it, shorter, because sometimes the failure is a build.
+    """
+    panic = out.stdout
+    cut = panic.find("\nfailures:\n")
+    if cut != -1:
+        panic = panic[cut:]
+    return (panic[-3000:].strip()
+            + "\n--- cargo's own output, last 800 characters ---\n"
+            + out.stderr[-800:].strip())
 
 
 def cargo(test_name, target=None):
@@ -582,7 +605,7 @@ def cargo(test_name, target=None):
     assert how is not None, (
         f"{test_name} is named by a case and does not exist in the "
         f"{target or 'podshl-client'} target. A renamed test is an unrun case.")
-    assert how == "ok", f"{test_name} {how}\n" + _RUST[(target or 'bin') + ':raw'][-2000:]
+    assert how == "ok", f"{test_name} {how}\n" + _RUST[(target or 'bin') + ':raw']
 
 
 def cargo_all():
@@ -613,7 +636,7 @@ def cargo_all():
         bad = sorted(n for n, how in results.items() if how == "FAILED")
         assert not bad, (
             f"{len(bad)} Rust tests failed in {target or 'podshl-client'}: {', '.join(bad)}\n"
-            + _RUST[(target or 'bin') + ':raw'][-3000:])
+            + _RUST[(target or 'bin') + ':raw'])
         # A target that runs nothing is the failure the old guard was reaching
         # for and could not express: it tested the *string* "0 passed", which
         # a run of ten tests hides just as well as a run of none.

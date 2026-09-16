@@ -129,7 +129,17 @@ glossary:
 The client does not ask the model to keep them, because that was measured to
 work only by luck of phrasing. It hides each occurrence behind a placeholder
 before the text is sent and puts your word back after; a translation that lost
-one says so beside it. Only `keep` is read. A per-language rendering — *write
+one says so beside it. Only `keep` is read.
+
+**Your terms also travel in the directory, and this is why it matters to you.**
+The sentence a person picks their problem by — your `class_labels` — is the
+first thing of yours anybody reads, and it is translated *before* the client
+fetches your card, because choosing the problem is what leads to the consent
+under which your card is fetched. For a while that one sentence was therefore
+the only text of yours translated with nothing kept. The directory entry now
+carries `glossary.keep` beside the labels, so the terms arrive in time. Nothing
+extra is published: the same words you already wrote, in the same public signed
+index. A per-language rendering — *write
 brain as Wissensspeicher in German* — was measured too, and the models it would
 reach did not apply it, so the format has no field for one and a manifest that
 writes one is refused. At most 50 terms, each one line of at most 64 characters.

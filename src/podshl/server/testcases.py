@@ -1424,7 +1424,10 @@ def sv107_a_projects_own_terms_reach_the_reader_as_written():
 
     It has to survive ingest into the card the mirror serves — anything a
     manifest carries that ingest does not know is dropped on purpose, so a
-    glossary missing from that list would vanish without a word. And it is
+    glossary missing from that list would vanish without a word — **and into
+    the index entry**, which is the only copy that arrives in time for the
+    first sentence a reader meets: the question is asked before the consent
+    under which the card is fetched. And it is
     publisher text that enters a reader's prompt, so it is bounded: a term is
     one short line with a letter in it, at most fifty of them, and a key the
     format does not have is refused rather than ignored, so a maintainer who
@@ -1449,6 +1452,25 @@ def sv107_a_projects_own_terms_reach_the_reader_as_written():
                 card = cur.fetchone()["json"]
         assert card.get("glossary") == {"keep": ["brain", ".brain"]}, (
             f"the glossary did not survive ingest into the served card: {card.get('glossary')!r}")
+
+        # **And into the index entry, which is the only copy that arrives in
+        # time.** A client translates `class_labels` to put the first question
+        # in the reader's language, and that question comes *before* the
+        # consent under which the card is fetched -- so the card's glossary
+        # cannot reach the one sentence every reader is guaranteed to meet.
+        # The terms ride with the labels instead. Nothing is disclosed by it:
+        # the same published words, in the same public signed document.
+        from . import index_feed
+        with db.read() as conn:
+            rows = index_feed.entries(conn)
+        ours = [e for e in rows if e["host"] == host]
+        # One entry, because `_served_project` takes a fresh host. Asserted
+        # rather than assumed: `SV64` reads the wrong row for exactly this
+        # reason, having filtered on a host several projects share.
+        assert len(ours) == 1, f"expected one index entry for {host}, got {len(ours)}"
+        assert ours[0].get("glossary_keep") == ["brain", ".brain"], (
+            "the glossary did not reach the index entry, so the first sentence a "
+            f"person reads is translated with nothing kept: {ours[0].get('glossary_keep')!r}")
     finally:
         stop()
 

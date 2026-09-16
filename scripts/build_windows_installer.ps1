@@ -57,6 +57,23 @@ try {
     Remove-Item Env:\PODSHL_BUILD_SERVER_URL, Env:\PODSHL_BUILD_INDEX_URL, Env:\PODSHL_BUILD_LOG_KEY -ErrorAction SilentlyContinue
 }
 
+# **Every file this script writes gets LF, explicitly.**
+#
+# `Set-Content` writes CRLF on Windows, and `SHA256SUMS` is read by
+# `sha256sum -c` on Linux and macOS -- which takes the carriage return as part
+# of the file name and reports every line as "No such file or directory". The
+# checksum file is for the people who did not build it, and they are mostly not
+# on Windows.
+#
+# 0.1.0 through 0.1.2 escaped this by accident: the Linux task happened to write
+# the file last, with LF. So whether a release could be verified at all depended
+# on the order two builds were run in, which is not a property to leave standing
+# once it is known.
+function Write-Lf([string]$Path, [string[]]$Lines) {
+    [System.IO.File]::WriteAllText($Path, ($Lines -join "`n") + "`n", `
+        (New-Object System.Text.UTF8Encoding $false))
+}
+
 # Honour CARGO_TARGET_DIR, as the Linux release task does.
 $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $repo 'client-rs\target' }
 $built = Get-ChildItem (Join-Path $target 'release\bundle\nsis') -Filter "*_${version}_*-setup.exe" |
@@ -69,16 +86,22 @@ $name = if ($loopback) { "podshl-client-$version-windows-x64-loopback-setup.exe"
 Copy-Item $built.FullName (Join-Path $out $name) -Force
 
 $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $out $name)).Hash.ToLower()
-$sums = Join-Path $out 'SHA256SUMS'
-$kept = if (Test-Path $sums) { Get-Content $sums | Where-Object { $_ -notmatch [regex]::Escape($name) } } else { @() }
-Set-Content -Path $sums -Value (@($kept) + "$hash  $name")
+
+# Which commit this came from, the way the Linux task records it. Without it
+# the two PLATFORM files in one release directory answer "what was built?"
+# differently -- one names a commit, the other only a version, and a version is
+# not something anybody can check out.
+$commit = (git -C $repo rev-parse --short HEAD 2>$null)
+if ($LASTEXITCODE -ne 0 -or -not $commit) { $commit = 'unknown' }
+$dirty = (git -C $repo status --porcelain 2>$null)
+if ($dirty) { $commit = "$commit+dirty" }
 
 $for = if ($loopback) {
     "this machine's own stack at $ServerUrl. It is useless anywhere else: another computer has no operator on its loopback address. Build again with -ServerUrl for anything you hand out."
 } else {
     "the operator at $ServerUrl, index $IndexUrl."
 }
-Set-Content -Path (Join-Path $out 'PLATFORM-windows.md') -Value @"
+Write-Lf (Join-Path $out 'PLATFORM-windows.md') @"
 # podshl-client — Windows, x64
 
 ## What this is
@@ -112,8 +135,21 @@ The elevated helper (L5). Nothing this client does today needs privilege.
 
 ## Provenance
 
-podshl-client $version, SHA-256 $hash.
+podshl-client $version, built from $commit, SHA-256 $hash.
 "@
+
+# **The sums are written last, after every file they cover.** They used to be
+# written before `PLATFORM-windows.md`, so the one file that tells a reader
+# "the SHA256SUMS beside this file says what was built" was the one file the
+# sums did not mention. Found by cutting 0.1.3 and reading the directory.
+$sums = Join-Path $out 'SHA256SUMS'
+$keep = if (Test-Path $sums) {
+    Get-Content $sums | Where-Object { $_ -notmatch '\s(PLATFORM-windows\.md|' + [regex]::Escape($name) + ')$' }
+} else { @() }
+$rows = @($keep) + "$hash  $name"
+$phash = (Get-FileHash -Algorithm SHA256 (Join-Path $out 'PLATFORM-windows.md')).Hash.ToLower()
+$rows += "$phash  PLATFORM-windows.md"
+Write-Lf $sums $rows
 
 Write-Output "$out\$name"
 Write-Output "sha256 $hash"

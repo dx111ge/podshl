@@ -1,0 +1,46 @@
+# The runner that gates this repository.
+#
+# `scripts/ci.sh` is `docker compose` from beginning to end -- it builds the
+# image, runs the suite in it and drives a browser in it. So a job here needs a
+# Docker client and a socket to talk to, and the default act_runner job
+# container has neither.
+#
+# Created by `scripts/gitea_runner.sh`, which mounts this file read-only. It is
+# in git and `var/gitea-runner/` is not, because there is nothing secret in it:
+# the registration token is passed on the command line once and what the runner
+# keeps afterwards lives in its data volume.
+log:
+  # Not debug. Debug makes act print the full container.Config and HostConfig
+  # for every job -- four screens of Go struct per run, in the job log people
+  # actually read. It was worth turning on once, to find out why jobs were
+  # dying before their first step, and the answer is recorded below so nobody
+  # has to turn it on again.
+  level: info
+
+runner:
+  capacity: 1
+  timeout: 60m
+  # Only what this repository asks for. A label nobody uses is a job that waits
+  # for ever with no message.
+  labels:
+    - "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+
+container:
+  # The job talks to the same daemon the runner does. There is one machine here,
+  # and pretending otherwise would mean a second daemon nobody maintains.
+  docker_host: "unix:///var/run/docker.sock"
+  # **No `options: -v /var/run/docker.sock:/var/run/docker.sock` here.**
+  # `docker_host` above already makes act bind that socket into every job
+  # container. Adding it again is not a harmless repeat: the daemon refuses the
+  # whole container with `Duplicate mount point: /var/run/docker.sock`, so the
+  # job dies in about two seconds before its first step runs -- and the runner
+  # logs nothing at all. Ten runs failed that way and the reason was only ever
+  # in the job log on the server.
+  #
+  # And note what `docker_host` does *not* buy. The job's checkout is a named
+  # volume, not a host path, so a bind mount of the working directory resolves
+  # on the daemon's filesystem to nothing. `scripts/ci.sh` handles that with
+  # `compose.ci.yaml`; the note is here because this is where somebody will
+  # come looking.
+  valid_volumes:
+    - "**"

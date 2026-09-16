@@ -38,17 +38,64 @@ SERVER_URL="${2:-}"
 
 say() { printf '\n\033[1m· %s\033[0m\n' "$1"; }
 
+# **Where the source is, from the daemon's point of view.**
+#
+# Every `docker compose` call below hands the container `.:/app`, and a bind
+# mount is resolved by the daemon, not by us. On a laptop that is the same
+# filesystem and the mount is the point -- edit, re-run, no rebuild. Inside a CI
+# job it is not: the job is itself a container, its checkout is a volume, the
+# daemon has no `/workspace/...` path, so it creates an empty directory and
+# mounts that. `/app` is then empty and the first step reports
+# `./scripts/build_client.sh: not found` -- which reads as a missing file and is
+# a missing filesystem. That cost a run to find.
+#
+# So when we are inside a container, ask the daemon what our own working
+# directory actually is. If it is a volume, `compose.ci.yaml` mounts that volume
+# at `/app` instead. If it is a real bind mount from the host, the path exists
+# on both sides and nothing needs doing. Outside a container there is nothing to
+# ask and no extra file is passed, so a developer's run is unchanged.
+COMPOSE=(docker compose)
+if [ -f /.dockerenv ]; then
+  vol=$(docker inspect "$(cat /etc/hostname)"         --format "{{range .Mounts}}{{if eq .Destination \"$PWD\"}}{{.Name}}{{end}}{{end}}" 2>/dev/null || true)
+  if [ -n "$vol" ]; then
+    export PODSHL_SRC_VOLUME="$vol"
+    # A project name of our own rather than the directory's. The directory is
+    # `/workspace/<owner>/<repo>` and its basename is whatever the repository is
+    # called today; the volume below has to be named exactly, so it is named
+    # here.
+    COMPOSE=(docker compose -p podshl-ci -f compose.yaml -f compose.ci.yaml)
+    say "inside a container: /app is the volume $vol, not a bind mount"
+
+    # **A fresh operator, every run.** The checkout is new each job and the
+    # database volume is not, and the operator's signing key lives in the
+    # checkout — so from the second run onwards the client verified a log
+    # signed by a key that no longer existed anywhere, and `AT2` failed with
+    # "the tree head signature is invalid" on a tree of eighty entries nobody
+    # had ever looked at.
+    #
+    # Keeping the key instead would fix the signature and keep the worse
+    # problem: `scripts/seed_log.py` exists *because* a brand-new database is
+    # the case three cases need and developers' machines never have. A database
+    # that accumulates across runs is CI quietly giving up the one condition it
+    # was the only place able to test. The build cache beside it is kept — that
+    # is a cache, not a state.
+    say "a fresh operator: last run's database goes"
+    docker volume rm -f podshl-ci_podshl-pgdata >/dev/null 2>&1 || true
+  fi
+fi
+dc() { "${COMPOSE[@]}" "$@"; }
+
 say "building the image"
-docker compose build podshl
+dc build podshl
 
 say "building a client for $OPERATOR, and checking what landed in it"
 # `--no-deps`: this needs no database, and starting one here only makes the
 # failure modes wider.
-docker compose run --rm --no-deps --entrypoint sh podshl \
+dc run --rm --no-deps --entrypoint sh podshl \
   -c "cd /app && ./scripts/build_client.sh '$OPERATOR' '$SERVER_URL'"
 
 say "the suite"
-docker compose run --rm podshl testcases
+dc run --rm podshl testcases
 
 say "the flow, headless, against the real binary"
 # **The one piece of coverage that needed neither a desktop nor Windows.** The
@@ -68,7 +115,7 @@ say "the flow, headless, against the real binary"
 # MSYS rewrites anything that looks like an absolute path, so the container was
 # handed `C:/Program Files/Git/cargo-target-uitest` — which cargo then tried to
 # join into `LD_LIBRARY_PATH` and refused, because of the colon in it.
-docker compose run --rm --no-deps --entrypoint sh podshl \
+dc run --rm --no-deps --entrypoint sh podshl \
   -c "set -e
       export CARGO_TARGET_DIR=/cargo-target-uitest
       cd /app
@@ -89,7 +136,7 @@ say "format and lint, reported"
 # tree with 588 of them: `cargo fmt` was not installed, it errored, the grep
 # matched nothing and `|| true` made that a number. A report nobody can
 # distinguish from a clean result is worse than no report.
-docker compose run --rm --no-deps --entrypoint sh podshl -c '
+dc run --rm --no-deps --entrypoint sh podshl -c '
   set -e
   cd /app/client-rs
   cargo fmt --version >/dev/null 2>&1 || { echo "rustfmt is not in this image" >&2; exit 1; }

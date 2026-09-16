@@ -27,6 +27,18 @@ pub fn ui_source() -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()))
 }
 
+/// The page's decisions, which since layer 2 began are not in the page.
+///
+/// A contract that reads `index.html` and finds nothing there is not proof the
+/// rule is gone — it may have moved, which is the point of `ui/flow.js`. So the
+/// checks below follow it: the panel must hand its answers to `Flow`, and
+/// `Flow` must be the thing that decides. Both halves, or the check is a
+/// sentence either file could satisfy alone.
+pub fn flow_source() -> String {
+    let p = crate_dir().join("ui/flow.js");
+    std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()))
+}
+
 pub fn main_source() -> String {
     let p = crate_dir().join("src/main.rs");
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()))
@@ -156,8 +168,12 @@ mod tests {
             for (at, _) in ui.match_indices(&format!("querySelectorAll(\"{class}\")")) {
                 let rest = &ui[at..];
                 let body = &rest[..rest.find("});").map(|e| e + 3).unwrap_or(rest.len())];
-                if !body.contains("FACTS[") && !body.contains("extra[") {
-                    continue;               // a pattern check or a listener, not a collector
+                // A collector either writes the facts itself or gathers the values
+                // to hand on. Anything else at this class -- a mark being cleared,
+                // a listener -- is not one.
+                if !body.contains("FACTS[") && !body.contains("extra[") && !body.contains("values[")
+                {
+                    continue;
                 }
                 saw = true;
                 // The *assignment*, not the word. The first version of this
@@ -165,15 +181,41 @@ mod tests {
                 // explaining why the assignment mattered — a source-text check
                 // that a sentence can pass is not a check, and this one had to
                 // be caught by reverting the fix and watching it stay green.
+                //
+                // The call is the same kind of evidence: a panel that hands its
+                // values to `Flow.readAnswers` is a panel that records a skip,
+                // because that is what `Flow.readAnswers` does -- and the assertion
+                // under this loop is what holds it to that. The call sits just past
+                // the gathering loop, so it is looked for in what follows rather
+                // than inside it.
+                // From where the values are actually gathered, not from the
+                // match: a listener two lines above a collector has a slice that
+                // runs into it, and a window measured from the listener stops
+                // short of the call it is looking for.
+                let from = body
+                    .find("values[")
+                    .or_else(|| body.find("FACTS["))
+                    .or_else(|| body.find("extra["))
+                    .expect("the collector was found by one of these a moment ago");
+                let after = &rest[from..(from + 600).min(rest.len())];
                 let records = body.contains(".declined\"]=true")
                     || body.contains(".declined`]=true")
-                    || body.contains("bad=true");
+                    || body.contains("bad=true")
+                    || after.contains("Flow.readAnswers(");
                 assert!(records,
                         "{what} keeps an answer and forgets a skip, so the endpoint is \
                          never told it was asked something nobody can answer: {body}");
             }
             assert!(saw, "nothing collects answers from {class} any more");
         }
+
+        // The other half. Two of the three panels now delegate, so the rule has
+        // to be true where it went: a skipped question becomes `<id>.declined`
+        // in `flow.js`, or it becomes nothing anywhere.
+        assert!(
+            flow_source().contains("facts[q.id + \".declined\"] = true"),
+            "the panels hand their answers to Flow.readAnswers and it no longer \n                 records a skip, so the endpoint is never told"
+        );
     }
 
     /// ND6: a round that cannot make progress ends the loop.
@@ -249,7 +291,21 @@ mod tests {
     /// after an RMA has been raised against an address that is not one.
     #[test]
     fn required_fields_are_validated_before_a_case_is_opened() {
-        assert!(ui_source().contains("if(bad) return;"), "invalid input would reach the vendor");
+        let ui = ui_source();
+        let at = ui
+            .find("if(!round.ok) return;")
+            .expect("invalid input would reach the vendor");
+        // And nothing is applied before the round is known to be good. The page
+        // used to write each good answer as it walked the fields and only then
+        // return, which was harmless solely because the next attempt overwrote
+        // them.
+        let round = ui[..at]
+            .rfind("Flow.readAnswers(plan.require")
+            .expect("the hand-off no longer reads its answers as a round");
+        assert!(
+            !ui[round..at].contains("Object.assign(extra, round.facts)"),
+            "the hand-off records answers before it knows the round is good"
+        );
     }
 
     /// P4: a question with choices constrains the answer to the list — and does
@@ -291,8 +347,20 @@ mod tests {
         // happen while the first choice was pre-selected, so nothing checked it.
         let esc = ui.split("if((plan.require||[]).length){").nth(1)
             .expect("the hand-off no longer asks for what the vendor requires");
-        assert!(esc.contains("if(!v){"),
-                "a required field left unanswered still opens a case in somebody's name");
+        assert!(
+            esc.contains("{required:true}"),
+            "the hand-off no longer asks for its answers as required, so an unanswered \n             field is read as a decline and opens a case in somebody's name"
+        );
+        // Named there, meant here: `required` has to be the thing that makes an
+        // empty box invalid rather than a decline.
+        let flow = flow_source();
+        let at = flow
+            .find("function readAnswers(")
+            .expect("Flow no longer reads a round of answers");
+        assert!(
+            flow[at..].contains("if (required) invalid.push(q.id);"),
+            "an unanswered required field is not invalid in flow.js"
+        );
     }
 
     /// C4a: the consent panel shows the values *as they will be sent*.
@@ -336,17 +404,25 @@ mod tests {
     #[test]
     fn a_person_can_change_their_own_words_before_they_go() {
         let ui = ui_source();
-        assert!(ui.contains("const editableIn = obj => Object.keys(obj).filter(k =>"),
+        let flow = flow_source();
+        assert!(ui.contains("Flow.editable(obj, TYPED_IDS())"),
                 "nothing decides which values a person may change");
-        assert!(ui.contains("TYPED_IDS().has(k)"),
+        // Which is the rule, and it lives in `flow.js` now: only what the person
+        // supplied. A box over a machine reading would make the report a fiction.
+        assert!(flow.contains("was(k) && typeof values[k] === \"string\""),
                 "a machine reading is editable, which would make the report a fiction");
         let writeback = ui.matches("send.querySelectorAll(\"textarea.sv\")").count()
             + ui.matches("tx.querySelectorAll(\"textarea.sv\")").count();
         assert!(writeback >= 4,
                 "the edits are offered and not read back on both panels ({writeback} sites)");
+        assert_eq!(ui.matches("SHOWN=Flow.applyEdits(SHOWN, edits);").count(), 2,
+                   "a consent panel reads its edit boxes and decides for itself what they mean");
         // Emptied means withdrawn, which is a wire fact and not an empty string.
-        assert!(ui.contains("SHOWN[k+\".declined\"]=true;"),
+        assert!(flow.contains("else { delete out[k]; out[k + \".declined\"] = true; }"),
                 "emptying an answer sends an empty string rather than withdrawing it");
+        // And the edit box cannot introduce a fact the panel never showed.
+        assert!(flow.contains("if (!(k in out)) continue;"),
+                "an edit for something that was never on screen is applied, so what is sent \n                 is no longer what was shown");
     }
 
     /// C4: what is shown before sending is what is sent.
@@ -370,12 +446,20 @@ mod tests {
         // Every consent panel that lists values snapshots them. Since `C4a`
         // the snapshot is the *anonymised* facts: what is shown and what is
         // sent are one object, and it is the one that leaves.
-        let snapshots = ui.matches("const SHOWN=sent.facts;").count();
+        // `let`, not `const`, since the edits a person makes on the way out
+        // produce a new snapshot rather than changing this one half-way through
+        // — the binding moves, the property does not. What matters is that it is
+        // `sent.facts`: the anonymised object the panel listed.
+        let snapshots = ui.matches("SHOWN=sent.facts;").count();
         assert!(snapshots >= 2,
                 "only {snapshots} send panels snapshot what they show - the vendor path \
                  and the published path each have one");
 
-        // And the calls that carry facts off this device carry the snapshot.
+        // And the calls that carry facts off this device ask the gate for them.
+        // Not "read the variable that happens to hold the snapshot": since
+        // `Flow.consent` the facts are handed out by something that has them
+        // only because a panel showed them and somebody said yes, so a send
+        // added later with no panel in front of it throws instead of sending.
         for command in ["diagnose", "ask_published"] {
             let call = format!("\"{command}\"");
             let mut found = 0;
@@ -386,11 +470,35 @@ mod tests {
                     continue;
                 }
                 found += 1;
-                assert!(args.contains("facts:SHOWN"),
+                assert!(args.contains("facts:CONSENT.factsFor("),
                         "{command} is sent facts that were never put in front of anybody: {args}");
             }
             assert!(found > 0, "{command} is never called with facts - has it been renamed?");
         }
+
+        // The gate refuses rather than inventing, which is the half that makes
+        // the above a property instead of a spelling.
+        assert!(flow_source().contains("throw new Error("),
+                "the consent gate hands out facts for a destination nobody agreed to");
+
+        // Nothing is read out of it before something is put in. Each path grants
+        // where its panel is and reads afterwards; the other order would be a
+        // send looking for consent it has not asked for yet.
+        for path in ["runInner", "publishedPath"] {
+            let body = function_body(&ui, path);
+            let grant = body.find("CONSENT.grant(")
+                .unwrap_or_else(|| panic!("{path} sends facts and never records a consent"));
+            let asked = body.find("await ask(")
+                .unwrap_or_else(|| panic!("{path} grants a consent it never asked for"));
+            assert!(asked < grant, "{path} records a consent before asking for it");
+            if let Some(read) = body.find("CONSENT.factsFor(") {
+                assert!(grant < read, "{path} sends before the panel that permits it");
+            }
+        }
+
+        // Agreement belongs to the incident it was given for.
+        assert!(ui.contains("CONSENT.clear();"),
+                "a new question reuses the last one's consent");
 
         // The snapshot grows only where a panel showed the additions and the
         // person answered them, so `SHOWN` means one thing everywhere: what has
@@ -724,18 +832,34 @@ the binary and its manifest would ship disagreeing about what they are"
         // translated by the reader's own model with the original beside it, and
         // the question is asked before the card is fetched, so the translation
         // happens before the picker is drawn rather than after.
-        let translated = body.find("translateKeeping(src, [])")
+        let translated = body.find("translateKeeping(src, KEEP_EARLY)")
             .expect("the class sentences are never translated, so a German reader meets English");
         let drawn = body.find("role=\"radiogroup\"").expect("the class picker is gone");
         assert!(translated < drawn,
                 "the sentences are translated after the picker is drawn, so it is drawn in English");
         assert!(body.contains("bi(labels[c], labels_t[c])"),
                 "a translated sentence no longer keeps the publisher's own words beside it");
-        // And the binary still puts them on the hit the window reads.
+
+        // **And translated with the project's own terms kept (`LG8`).** This
+        // assertion used to pin `translateKeeping(src, [])` — the empty
+        // glossary — which pinned the defect rather than the property: the
+        // first publisher sentence anybody reads was the one sentence
+        // translated with nothing kept, because the card holding the glossary
+        // is fetched under a consent this question comes before. The terms
+        // ride with the labels on the index entry now.
+        let early = body.find("Flow.publishedGlossary(pick)")
+            .expect("the first question is translated with no glossary again");
+        assert!(early < translated,
+                "the glossary is read after the translation that needed it");
+
+        // And the binary still puts both on the hit the window reads.
         let vendors = std::fs::read_to_string(crate_dir().join("src/vendors.rs"))
             .expect("cannot read src/vendors.rs");
         assert!(vendors.contains("\"answer_labels\""),
                 "the search hit no longer carries the sentences, so the window has only ids");
+        assert!(vendors.contains("\"glossary_keep\""),
+                "the search hit no longer carries the terms, so the first sentence a person \
+                 reads is translated with nothing kept");
     }
 
     /// **A build with no operator compiled in says so, and cannot stop the
@@ -918,19 +1042,55 @@ the binary and its manifest would ship disagreeing about what they are"
     }
 
     /// P3: an answer that does not fit the publisher's `pattern` is caught in
-    /// the window and asked again, before a report is built around it. The
-    /// hand-off checked this; the question panel never did.
+    /// the window and asked again, before a report is built around it.
+    ///
+    /// Three panels ask a person a question and each learned this separately.
+    /// The hand-off checked it from the start. The question panel did not, and
+    /// got it. The need round did not either and was the last to: it had nowhere
+    /// to say no, because it resolved the moment somebody clicked, so a value
+    /// the vendor had already said would not do went out and came back as
+    /// another round of the same question.
+    ///
+    /// So the shape is checked for every one of them rather than for the one
+    /// that broke: a panel reads a round, and refuses it before it applies it.
     #[test]
     fn an_answer_that_misses_its_pattern_is_asked_again() {
-        let ask = function_body(&ui_source(), "askQuestions");
-        let check = ask.find("matchesPattern(p.pattern, v)").expect("the question panel does not check patterns");
-        let stop = ask.find("if(bad){").expect("a failed pattern does not stop the panel");
-        // The answer is kept in a local first now, because the same pass also
-        // records a skip as declined — so this looks for the store rather than
-        // for one spelling of it.
-        let store = ask.rfind("FACTS[i.dataset.id]=").expect("answers are never stored");
-        assert!(check < stop && stop < store, "an answer is stored before its pattern is checked");
-        assert!(ask[stop..store].contains("return;"), "a failed pattern does not keep the panel open");
+        let ui = ui_source();
+        let mut panels = 0;
+        for (at, _) in ui.match_indices("Flow.readAnswers(") {
+            panels += 1;
+            let after = &ui[at..(at + 900).min(ui.len())];
+            let stop = after
+                .find("!round.ok")
+                .unwrap_or_else(|| panic!("a panel reads a round and never asks whether it was                                            good: {}", &after[..200.min(after.len())]));
+            let store = after
+                .find("round.facts")
+                .unwrap_or_else(|| panic!("a panel reads a round and never applies it: {}",
+                                          &after[..200.min(after.len())]));
+            assert!(stop < store,
+                    "a panel applies a round before it knows the round is good: {}",
+                    &after[..300.min(after.len())]);
+            // And it does not carry on. The need round used to resolve on the
+            // click itself, which is why it could not refuse anything.
+            assert!(after[stop..store].contains("return"),
+                    "a refused answer does not keep the panel open, so it is simply lost: {}",
+                    &after[stop..store]);
+        }
+        assert_eq!(panels, 3,
+                   "{panels} panels read a round of answers - the armed question, the need                     round and the hand-off are three, so one has been added or has gone back                     to deciding for itself");
+
+        // And the pattern is still what decides. `readAnswers` is also the thing
+        // that records a decline, so a version of it that had quietly stopped
+        // checking patterns would satisfy every line above.
+        let flow = flow_source();
+        assert!(
+            flow.contains("if (q.pattern && !matchesPattern(q.pattern, v)) { invalid.push(q.id); continue; }"),
+            "flow.js accepts an answer that does not fit the publisher's pattern"
+        );
+        assert!(
+            flow.contains(r#""^(?:" + String(pattern)"#),
+            "a publisher's pattern is no longer anchored, so it matches part of a value"
+        );
     }
 
     /// LX6: free text is anonymised before it is shown for consent — not after
@@ -1169,8 +1329,18 @@ the binary and its manifest would ship disagreeing about what they are"
         // issue tracker is more public than a report and keeps it for ever.
         assert!(panel.contains("issue_took") && panel.contains("r.replaced"),
                 "the panel does not say what the anonymiser removed");
-        assert!(panel.contains("<textarea") && panel.contains("box.value = withFooter"),
+        assert!(panel.contains("<textarea") && panel.contains("box.value = r.markdown"),
                 "the text is not shown before it is copied");
+
+        // **The footer is the binary's words, not the page's.** The checkbox
+        // that takes it out used to work by matching a copy of the sentence
+        // written here as a regex. That breaks silently and in the direction
+        // that matters: reword it in `issue.rs`, the pattern matches nothing,
+        // unchecking removes nothing, and the label goes on saying it did.
+        assert!(!panel.contains("Assembled by PODSHL"),
+                "the panel carries its own copy of the footer's words again");
+        assert!(panel.contains("Flow.footerToggle(box.value, r.footer"),
+                "the checkbox does not use the footer the binary returned");
 
         // **What is copied is what is in the box.** Copying `r.markdown` would
         // hand over the generated text after the person edited it — something

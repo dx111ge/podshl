@@ -153,6 +153,35 @@ backs up is gone with that disk. Copy the directory `backup.sh` prints to a
 different computer (`scp -r`), and keep `log_key.json` from it for the client
 installer.
 
+**f. Encrypt the disk the backups land on — for production, not for a first
+beta.** Deliberately in that order, because saying it earlier gets it done
+badly or not at all. A backup set is `log.ed25519`, which is the log's signing
+key, and `podshl.dump`, which holds the `observation` table — what people
+actually sent. Together they are the two most sensitive artefacts this project
+produces, and after step *e* they live on a machine chosen for having space
+rather than for being looked after.
+
+What this is and is not:
+
+* It is **at-rest only** — theft of the box, and the disk being returned, sold
+  or scrapped years later with a signing key still on it. Disposal is the one
+  that actually happens.
+* It is **not** about the disk being removable. A USB disk bolted to a desk and
+  an internal one have the same threat model; what matters is who can reach the
+  platters.
+* It is **not** a substitute for keeping the key off the operator's own disk.
+  That is step *e* and it is about surviving a failure, not about secrecy.
+
+Whole-disk is enough — LUKS, BitLocker, FileVault, whatever the backup host
+already has. The thing to avoid is encrypting one copy and not another: the
+exposure is the least-protected copy, so count them first. And whatever is
+decided, **wipe the disk when it is retired**, which is the step that is
+forgotten precisely because it happens years after anybody thought about this.
+
+A key whose confidentiality is gone cannot be repaired by rotating it quietly:
+clients pin `log_key.json` at build time, so replacing it means a new client
+build reaching everybody who has one.
+
 ## Routine
 
 | | |
