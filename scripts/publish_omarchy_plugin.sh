@@ -23,6 +23,9 @@ mkdir -p "$DEST/package"
 cp omarchy-plugin/manifest.json omarchy-plugin/BarWidget.qml omarchy-plugin/README.md \
    omarchy-plugin/install-client.sh LICENSE "$DEST/"
 cp packaging/aur/podshl-bin/PKGBUILD packaging/aur/podshl-bin/podshl-client.desktop "$DEST/package/"
+# LF everywhere, whatever the publishing machine's git does: a shell script and a
+# PKGBUILD with CRLF fail on the desktop they are for.
+printf '* text=auto eol=lf\n' > "$DEST/.gitattributes"
 
 # A copy on Windows carries no executable bit; the script is run with `bash`,
 # but a reader who runs it directly should not be told "permission denied".
