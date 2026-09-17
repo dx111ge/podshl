@@ -5996,6 +5996,81 @@ def _due_now() -> set[int]:
     return got
 
 
+def sv_ga1_the_maintainers_workflow_publishes_and_says_why_not():
+    """GA1. The GitHub workflow a maintainer copies, run as the script it is.
+
+    Its `run:` block is taken out of `examples/github-action/podshl.yml` and run
+    with bash against this operator, with the raw file server pointed at a
+    project served here. It has to wait for the published copy, re-enrol,
+    and fail the job with the operator's reason when the files are refused or
+    the token is wrong — a red check on the commit is the only place a
+    maintainer will see it.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    import yaml
+
+    wf = yaml.safe_load((Path(__file__).resolve().parents[3] / "examples" / "github-action"
+                         / "podshl.yml").read_text(encoding="utf-8"))
+    # `on` is YAML's boolean true, which is how PyYAML reads the key.
+    trigger = wf.get("on", wf.get(True))
+    assert trigger["push"]["paths"] == [".podshl/**"], trigger
+    job = wf["jobs"]["publish"]
+    assert "default_branch" in job["if"], job["if"]
+    step = next(s for s in job["steps"] if "run" in s)
+    assert step["env"]["PODSHL_CLAIM_TOKEN"] == "${{ secrets.PODSHL_CLAIM_TOKEN }}", step["env"]
+    assert wf["permissions"] == {"contents": "read"}, wf.get("permissions")
+    script = step["run"]
+
+    files = {"/.podshl/agent.yaml": _USED_MANIFEST,
+             "/.podshl/solutions/a.md": _solution("a", "app.a", "    app.symptom: a\n"),
+             "/.podshl/solutions/b.md": _solution("b", "app.b", "    app.symptom: b\n")}
+    host, token, stop = _served_project(files, "ga1-token")
+    base = _INGESTED[host]["base"]
+    try:
+        def run(local: dict, tok, wait="30"):
+            with tempfile.TemporaryDirectory() as work:
+                for rel, body in local.items():
+                    target = Path(work) / rel.lstrip("/")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(body)
+                env = {**os.environ, "PODSHL_OPERATOR": "http://127.0.0.1:8725",
+                       "PODSHL_HOST": host, "PODSHL_RAW_BASE": base,
+                       "PODSHL_WAIT_SECONDS": wait, "GITHUB_REPOSITORY": "someone/project"}
+                env.pop("PODSHL_CLAIM_TOKEN", None)
+                if tok is not None:
+                    env["PODSHL_CLAIM_TOKEN"] = tok
+                out = subprocess.run(["bash", "-c", script], cwd=work, env=env,
+                                     capture_output=True, text=True, timeout=120)
+                return out.returncode, out.stdout + out.stderr
+
+        published = {k: v for k, v in files.items() if k.startswith("/.podshl/")}
+
+        code, out = run(published, token)
+        assert code == 0 and "Your files were read: unchanged, 2 solution(s)" in out, (code, out)
+
+        code, out = run(published, None)
+        assert code == 1 and "No PODSHL_CLAIM_TOKEN secret" in out, (code, out)
+        code, out = run(published, "not-the-token")
+        assert code == 1 and "did not accept the token" in out, (code, out)
+
+        # This commit's copy and the published one differ: it does not enrol a
+        # version the operator cannot see yet.
+        newer = {**published, "/.podshl/solutions/a.md": published["/.podshl/solutions/a.md"] + b"More.\n"}
+        code, out = run(newer, token, wait="0")
+        assert code == 1 and "still differs from this commit: .podshl/solutions/a.md" in out, (code, out)
+
+        # A refused file fails the job with the operator's sentence.
+        files["/.podshl/solutions/a.md"] = _solution("a", "app.a", "    app.symptom: a\n", action="run_shell")
+        published = {k: v for k, v in files.items() if k.startswith("/.podshl/")}
+        code, out = run(published, token)
+        assert code == 1 and "were not taken (refused)" in out and "run_shell" in out, (code, out)
+    finally:
+        stop()
+
+
 def sv123_a_hot_source_checked_within_the_hour_is_served_without_a_fetch():
     """SV123. A person asking about a project in use costs its forge nothing."""
     host, _, stop = _served_project(_used_files(), "sv123")

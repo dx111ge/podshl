@@ -1,0 +1,111 @@
+# Tell the operator your .podshl/ files changed, so people get them now rather
+# than at the next daily check.
+#
+# Copy this file to .github/workflows/podshl.yml in your repository, and add the
+# token from your dashboard as the repository secret PODSHL_CLAIM_TOKEN
+# (Settings → Secrets and variables → Actions). The token is good for 365 days;
+# when you replace it on the dashboard, replace the secret too.
+#
+# What it does, and nothing else:
+#   1. waits until GitHub's raw file server hands out exactly the files you just
+#      pushed — it caches for a few minutes, and the operator reads from there;
+#   2. asks the operator to read your files again (POST /claim/<host>/source);
+#   3. fails the job, with the operator's reason, if your files were refused,
+#      so a broken solution file shows up as a red check on your commit.
+#
+# It sends your token and nothing else. No checkout of your code leaves the
+# runner, and the operator only ever reads what is public at
+# raw.githubusercontent.com.
+#
+# Running your own operator: set PODSHL_OPERATOR below.
+
+name: PODSHL
+
+on:
+  push:
+    paths:
+      - ".podshl/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # The operator reads your default branch; a push anywhere else changes
+    # nothing it can see.
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .podshl
+
+      - name: Tell the operator
+        env:
+          PODSHL_CLAIM_TOKEN: ${{ secrets.PODSHL_CLAIM_TOKEN }}
+          PODSHL_OPERATOR: https://sdota.de
+        run: |
+          set -euo pipefail
+          if [ -z "${PODSHL_CLAIM_TOKEN:-}" ]; then
+            echo "::error::No PODSHL_CLAIM_TOKEN secret. Add the token from your dashboard as a repository secret."
+            exit 1
+          fi
+          operator="${PODSHL_OPERATOR%/}"
+          host="${PODSHL_HOST:-github.com}"
+          raw="${PODSHL_RAW_BASE:-https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/HEAD/}"
+          wait_s="${PODSHL_WAIT_SECONDS:-420}"
+
+          # 1. The published copy has to be the pushed one, or the operator
+          #    would read the old files and report them unchanged.
+          deadline=$((SECONDS + wait_s))
+          while :; do
+            stale=""
+            while IFS= read -r -d '' f; do
+              want=$(sha256sum "$f" | cut -d' ' -f1)
+              got=$( (curl -fsSL --max-time 20 "${raw}${f#./}" || true) | sha256sum | cut -d' ' -f1)
+              [ "$want" = "$got" ] || stale="$stale ${f#./}"
+            done < <(find ./.podshl -type f -print0 | sort -z)
+            [ -z "$stale" ] && break
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::After ${wait_s}s the published copy still differs from this commit:$stale"
+              exit 1
+            fi
+            echo "Waiting for the published copy of:$stale"
+            sleep 20
+          done
+
+          # 2. Read them again, now.
+          code=$(curl -sS --max-time 90 -o podshl-response.json -w '%{http_code}' \
+            -X POST "$operator/claim/$host/source" \
+            -H "X-Podshl-Claim: $PODSHL_CLAIM_TOKEN" \
+            -H 'Content-Type: application/json' -d '{}')
+
+          # 3. Say what came of it.
+          python3 - "$code" podshl-response.json <<'PY'
+          import json, sys
+          code, path = int(sys.argv[1]), sys.argv[2]
+          try:
+              body = json.load(open(path, encoding="utf-8"))
+          except ValueError:
+              body = {}
+          if code == 403:
+              print("::error::The operator did not accept the token. Replace PODSHL_CLAIM_TOKEN with the one on your dashboard.")
+              sys.exit(1)
+          if code != 200:
+              print(f"::error::The operator answered {code}: {body.get('reason') or body}")
+              sys.exit(1)
+          check = body.get("check") or {}
+          outcome = check.get("outcome")
+          if outcome in ("stored", "unchanged"):
+              extra = ""
+              if check.get("no_tree"):
+                  extra = " Classes without a decision tree: " + ", ".join(check["no_tree"]) + " (see your dashboard)."
+              print(f"Your files were read: {outcome}, {check.get('solutions')} solution(s).{extra}")
+          elif outcome == "running":
+              print("::notice::The operator is still reading your files; your dashboard shows the result.")
+          else:
+              print(f"::error::Your files were not taken ({outcome}): {check.get('why') or 'see your dashboard'}")
+              sys.exit(1)
+          PY

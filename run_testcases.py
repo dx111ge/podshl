@@ -922,6 +922,11 @@ def _():
     sv("sv122_a_repository_sees_its_own_reports_and_only_its_own")
 
 
+@case("GA1", "The maintainers' GitHub workflow publishes, waits for the published copy, and fails with the reason")
+def _():
+    sv("sv_ga1_the_maintainers_workflow_publishes_and_says_why_not")
+
+
 @case("SV123", "A hot source checked within the hour is served without a fetch")
 def _():
     sv("sv123_a_hot_source_checked_within_the_hour_is_served_without_a_fetch")

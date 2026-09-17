@@ -425,10 +425,34 @@ Almost nothing, and this is the part worth knowing before you write anything:
 | A large paid model | Also identical. A bigger model does not improve your solution and never rewrites it |
 | Nothing published, by anyone | The only case a model answers at all — and it is the user's own |
 
+## When you change your files
+
+The operator reads a project that people use once a day, and one nobody has
+asked about for two weeks the next time somebody does, before it answers them.
+To have a change live at once, post your source again —
+`POST /claim/<host>/source` with your token, as step four on
+[/register](/register) did — and the answer says what reading your files gave.
+
+On GitHub, a workflow does it for you after every push that touches `.podshl/`:
+copy [`examples/github-action/podshl.yml`](https://github.com/dx111ge/podshl/blob/main/examples/github-action/podshl.yml)
+to `.github/workflows/podshl.yml` and add your token as the repository secret
+`PODSHL_CLAIM_TOKEN`. It waits until GitHub's raw file server hands out the
+files you pushed (it caches for a few minutes, and that copy is what the
+operator reads), asks the operator to read them, and fails the run with the
+operator's reason if they were refused — so a broken solution file is a red
+check on your commit rather than silence. It sends your token and nothing else.
+
+If `agent.yaml` states a `sha256` for each solution file — the builder writes
+them — a check of an unchanged project costs one request. Edit a solution by
+hand and its digest goes stale, and the file is refused until you write the
+digest again; the workflow tells you which one.
+
 ## If you change your mind about a solution
 
-Delete the file and take it out of `solutions:`. The next crawl closes it and we
-stop serving it. Worth knowing before you need it: this is the path for a remedy
+Delete the file and take it out of `solutions:`. The next check closes it and we
+stop serving it — and a project nobody has asked about for a while is checked
+before anything is served from it, so the withdrawn answer is not handed out in
+the meantime. Worth knowing before you need it: this is the path for a remedy
 you have decided is harmful, and it used to do nothing at all.
 
 ## Getting it wrong is cheap

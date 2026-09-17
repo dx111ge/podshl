@@ -281,7 +281,11 @@ Written into [TESTCASES-SERVER.md](TESTCASES-SERVER.md) as `open`:
   runs after every weekly check unless that run was mostly silence.
 * **Enrolment waits up to five seconds** for its check and returns the outcome
   as `check`; a longer one carries on and the dashboard shows it.
-* The GitHub Action for maintainers (rollout step 5) is not written yet.
+* The GitHub Action for maintainers (rollout step 5) is a workflow to copy,
+  `examples/github-action/podshl.yml`, with curl and nothing from the
+  marketplace. It waits for `raw.githubusercontent.com` to serve the pushed
+  files before it re-enrols, because that cache is minutes long and the
+  operator would otherwise read the old copy and call it unchanged (`GA1`).
 
 ## Settled
 

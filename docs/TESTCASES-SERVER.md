@@ -335,6 +335,7 @@ replace `SV121`, the ramp that asked every source daily at most, whether anybody
 
 | # | Case | Expected | Cover |
 |---|---|---|---|
+| **GA1** | **The workflow a maintainer copies** (`examples/github-action/podshl.yml`) | **Run as the script it is, against this operator: it waits until the raw file server hands out exactly the committed `.podshl/` files, re-enrols, and reports what reading them gave. A missing or wrong token, a published copy that never catches up, and refused files each fail the job with a sentence that says which; the refusal carries the operator's own reason. It triggers only on `.podshl/**`, acts only on the default branch, and asks for read access and nothing else** | auto |
 | SV123 | A hot source checked less than an hour ago | Is served from the database without any request to its forge | auto |
 | SV124 | A hot source checked longer ago | Is served at once from the database, and a check of its files is queued | auto |
 | SV125 | A source nobody used for 14 days | Is not fetched on any timer; only its anchor is checked, weekly | auto |

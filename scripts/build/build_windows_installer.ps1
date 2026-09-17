@@ -87,7 +87,11 @@ $built = Get-ChildItem (Join-Path $target 'release\bundle\nsis') -Filter "*_${ve
          Sort-Object LastWriteTime | Select-Object -Last 1
 if (-not $built) { throw "no setup for $version under $target\release\bundle\nsis" }
 
-$out = Join-Path $repo "var\release\$version"
+# A loopback build goes into a folder of its own. It used to share
+# `var\release\<version>` with the release, and its `PLATFORM-windows.md` and
+# `SHA256SUMS` replaced the published ones there on 2026-09-17 — the files a
+# release is uploaded from, overwritten by a build nobody meant to publish.
+$out = if ($loopback) { Join-Path $repo "var\release\$version-loopback" } else { Join-Path $repo "var\release\$version" }
 New-Item -ItemType Directory -Force $out | Out-Null
 $name = if ($loopback) { "podshl-client-$version-windows-x64-loopback-setup.exe" } else { "podshl-client-$version-windows-x64-setup.exe" }
 Copy-Item $built.FullName (Join-Path $out $name) -Force
