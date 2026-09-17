@@ -799,7 +799,10 @@ def sv_ingest_stores_a_project_and_attests_it():
         _, sid = _oss_source(conn)
         with conn.cursor() as cur:
             cur.execute("UPDATE source SET next_fetch_at = '-infinity', etag = NULL, "
-                        "last_modified = NULL WHERE id = %s", (sid,))
+                        "last_modified = NULL, last_used = current_date WHERE id = %s", (sid,))
+            # The anchor is checked in this pass only when it is due; make it so.
+            cur.execute("UPDATE anchor SET last_checked = NULL WHERE id = "
+                        "(SELECT anchor_id FROM source WHERE id = %s)", (sid,))
         results = {r["source"]: r for r in scheduler.run_once(conn)}
     got = results.get(sid)
     assert got, "the source was never claimed"
@@ -1068,7 +1071,7 @@ def sv_an_ambiguous_tree_is_refused_when_it_is_authored():
 
 
 def _served_project(files: dict[str, bytes], challenge_token: str, expect_stored: bool = True,
-                    host: str | None = None):
+                    host: str | None = None, etags: bool = False):
     """A project serving `files` over real HTTP, ingested, and claimed.
 
     Returns `(host, token, stop)`. The anchor value carries a random path
@@ -1083,11 +1086,25 @@ def _served_project(files: dict[str, bytes], challenge_token: str, expect_stored
     from .ingest import scheduler
 
     run = secrets.token_hex(4)
+    hits: list[str] = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
-            body = files.get(self.path.removeprefix(f"/{run}"))
+            rel = self.path.removeprefix(f"/{run}")
+            hits.append(rel)
+            body = files.get(rel)
+            # A validator derived from the bytes, as a forge sends one, so a
+            # case can see a conditional request answered `304`.
+            tag = (f'"{hashlib.sha256(body).hexdigest()[:16]}"'
+                   if etags and body is not None else None)
+            if tag and self.headers.get("If-None-Match") == tag:
+                self.send_response(304)
+                self.send_header("ETag", tag)
+                self.end_headers()
+                return
             self.send_response(200 if body is not None else 404)
+            if tag:
+                self.send_header("ETag", tag)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", str(len(body or b"")))
             self.end_headers()
@@ -1125,12 +1142,14 @@ def _served_project(files: dict[str, bytes], challenge_token: str, expect_stored
         srv.shutdown()
         raise
     _SERVED[host] = files
+    _HITS[host] = hits
     _INGESTED[host] = {**got, "base": base}
     return host, token, srv.shutdown
 
 
 _SERVED: dict[str, dict[str, bytes]] = {}
 _INGESTED: dict[str, dict] = {}
+_HITS: dict[str, list[str]] = {}
 
 
 def _served_files(host: str) -> dict[str, bytes]:
@@ -1598,76 +1617,6 @@ def sv109_the_person_names_the_symptom_and_the_machine_picks_the_fix():
     out = cluster_tree.walk(root, {"os.name": "linux", "app.symptom.declined": True})
     assert isinstance(out, cluster_tree.Answer) and out.solution_id == "c-any-linux", (
         f"a skip now lands on the specific answer instead of the general one above it: {out}")
-
-
-def sv121_a_project_that_never_changes_is_asked_about_less_and_less():
-    """SV121. The crawl budget, which was a sentence in a docstring and not code.
-
-    Every source that answered was asked again in fifteen minutes, whether or not
-    anything had moved — `SERVER.md` puts the arithmetic on it, ten thousand
-    projects at that interval being eleven requests a second, nearly all `304`
-    about files nobody has touched since last year. Only a *failing* source
-    backed off, while `record_ingest`'s own docstring said "a source unchanged
-    for a month does not need asking every fifteen minutes".
-
-    The interval is a ramp off how long the source has been quiet — a
-    twenty-fourth of it, floored at fifteen minutes and capped at a day — and a
-    change puts it straight back to the floor, because the interesting period is
-    right after one.
-
-    **The cap is the load-bearing part.** Re-verification rides along with
-    ingest, and `stale` at fourteen days is a promise with a clock in it; at a
-    day's cap it holds with a factor of fourteen to spare. It is also why this is
-    a ramp rather than fetching when somebody asks: a fetch on the request path
-    would make our own fetch log a record of who asked about which project and
-    when, and asking is the one thing that leaves no trace here.
-    """
-    import secrets
-
-    from .ingest import store
-
-    class _Fetched:
-        etag = None
-        last_modified = None
-        reason = type("R", (), {"value": "ok"})()
-
-        def content_hash(self):
-            return bytes(32)
-
-    def interval_after(quiet_for: str, changed: bool) -> float:
-        """Minutes until the next fetch, for a source last changed `quiet_for` ago."""
-        with db.tx() as conn:
-            with conn.cursor() as cur:
-                # A suffix per run: the database outlives the suite here, and a
-                # case that can only pass once is a case nobody runs twice.
-                tag = secrets.token_hex(4)
-                host = f"quiet-{quiet_for}-{changed}-{tag}.example".replace(" ", "-").lower()
-                cur.execute("INSERT INTO anchor (kind, host, value, challenge_token, status) "
-                            "VALUES ('url', %s, %s, 'x', 'live') RETURNING id",
-                            (host, f"https://{host}/"))
-                anchor_id = cur.fetchone()["id"]
-                cur.execute(
-                    "INSERT INTO source (anchor_id, manifest_url, fetch_prefix, last_changed) "
-                    "VALUES (%s, 'https://quiet.example/.podshl/agent.yaml', "
-                    "        'https://quiet.example/', now() - %s::interval) RETURNING id",
-                    (anchor_id, quiet_for))
-                sid = cur.fetchone()["id"]
-            store.record_ingest(conn, sid, _Fetched(), changed=changed)
-            with conn.cursor() as cur:
-                cur.execute("SELECT EXTRACT(EPOCH FROM (next_fetch_at - now())) / 60 AS m "
-                            "FROM source WHERE id = %s", (sid,))
-                return float(cur.fetchone()["m"])
-
-    # The floor. A project that changed an hour ago is still asked promptly —
-    # right after a change is exactly when the next one is likely.
-    assert 14 <= interval_after("1 hour", False) <= 16, interval_after("1 hour", False)
-    # A week quiet: seven hours rather than fifteen minutes, which is 28 fetches
-    # a week instead of 672.
-    assert 6 * 60 <= interval_after("7 days", False) <= 8 * 60, interval_after("7 days", False)
-    # And the cap, which is what keeps `stale` at fourteen days a promise.
-    assert 23 * 60 <= interval_after("1 year", False) <= 24 * 60 + 1, interval_after("1 year", False)
-    # A change resets it, however long the quiet before it was.
-    assert 14 <= interval_after("1 year", True) <= 16, interval_after("1 year", True)
 
 
 def sv120_a_solution_that_ignores_a_switch_is_reachable_under_every_value_of_it():
@@ -3465,13 +3414,13 @@ def sv_control_alone_does_not_enrol_a_mirror():
     assert r.status_code == 403, f"any token was accepted: {r.status_code}"
 
     auth = {"X-Podshl-Claim": tok}
-    r = httpx.post(f"{base}/claim/{host}/source", timeout=5, headers=auth,
+    r = httpx.post(f"{base}/claim/{host}/source", timeout=15, headers=auth,
                    json={"prefix": "https://somewhere-else.example/"})
     assert r.status_code == 400 and r.json()["code"] == "outside_anchor", (
         "a prefix outside the verified anchor was accepted — an anchor proves "
         f"control of a location and cannot vouch for another one: {r.text}")
 
-    r = httpx.post(f"{base}/claim/{host}/source", timeout=5, headers=auth,
+    r = httpx.post(f"{base}/claim/{host}/source", timeout=15, headers=auth,
                    json={"prefix": f"https://{host}/project/"})
     assert r.status_code == 200, r.text
     body = r.json()
@@ -3481,22 +3430,28 @@ def sv_control_alone_does_not_enrol_a_mirror():
     # Idempotent for the same prefix: pressing the button twice is not two
     # projects. A *different* prefix is a second source, because the schema says
     # so — one anchor may publish more than one `.podshl/`.
-    again = httpx.post(f"{base}/claim/{host}/source", timeout=5, headers=auth,
+    again = httpx.post(f"{base}/claim/{host}/source", timeout=15, headers=auth,
                        json={"prefix": f"https://{host}/project/"}).json()
     assert again["created"] is False, again
-    second = httpx.post(f"{base}/claim/{host}/source", timeout=5, headers=auth,
+    second = httpx.post(f"{base}/claim/{host}/source", timeout=15, headers=auth,
                         json={"prefix": f"https://{host}/other/"}).json()
     assert second["created"] is True, (
         "a second prefix under the same anchor was folded into the first — "
         f"one anchor may publish more than one `.podshl/`: {second}")
 
+    # Enrolling reads the files at once and says what came of it. Nothing is
+    # served on this invented host, so that is a failure to read — and it is
+    # said, rather than the maintainer being told "queued" and left waiting.
+    assert second["check"]["outcome"] not in ("stored", "unchanged", "running"), second
     with db.read() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT fetch_prefix, next_fetch_at <= now() AS due "
+            cur.execute("SELECT fetch_prefix, last_fetched IS NOT NULL AS asked, "
+                        "       last_used = current_date AS hot "
                         "FROM source WHERE anchor_id = %s ORDER BY id DESC LIMIT 1", (aid,))
             row = cur.fetchone()
     assert row, "the route answered 200 and enrolled nothing"
-    assert row["due"], "enrolled but not queued — nothing would ever fetch it"
+    assert row["asked"], "enrolled, and nothing asked for the files"
+    assert row["hot"], "enrolling is a use, and the source is not hot"
 
 
 def sv_a_public_file_is_not_a_credential():
@@ -5712,6 +5667,8 @@ def sv_a_repository_goes_from_claim_to_served_card():
                              json={"prefix": raw},
                              headers={"X-Podshl-Claim": claim_token}, timeout=20)
         assert sourced.status_code == 200, (sourced.status_code, sourced.text[:300])
+        # Read at once: the maintainer sees the outcome in the answer.
+        assert sourced.json()["check"]["outcome"] == "stored", sourced.json()
 
         # A prefix outside the repository is refused: an anchor proves control of
         # one location and cannot vouch for another, and on a forge the one next
@@ -5722,13 +5679,14 @@ def sv_a_repository_goes_from_claim_to_served_card():
         assert outside.status_code == 400 and outside.json()["code"] == "outside_anchor", \
             (outside.status_code, outside.text[:300])
 
-        # 5. Ingest, then read the card back by identity.
+        # 5. The next pass has nothing new, then read the card back by identity.
         with db.tx() as conn:
             with conn.cursor() as cur:
                 cur.execute("UPDATE source SET next_fetch_at = '-infinity' "
-                            "WHERE manifest_url = %s", (raw + ".podshl/agent.yaml",))
-            outcomes = scheduler.run_once(conn)
-        assert any(o["outcome"] == "stored" for o in outcomes), outcomes
+                            "WHERE manifest_url = %s RETURNING id", (raw + ".podshl/agent.yaml",))
+                sid = cur.fetchone()["id"]
+            outcomes = {o["source"]: o for o in scheduler.run_once(conn)}
+        assert outcomes[sid]["outcome"] == "unchanged", outcomes[sid]
 
         card = httpx.get(f"{base_api}/mirror/{authority}",
                          params={"repo": f"{owner}/{repo}", "forge": "gitea"},
@@ -5960,6 +5918,557 @@ def sv_a_repository_may_publish_the_endpoint_a_person_can_visit():
         pass
     else:
         raise AssertionError("a domain anchor stopped being confined to its prefix")
+
+
+# ------------------------------------------------ fetching what is used
+
+
+_USED_MANIFEST = (b"endpoint: {base}\ncommit: u1\nstatus: active\nlangs: [en]\n"
+                  b"problem_classes: [app.a, app.b]\ncollect:\n" + _SYMPTOM_PROBE +
+                  b"solutions:\n  - solutions/a.md\n  - solutions/b.md\n")
+
+
+def _used_files() -> dict[str, bytes]:
+    return {"/.podshl/agent.yaml": _USED_MANIFEST,
+            "/.podshl/solutions/a.md": _solution("a", "app.a", "    app.symptom: a\n"),
+            # One solution per class, so each class derives a tree.
+            "/.podshl/solutions/b.md": _solution("b", "app.b", "    app.symptom: b\n")}
+
+
+def _source_of(host: str) -> int:
+    with db.read() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT s.id FROM source s JOIN anchor a ON a.id = s.anchor_id "
+                        "WHERE a.host = %s", (host,))
+            return cur.fetchone()["id"]
+
+
+def _set_source(host: str, sql: str, *params) -> None:
+    """Move a served project's clocks, the way two weeks of nobody asking would."""
+    with db.tx() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE source SET {sql} WHERE anchor_id = "
+                        "(SELECT id FROM anchor WHERE host = %s)", (*params, host))
+
+
+def _cool(host: str) -> None:
+    _set_source(host, "last_used = current_date - 15, "
+                      "last_checked = now() - interval '15 days', "
+                      "last_full_check = now() - interval '15 days', "
+                      # Due, so only its temperature keeps it off the timer.
+                      "next_fetch_at = now() - interval '1 day'")
+
+
+def _source_row(host: str) -> dict:
+    with db.read() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT s.*, s.xmin::text AS version FROM source s "
+                        "JOIN anchor a ON a.id = s.anchor_id WHERE a.host = %s", (host,))
+            return cur.fetchone()
+
+
+def _mirror(host: str):
+    """`GET /mirror/{host}` in this process, so the pool that checks a cold
+    source is the one this case can see. Returns (status, body)."""
+    from fastapi import Response
+
+    from .app import mirror
+    out = mirror(host, Response(), repo=None, forge_shape=None)
+    if isinstance(out, dict):
+        return 200, out
+    return out.status_code, json.loads(out.body)
+
+
+class _Undo(Exception):
+    pass
+
+
+def _due_now() -> set[int]:
+    """What the timer would take now, with the lease rolled back."""
+    from .ingest import scheduler
+    got: set[int] = set()
+    try:
+        with db.tx() as conn:
+            got = {r["id"] for r in scheduler.claim(conn, 100000)}
+            raise _Undo()
+    except _Undo:
+        pass
+    return got
+
+
+def sv123_a_hot_source_checked_within_the_hour_is_served_without_a_fetch():
+    """SV123. A person asking about a project in use costs its forge nothing."""
+    host, _, stop = _served_project(_used_files(), "sv123")
+    try:
+        before = len(_HITS[host])
+        status, body = _mirror(host)
+        assert status == 200 and body["attested"] is True, (status, body)
+        assert {s["solution_id"] for s in body["solutions"]} == {"a", "b"}, body
+        assert len(_HITS[host]) == before, (
+            f"serving a source checked minutes ago fetched from its forge: "
+            f"{_HITS[host][before:]}")
+    finally:
+        stop()
+
+
+def sv124_a_hot_source_checked_longer_ago_is_served_and_queued():
+    """SV124. Served at once from the database, and put at the front of the queue.
+
+    The check itself is the worker's, not the request's: a person waiting on
+    a forge for a project that is in use is exactly what the mirror is for not
+    doing.
+    """
+    from .ingest import scheduler
+    files = _used_files()
+    host, _, stop = _served_project(files, "sv124")
+    try:
+        _set_source(host, "last_checked = now() - interval '2 hours', "
+                          "next_fetch_at = now() + interval '20 hours'")
+        sid = _source_of(host)
+        assert sid not in _due_now(), "the source was due before anybody used it"
+
+        before = len(_HITS[host])
+        status, body = _mirror(host)
+        assert status == 200 and body["attested"] is True, (status, body)
+        assert len(_HITS[host]) == before, "the request waited on the forge"
+        assert sid in _due_now(), "a use more than an hour after the last check queued nothing"
+
+        # Ahead of everything a timer made due — if not of what this suite
+        # parks at '-infinity'.
+        with db.read() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) AS n FROM source WHERE mirror_state = 'serving' "
+                            "AND last_used >= current_date - 14 AND next_fetch_at < "
+                            "(SELECT next_fetch_at FROM source WHERE id = %s) "
+                            "AND next_fetch_at <> '-infinity'", (sid,))
+                ahead = cur.fetchone()["n"]
+        assert ahead == 0, f"{ahead} sources a timer made due are ahead of a used one"
+
+        # And a check is what reads the files: the one the worker would run.
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT {scheduler.SOURCE_COLUMNS} FROM source WHERE id = %s", (sid,))
+                got = scheduler.ingest_one(conn, cur.fetchone())
+        assert got["outcome"] == "unchanged" and got["check"] == "partial", got
+        assert _source_row(host)["last_checked"] is not None
+        assert len(_HITS[host]) > before, "the queued check fetched nothing"
+    finally:
+        stop()
+
+
+def sv125_a_source_nobody_used_for_two_weeks_is_on_no_timer():
+    """SV125. Nobody asked for fourteen days, so nothing asks its forge.
+
+    Only its anchor is checked, weekly, by a job that does not care how warm the
+    project is (`SV129`), and that check reads the challenge and nothing else.
+    """
+    from .ingest import scheduler
+    host, _, stop = _served_project(_used_files(), "sv125")
+    try:
+        _cool(host)
+        sid = _source_of(host)
+        assert sid not in _due_now(), "a cold source is on the timer"
+        before = len(_HITS[host])
+        with db.tx() as conn:
+            results = scheduler.run_once(conn)
+        assert sid not in {r["source"] for r in results}, results
+        assert len(_HITS[host]) == before, _HITS[host][before:]
+
+        # Its anchor, a week after it was last checked.
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE anchor SET last_checked = now() - interval '8 days' "
+                            "WHERE host = %s RETURNING id", (host,))
+                aid = cur.fetchone()["id"]
+            swept = scheduler.sweep_anchors(conn, anchors=[aid])
+        assert swept["checked"] == 1, swept
+        assert _HITS[host][before:] == ["/.well-known/podshl-challenge"], (
+            f"the weekly anchor check read more than the challenge: {_HITS[host][before:]}")
+    finally:
+        stop()
+
+
+def sv126_a_cold_source_is_checked_before_it_is_served():
+    """SV126. Checked first; unchanged is served under its entry, changed is
+    stored and logged before it is served; either way it is hot again."""
+    files = _used_files()
+    host, _, stop = _served_project(files, "sv126")
+    try:
+        _cool(host)
+        with db.read() as conn:
+            size = log_store.tree_size(conn)
+        before = len(_HITS[host])
+        status, body = _mirror(host)
+        assert status == 200, (status, body)
+        assert "/.podshl/agent.yaml" in _HITS[host][before:], "served without a check"
+        seq = body["serving"]["log_seq"]
+        row = _source_row(host)
+        assert str(row["last_used"]) == str(__import__("datetime").date.today()), row["last_used"]
+        with db.read() as conn:
+            grew = log_store.tree_size(conn) - size
+        assert grew == 0, "unchanged files were logged again"
+        assert seq == _INGESTED[host]["log_seq"], (seq, _INGESTED[host]["log_seq"])
+
+        # Changed while cold: a third solution appears.
+        _cool(host)
+        files["/.podshl/agent.yaml"] = files["/.podshl/agent.yaml"].replace(
+            b"  - solutions/b.md\n", b"  - solutions/b.md\n  - solutions/c.md\n")
+        files["/.podshl/agent.yaml"] = files["/.podshl/agent.yaml"].replace(
+            b"problem_classes: [app.a, app.b]", b"problem_classes: [app.a, app.b, app.c]")
+        files["/.podshl/solutions/c.md"] = _solution("c", "app.c", "    app.symptom: c\n")
+        status, body = _mirror(host)
+        assert status == 200, (status, body)
+        assert {s["solution_id"] for s in body["solutions"]} == {"a", "b", "c"}, body
+        assert body["serving"]["log_seq"] is not None and body["serving"]["log_seq"] != seq, (
+            "a changed cold source was served without a log entry of its own")
+    finally:
+        stop()
+
+
+def sv127_a_cold_source_that_cannot_be_checked_is_not_served():
+    """SV127. Fails closed, and says so in words that are not "not mirrored"."""
+    host, _, stop = _served_project(_used_files(), "sv127")
+    stop()
+    _cool(host)
+    import time
+
+    from .ingest import on_demand
+    status, body = _mirror(host)
+    if body.get("code") == "loading":
+        # A check that takes longer than a request waits is still a check;
+        # the next request gets its outcome.
+        deadline = time.monotonic() + 60
+        while on_demand._inflight and time.monotonic() < deadline:
+            time.sleep(0.2)
+        status, body = _mirror(host)
+    assert status == 503, (status, body)
+    assert body["code"] == "cannot_check", body
+    assert "solutions" not in body and "card" not in body, body
+    assert "not attested" not in json.dumps(body), (
+        "an unreadable project was described as one that publishes nothing")
+    row = _source_row(host)
+    assert row["last_used"] < __import__("datetime").date.today(), (
+        "a failed check made the source hot, so the next request would be served")
+    assert row["check_backoff_until"] is not None, row
+
+    # The same through `/diagnose`.
+    from .app import diagnose
+    out = diagnose({"subject": host, "problem_class": "app.a", "facts": {}})
+    assert getattr(out, "status_code", 200) == 503, out
+    assert json.loads(out.body)["code"] == "cannot_check", out.body
+
+
+def sv128_a_solution_withdrawn_while_cold_is_never_served():
+    """SV128. The reason cold fails closed: deleting the file is how a
+    maintainer withdraws a harmful answer, and a mirror that served its
+    two-week-old copy first would hand out exactly that answer."""
+    files = _used_files()
+    host, _, stop = _served_project(files, "sv128")
+    try:
+        _cool(host)
+        files["/.podshl/agent.yaml"] = files["/.podshl/agent.yaml"].replace(
+            b"  - solutions/b.md\n", b"")
+        del files["/.podshl/solutions/b.md"]
+        status, body = _mirror(host)
+        assert status == 200, (status, body)
+        assert {s["solution_id"] for s in body["solutions"]} == {"a"}, (
+            f"a withdrawn solution was served from a cold source: {body['solutions']}")
+
+        # And through the diagnosis a client actually asks.
+        from .app import diagnose
+        out = diagnose({"subject": host, "problem_class": "app.b",
+                        "facts": {"app.symptom": "b"}})
+        assert out["outcome"] != "finding", f"the withdrawn answer was found: {out}"
+    finally:
+        stop()
+
+
+def sv129_every_anchor_is_checked_weekly_and_graded_on_time():
+    """SV129. `stale` and `unknown` are promises about the anchor, and they
+    hold for a project nobody uses.
+
+    Found while building this: `sweep.apply_grades` had no caller. An anchor
+    whose challenge disappeared recorded `failing_since` and stayed `live`
+    for ever. The weekly job checks and grades.
+    """
+    from .ingest import scheduler
+    files = _used_files()
+    host, _, stop = _served_project(files, "sv129")
+    try:
+        _cool(host)
+        del files["/.well-known/podshl-challenge"]
+        with db.tx() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE anchor SET last_checked = now() - interval '8 days' "
+                            "WHERE host = %s RETURNING id", (host,))
+                aid = cur.fetchone()["id"]
+            scheduler.sweep_anchors(conn, anchors=[aid])
+
+        def anchor():
+            with db.read() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT status, failing_since FROM anchor WHERE id = %s", (aid,))
+                    return cur.fetchone()
+        assert anchor()["failing_since"] is not None, "the weekly check did not see the file go"
+        assert anchor()["status"] == "live", "one failed check changed the state"
+
+        for days, expected in ((15, "stale"), (91, "unknown")):
+            with db.tx() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE anchor SET failing_since = now() - %s * interval '1 day' "
+                                "WHERE id = %s", (days, aid))
+                scheduler.sweep_anchors(conn, anchors=[aid])
+            assert anchor()["status"] == expected, (days, anchor())
+        assert _source_row(host)["mirror_state"] == "withheld", "unknown kept serving"
+    finally:
+        stop()
+
+
+def sv130_on_demand_checks_are_bounded():
+    """SV130. A pool, one check per source, a bounded wait, and a back-off.
+
+    The check itself is replaced by one that only sleeps and counts, because
+    what is under test is the bound and not the forge.
+    """
+    import threading
+    import time
+
+    from .ingest import on_demand
+
+    with db.tx() as conn:
+        sids = []
+        for _ in range(on_demand.POOL_SIZE + 2):
+            h = _fresh_host("cold")
+            aid = _anchor(conn, h)
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO source (anchor_id, manifest_url, fetch_prefix, last_used) "
+                            "VALUES (%s, %s, %s, current_date - 30) RETURNING id",
+                            (aid, f"https://{h}/.podshl/agent.yaml", f"https://{h}/"))
+                sids.append(cur.fetchone()["id"])
+
+    running = peak = 0
+    calls: dict[int, int] = {}
+    lock = threading.Lock()
+    real = on_demand._check
+
+    def slow(source_id):
+        nonlocal running, peak
+        with lock:
+            running += 1
+            peak = max(peak, running)
+            calls[source_id] = calls.get(source_id, 0) + 1
+        time.sleep(on_demand.WAIT_S + 1.5)
+        with lock:
+            running -= 1
+        return {"source": source_id, "outcome": "unchanged"}
+
+    on_demand._check = slow
+    try:
+        answers, waited = [], []
+
+        def ask(sid):
+            t = time.monotonic()
+            answers.append(on_demand.before_serving(sid))
+            waited.append(time.monotonic() - t)
+
+        # Every source twice, at once.
+        threads = [threading.Thread(target=ask, args=(sid,)) for sid in sids + sids]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert peak <= on_demand.POOL_SIZE, f"{peak} checks ran at once"
+        assert all(a is not None and a.code == "loading" for a in answers), answers
+        assert max(waited) < on_demand.WAIT_S + 1, f"a request waited {max(waited):.1f} s"
+        deadline = time.monotonic() + 60
+        while on_demand._inflight and time.monotonic() < deadline:
+            time.sleep(0.2)
+        assert not on_demand._inflight, "checks were still running a minute later"
+        # Counted once everything queued has run: two requests for one source
+        # are one check, not one now and one later.
+        assert calls == {sid: 1 for sid in sids}, f"checks per source: {calls}"
+    finally:
+        on_demand._check = real
+
+    # A real check that fails backs off, and the next request asks nobody.
+    sid = sids[0]
+    first = on_demand.before_serving(sid)
+    assert first is not None and first.code == "cannot_check", first
+    with db.read() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT check_backoff_until - now() AS wait, check_failures "
+                        "FROM source WHERE id = %s", (sid,))
+            row = cur.fetchone()
+    assert row["check_failures"] == 1 and 30 < row["wait"].total_seconds() <= 60, row
+    on_demand._check = lambda s: (_ for _ in ()).throw(AssertionError("asked during back-off"))
+    try:
+        again = on_demand.before_serving(sid)
+    finally:
+        on_demand._check = real
+    assert again is not None and again.code == "cannot_check", again
+
+
+def sv131_a_project_s_reports_and_trees_survive_it_going_cold():
+    """SV131. Cooling stops the fetching and deletes nothing.
+
+    The design named `cluster_partition`, which `0015` had already dropped
+    along with `link`. What a project holds today is its stored files, its
+    trees, and the clusters of reports about it — `cluster.source_id`, with the
+    reports hanging off each cluster by `ON DELETE CASCADE`. Those are the
+    maintainer's evidence, and none of it may depend on somebody having asked
+    recently.
+    """
+    host, _, stop = _served_project(_used_files(), "sv131")
+    try:
+        sid = _source_of(host)
+        with db.tx() as conn:
+            cid = clusters.ensure(
+                conn, clusters.canonical_signature(host, {"app.symptom": "a"}),
+                source_id=sid, epoch=1)
+            _observe(conn, cid, ["sv131-a", "sv131-b"], 1)
+
+        def held():
+            with db.read() as conn:
+                with conn.cursor() as cur:
+                    # Row ids, not counts: a tree deleted and derived again
+                    # counts the same and is not the same row.
+                    cur.execute(
+                        "SELECT (SELECT array_agg(id::text) FROM observation WHERE cluster_id = %s) AS reports, "
+                        "  (SELECT array_agg(id) FROM cluster WHERE source_id = %s) AS clusters, "
+                        "  (SELECT array_agg(id) FROM tree WHERE source_id = %s) AS trees, "
+                        "  (SELECT array_agg(id) FROM solution WHERE source_id = %s) AS solutions, "
+                        "  (SELECT array_agg(id) FROM card WHERE source_id = %s) AS cards",
+                        (cid, sid, sid, sid, sid))
+                    return {k: set(v or ()) for k, v in cur.fetchone().items()}
+
+        before = held()
+        assert len(before["reports"]) == 2 and before["trees"], before
+        _cool(host)
+        assert held() == before, "cooling removed something"
+        status, _ = _mirror(host)
+        assert status == 200
+        after = held()
+        for k in before:
+            assert before[k] <= after[k], f"{k} lost when the project was used again: {before[k] - after[k]}"
+    finally:
+        stop()
+
+
+def sv132_a_query_leaves_one_date_at_most_once_a_day():
+    """SV132. What the operator learns from a question: the day, and only once."""
+    import datetime
+
+    host, _, stop = _served_project(_used_files(), "sv132")
+    try:
+        _set_source(host, "last_used = current_date - 1")
+        before = _source_row(host)
+        assert _mirror(host)[0] == 200
+        after = _source_row(host)
+        assert after["last_used"] == datetime.date.today(), after["last_used"]
+        assert isinstance(after["last_used"], datetime.date) and not isinstance(
+            after["last_used"], datetime.datetime), "the use is recorded with a time of day"
+        changed = {k for k in before if k != "version" and before[k] != after[k]}
+        assert changed == {"last_used"}, f"a query changed more than the date: {changed}"
+
+        # The second question the same day writes nothing at all.
+        _mirror(host)
+        from .app import diagnose
+        diagnose({"subject": host, "problem_class": "app.a", "facts": {"app.symptom": "a"}})
+        assert _source_row(host)["version"] == after["version"], (
+            "a second use on the same day wrote the row again")
+
+        # Nothing else keyed on the source moved: no count, no requester.
+        with db.read() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT column_name FROM information_schema.columns "
+                            "WHERE table_name = 'source' AND column_name ~ '(used|ask|request)'")
+                assert [r["column_name"] for r in cur.fetchall()] == ["last_used"]
+    finally:
+        stop()
+
+
+def sv133_a_solution_that_does_not_match_its_digest_is_refused():
+    """SV133. A digest is a claim, and it is checked. And with digests, a check
+    of an unchanged project is one request."""
+    from .ingest import scheduler
+    files = _used_files()
+    a, b = files["/.podshl/solutions/a.md"], files["/.podshl/solutions/b.md"]
+    files["/.podshl/agent.yaml"] = files["/.podshl/agent.yaml"].replace(
+        b"  - solutions/a.md\n  - solutions/b.md\n",
+        f"  - path: solutions/a.md\n    sha256: {hashlib.sha256(a).hexdigest()}\n"
+        f"  - path: solutions/b.md\n    sha256: {hashlib.sha256(b).hexdigest()}\n".encode())
+    host, token, stop = _served_project(files, "sv133-token", etags=True)
+    try:
+        sid = _source_of(host)
+        # The quick check: the manifest answers 304 and names every file.
+        _set_source(host, "next_fetch_at = '-infinity', last_full_check = now()")
+        before = len(_HITS[host])
+        with db.tx() as conn:
+            got = {r["source"]: r for r in scheduler.run_once(conn)}[sid]
+        assert got["outcome"] == "unchanged" and got["check"] == "quick", got
+        assert [h for h in _HITS[host][before:] if "/solutions/" in h] == [], (
+            f"an unchanged project with digests was read file by file: {_HITS[host][before:]}")
+
+        # A hand-edit that leaves the digest behind.
+        files["/.podshl/solutions/b.md"] = b.replace(b"Do the thing.", b"Do another thing.")
+        _set_source(host, "next_fetch_at = '-infinity', last_full_check = NULL")
+        with db.tx() as conn:
+            got = {r["source"]: r for r in scheduler.run_once(conn)}[sid]
+        assert got["outcome"] == "refused", got
+        why = _dashboard(host, token)["files"]["last_refusal"] or ""
+        assert "solutions/b.md" in why and hashlib.sha256(b).hexdigest() in why, (
+            f"the maintainer was not told which file and which digest: {why!r}")
+        status, body = _mirror(host)
+        assert "Do another thing" not in json.dumps(body, default=str), (
+            "the unmatched file was served")
+    finally:
+        stop()
+
+
+def sv_an_action_s_upstream_is_checked_as_text():
+    """RR5, the publisher's side: what a proposed change says about the
+    software it is for is refused at ingest when a client would refuse it."""
+    from .. import spec_gate
+    call = {"action": "set_config_key",
+            "params": {"file": "app.toml", "key": "modeset", "value": "1"}}
+    spec_gate.check_action({**call, "upstream": {
+        "package": "hyprland", "issue": "https://github.com/hyprwm/Hyprland/issues/1",
+        "fixed_in": "1:0.45.0-1"}})
+    for bad in ({"package": "a b"}, {"issue": "http://example.org/1"},
+                {"fixed_in": "1.0; x"}, {"version": "1"}, {"package": 3}, "hyprland"):
+        try:
+            spec_gate.check_action({**call, "upstream": bad})
+        except spec_gate.SpecError:
+            continue
+        raise AssertionError(f"accepted upstream {bad!r}")
+
+
+def sv_a_digest_is_spelled_as_one():
+    """The manifest side of SV133: a digest that could never match is refused
+    before anything is fetched for it, and a plain path means what it meant."""
+    from .errors import IngestRefused
+    base = (b"endpoint: https://x.example/\nlangs: [en]\nproblem_classes: [a.b]\n"
+            b"solutions:\n")
+    plain = ingest_manifest.parse_manifest(base + b"  - solutions/a.md\n")
+    assert plain["solutions"] == ["solutions/a.md"] and "solution_sha256" not in plain, plain
+    # A digest map written at the top level is not one spelled next to a file.
+    smuggled = ingest_manifest.parse_manifest(
+        base + b"  - solutions/a.md\nsolution_sha256: {solutions/a.md: nonsense}\n")
+    assert "solution_sha256" not in smuggled, smuggled
+    d = "ab" * 32
+    both = ingest_manifest.parse_manifest(
+        base + f"  - solutions/a.md\n  - path: solutions/b.md\n    sha256: {d}\n".encode())
+    assert both["solutions"] == ["solutions/a.md", "solutions/b.md"], both
+    assert both["solution_sha256"] == {"solutions/b.md": d}, both
+    for bad in (f"  - path: solutions/b.md\n    sha256: {d.upper()}\n",
+                "  - path: solutions/b.md\n    sha256: abc\n",
+                "  - path: solutions/b.md\n    digest: abc\n",
+                "  - sha256: " + d + "\n"):
+        try:
+            ingest_manifest.parse_manifest(base + bad.encode())
+        except IngestRefused:
+            continue
+        raise AssertionError(f"accepted: {bad!r}")
 
 
 ALL = {name: fn for name, fn in sorted(globals().items())

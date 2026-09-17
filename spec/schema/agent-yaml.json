@@ -106,9 +106,30 @@
     "solutions": {
       "type": "array",
       "items": {
-        "type": "string"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "The SHA-256 of the file's bytes, lower-case hex. Optional. With a digest for every file, a mirror checks an unchanged project with one conditional request for this manifest. It is checked against the file, and a file that does not match is refused."
+              }
+            }
+          }
+        ]
       },
-      "description": "Paths under the anchor, relative to the manifest. These are fetched and mirrored; the solutions themselves stay in the developer's repository, so a takedown reaches the mirror and not the source."
+      "description": "Paths under the anchor, relative to the manifest, each either a path or `{path, sha256}`. These are fetched and mirrored; the solutions themselves stay in the developer's repository, so a takedown reaches the mirror and not the source."
     }
   }
 }

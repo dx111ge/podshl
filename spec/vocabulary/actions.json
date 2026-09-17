@@ -1,5 +1,5 @@
 {
-  "$comment": "The action vocabulary. Generated from client-rs/src/actions.rs and held to it by actions::tests::vocabulary_matches_the_spec. A vendor selects an id and fills the declared parameters; it cannot ship a capability. Patterns are anchored by the client before matching, so a pattern here is a whole-value pattern.",
+  "$comment": "The action vocabulary. Generated from client-rs/src/actions.rs and held to it by actions::tests::vocabulary_matches_the_spec. A vendor selects an id and fills the declared parameters; it cannot ship a capability. Patterns are anchored by the client before matching, so a pattern here is a whole-value pattern. An action marked `elevated` needs administrator rights: the client performs it only through its separate helper, on Windows, after Windows' own prompt, and refuses services and variables Windows itself depends on (client-rs/src/elevated.rs).",
   "version": 1,
   "actions": [
     {
@@ -7,6 +7,7 @@
       "describes": "State a finding, change nothing",
       "mutating": false,
       "reversible": true,
+      "elevated": false,
       "params": {}
     },
     {
@@ -14,6 +15,7 @@
       "describes": "Undo a change",
       "mutating": true,
       "reversible": false,
+      "elevated": false,
       "params": {
         "file": "[\\w./-]+\\.(toml|ini|cfg|conf)"
       }
@@ -23,10 +25,43 @@
       "describes": "Set a key in a configuration file",
       "mutating": true,
       "reversible": true,
+      "elevated": false,
       "params": {
         "file": "[\\w./-]+\\.(toml|ini|cfg|conf)",
         "key": "[A-Za-z_][\\w.]{0,64}",
         "value": "[\\w.:/+-]{1,128}"
+      }
+    },
+    {
+      "id": "restart_service",
+      "describes": "Restart a Windows service (administrator)",
+      "mutating": true,
+      "reversible": false,
+      "elevated": true,
+      "params": {
+        "service": "[A-Za-z0-9_.-]{1,80}"
+      }
+    },
+    {
+      "id": "set_service_start",
+      "describes": "Set how a Windows service starts (administrator)",
+      "mutating": true,
+      "reversible": true,
+      "elevated": true,
+      "params": {
+        "service": "[A-Za-z0-9_.-]{1,80}",
+        "start": "auto|demand|disabled"
+      }
+    },
+    {
+      "id": "set_machine_env",
+      "describes": "Set or remove a machine-wide environment variable (administrator)",
+      "mutating": true,
+      "reversible": true,
+      "elevated": true,
+      "params": {
+        "name": "[A-Za-z_][A-Za-z0-9_]{0,63}",
+        "value": "[\\w.:\\\\/+-]{0,200}"
       }
     }
   ]

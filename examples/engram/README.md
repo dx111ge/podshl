@@ -350,8 +350,9 @@ performs the attack rather than describing it:
 
 ## Watching it
 
-Three screencasts, recorded from the running system — the user's walk, the
-maintainer's pages and a sixty-second cut — are in [`videos/`](videos/).
+The maintainer's screencast, recorded from the running system, is in
+[`videos/`](videos/). The user's walk and the sixty-second cut are being
+recorded again; `videos/README.md` says why.
 
 ## The second walk: through the window, as a user
 

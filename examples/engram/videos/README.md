@@ -1,4 +1,11 @@
-# Three screencasts, in English and German
+# Screencasts, in English and German
+
+**The user's walk and the short cut are withdrawn for now** (2026-09-17). The
+client window showed a program's full path, and on the machine they were
+recorded on that path held the account name. The window now shortens paths in
+the person's own profile (`%LOCALAPPDATA%\…`, `~/…`), and both are to be
+recorded again with it. The maintainer's cut shows only the operator's pages and
+stays.
 
 Recorded from the real surfaces on 2026-09-13 by
 [`scripts/walk/record_videos.mjs`](../../../scripts/walk/record_videos.mjs): the shipped
@@ -8,9 +15,7 @@ system answered, and the engram binary asked for its version is a real build.
 
 | English | German | Length | For |
 |---|---|---|---|
-| [`podshl-user.mp4`](podshl-user.mp4) | [`podshl-user-de.mp4`](podshl-user-de.mp4) | 1:23 / 1:30, 1280×800 | **The person with the broken machine.** A question about engram, the readings shown and chosen item by item, "where is engram?" answered with a folder and read as `1.2.2`, Ollama's log loaded and kept on the machine, what is sent where and why before anything leaves, the maintainer's own answer with its log entry checked on the device, "did it help?", the report — measured apart from typed — and the free text anonymised before it is offered. The German cut shows the answer translated by the person's own model, with engram's command and terms kept as written |
 | [`podshl-maintainer.mp4`](podshl-maintainer.mp4) | [`podshl-maintainer-de.mp4`](podshl-maintainer-de.mp4) | 1:15, 1280×800 | **The maintainer.** Why this exists, what to publish, the builder — its example checked by the operator, engram's real files loaded into it — registering, the dashboard of a project with 263 recurring configurations grouped by the file to edit, a fork with the condition to paste, what the mirror could not make of the files, and the public log |
-| [`podshl-short.mp4`](podshl-short.mp4) | [`podshl-short-de.mp4`](podshl-short-de.mp4) | 0:51 / 0:59, 1080×1920 | **Under a minute, vertical.** The user's walk at a quicker beat |
 
 The operator's pages exist in English only; in the German maintainer cut the
 subtitles are German and the pages are not.

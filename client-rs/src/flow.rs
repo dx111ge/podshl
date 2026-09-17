@@ -328,6 +328,12 @@ pub fn accept_remedy(res: &Value, jwk: &Value, skill_id: &str, nonce: &str, fact
     // deliberately permissive about.
     serde_json::from_value::<wire::Remedy>(remedy.clone())
         .map_err(|e| m!("finding_malformed", e = e))?;
+    // What a step says about the software it is for is checked here too, so a
+    // malformed one names the vendor rather than failing at the consent button.
+    for step in remedy.get("plan").and_then(|p| p.as_array()).into_iter().flatten() {
+        crate::repair::Upstream::from_value(step.get("upstream"))
+            .map_err(|e| m!("finding_malformed", e = e))?;
+    }
 
     let carries = |k: &str, want: &str| remedy.get(k).and_then(|v| v.as_str()) == Some(want);
     if !carries("skill_id", skill_id) || !carries("nonce", nonce) || !carries("facts_sha256", facts_sha256) {

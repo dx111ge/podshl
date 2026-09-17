@@ -4,10 +4,41 @@
   "title": "ActionCall",
   "description": "One proposed operation. `action` must be an id in the client's published vocabulary and `params` must fill exactly that action's declared parameters — a vendor selects, it cannot invent. Patterns are anchored by the client before matching. `because` is shown next to the consent prompt: an action without a reason a person can evaluate is not a request for consent.",
   "type": "object",
-  "required": ["action", "params"],
+  "required": [
+    "action",
+    "params"
+  ],
   "properties": {
-    "action": { "type": "string" },
-    "params": { "type": "object" },
-    "because": { "type": "string" }
+    "action": {
+      "type": "string"
+    },
+    "params": {
+      "type": "object"
+    },
+    "because": {
+      "type": "string"
+    },
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional. What the publisher says about the software the change is for. A client keeps it in its record of the change and looks again after updates; it never trusts it as a fact about the machine — the package name is only used to ask the package manager for the installed version.",
+      "properties": {
+        "package": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9\\-_.+@]{0,99}$",
+          "description": "The package name as the distribution's package manager knows it."
+        },
+        "issue": {
+          "type": "string",
+          "pattern": "^https://\\S{1,292}$",
+          "description": "The upstream issue or pull request the change works around."
+        },
+        "fixed_in": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.:\\-+_~]{0,99}$",
+          "description": "The first version that carries the fix, compared as pacman compares versions."
+        }
+      }
+    }
   }
 }

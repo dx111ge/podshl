@@ -50,6 +50,13 @@ $env:PODSHL_BUILD_LOG_KEY    = $keyText
 
 Push-Location (Join-Path $repo 'client-rs')
 try {
+    # The helper for changes that need administrator rights, built first and
+    # put where the installer hook picks it up (windows/installer-hooks.nsh).
+    cargo build --release --bin podshl-elevate
+    if ($LASTEXITCODE -ne 0) { throw "building podshl-elevate failed ($LASTEXITCODE)" }
+    $helperDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { 'target' }
+    Copy-Item (Join-Path $helperDir 'release\podshl-elevate.exe') 'windows\podshl-elevate.exe' -Force
+
     npx --yes '@tauri-apps/cli@2' build --bundles nsis
     if ($LASTEXITCODE -ne 0) { throw "tauri build failed ($LASTEXITCODE)" }
 } finally {
@@ -116,8 +123,8 @@ Built for $for The operator's log key is compiled in; ``PODSHL_SERVER_URL``,
 ## What it does to the machine
 
 Installs for the current user only, under ``%LOCALAPPDATA%\PODSHL``, with a
-Start menu entry and an entry in Installed apps. No administrator, no UAC
-prompt. State lives in ``%APPDATA%\podshl``. Uninstalling removes the program;
+Start menu entry and an entry in Installed apps. Installing needs no
+administrator and shows no UAC prompt. State lives in ``%APPDATA%\podshl``. Uninstalling removes the program;
 ticking "delete application data" also removes ``%APPDATA%\podshl``. An API key
 stays in Windows Credential Manager (``de.podshl.client``) until it is removed
 there.
@@ -131,7 +138,15 @@ A signature. Windows SmartScreen will say it does not recognise the publisher,
 and that is true: a signature says who built it, and there is no certificate
 yet. The SHA256SUMS beside this file says what was built, not by whom.
 
-The elevated helper (L5). Nothing this client does today needs privilege.
+## Changes that need administrator rights
+
+``podshl-elevate.exe`` is installed next to the client. It performs three
+example actions and nothing else — restart a service, set how a service
+starts, set or remove a machine-wide environment variable — and only when the
+client starts it through Windows' own administrator prompt, which the person
+answers for each change. Services and variables Windows depends on are refused.
+The client reads the result back itself and records every change, with its
+undo, in ``%APPDATA%\podshl\repairs.json``.
 
 ## Provenance
 

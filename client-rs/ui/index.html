@@ -1033,7 +1033,9 @@ async function runInner(){
 
   // Every file a step changed, so one Undo puts all of them back. It kept
   // the last file only, and a plan of two steps in two files undid one.
+  // A change with no file (a service, a machine variable) brings its own undo.
   const changedFiles=new Set();
+  const undos=[];
   for(const s of (rem.plan||[])){
     if(s.action==="report_only") continue;
     const dry=await invoke("dry_run",{action:s.action, params:s.params});
@@ -1047,18 +1049,33 @@ async function runInner(){
       el.innerHTML=`<h3>${t("changed_none_h")}</h3><p>${t("changed_none_1")}</p>`;
       break;
     }
-    await invoke("execute",{action:s.action, params:s.params});
+    // Who proposed it and what they said about the software go with it, so
+    // the change is on record before it is made (`repair.rs`).
+    let res;
+    try{
+      res=await invoke("execute",{action:s.action, params:s.params, subject:d.org,
+        upstream:s.upstream||null, note:null, undoes:null});
+    }catch(e){
+      el.className="panel stop";
+      el.innerHTML=`<h3>${t("change_failed_h")}</h3><p>${esc(tr(e))}</p>`;
+      break;
+    }
     if(s.params && s.params.file) changedFiles.add(s.params.file);
+    if(res && res.undo) undos.push({undo:res.undo, record:res.repair_record});
   }
 
-  const changed=changedFiles.size>0;
+  const changed=changedFiles.size>0 || undos.length>0;
   if(changed){
     const done=add(`<h3>${t("done_h")}</h3><p>${t("done_1")}</p>
       <div class="btns"><button class="ghost" id="undo">${t("undo")}</button></div>`,"panel done");
     $("undo").onclick=async()=>{
       try{
         for(const file of changedFiles)
-          await invoke("execute",{action:"restore_backup",params:{file}});
+          await invoke("execute",{action:"restore_backup",params:{file},
+            subject:d.org, upstream:null, note:null, undoes:null});
+        for(const u of undos.reverse())
+          await invoke("execute",{action:u.undo.action, params:u.undo.params,
+            subject:d.org, upstream:null, note:null, undoes:u.record||null});
         done.className="panel";
         done.innerHTML=`<h3>${t("undone_h")}</h3><p>${t("undone_1")}</p>`;
       }catch(e){ done.innerHTML+=`<p class="c-stop">${esc(tr(e))}</p>`; }
@@ -2906,6 +2923,57 @@ $("lang").onchange=async()=>{
   syncHint(await refreshLlmChip());
 };
 
+/* Changes this client made that want another look (`repair.rs`).
+
+   Asked once when the window opens, because "after every update" is, from
+   here, "the next time anybody looks". Nothing is undone from this panel
+   except by the person pressing Undo; keeping a change records that they
+   looked, at the version installed now, and an update raises it again. */
+async function showRepairs(){
+  let items;
+  try{ items = await invoke("repairs_review"); }catch(e){ logUi(`repairs not reviewed: ${e}`); return; }
+  if(!items || !items.length) return;
+  const flagText = f => ({
+    updated: t("repair_updated", {from: esc(f.from), to: esc(f.to)}),
+    upstream_says_fixed: t("repair_fixed", {fixed: esc(f.fixed_in), now: esc(f.installed)}),
+    cannot_compare: esc(tr(f.why)),
+    overwritten: t("repair_overwritten"),
+    no_longer_set: t("repair_no_longer_set"),
+    target_gone: t("repair_target_gone"),
+    backup_gone: t("repair_backup_gone"),
+  })[f.kind] || esc(f.kind);
+  items.forEach(({record: r, flags}) => {
+    const when = new Date(r.at * 1000).toLocaleDateString(LANG);
+    const facts = {[t("repair_what")]: `${r.action} ${Object.entries(r.params).map(([k,v])=>`${k}=${v}`).join(" ")}`,
+                   [t("repair_when")]: when, [t("repair_who")]: r.subject || "—"};
+    if(r.upstream && r.upstream.package) facts[t("repair_package")] =
+      r.upstream.package + (r.installed ? ` ${r.installed.version}` : "");
+    // As text to copy, not a link: the window opens nothing outside itself.
+    if(r.upstream && r.upstream.issue) facts[t("repair_issue")] = r.upstream.issue;
+    // An undo needs the file and its copy; offering it without them offers an error.
+    const canUndo = !!r.undo || (r.reversible && r.params.file &&
+      !flags.some(f => f.kind === "backup_gone" || f.kind === "target_gone"));
+    const el = add(`<h3>${t("repairs_h")}</h3><p>${t("repairs_1")}</p>
+      <ul class="plain">${flags.map(f=>`<li><span>${flagText(f)}</span></li>`).join("")}</ul>
+      ${kv(facts)}
+      <div class="btns">${canUndo ? `<button class="ghost undo">${t("undo")}</button>` : ""}
+        <button class="keep">${t("repair_keep")}</button></div>`, "panel");
+    const undo = el.querySelector(".undo");
+    if(undo) undo.onclick = async () => {
+      try{
+        const call = r.undo || {action:"restore_backup", params:{file:r.params.file}};
+        await invoke("execute", {action:call.action, params:call.params,
+                                 subject:r.subject, upstream:null, note:null, undoes:r.id});
+        el.className = "panel"; el.innerHTML = `<h3>${t("undone_h")}</h3><p>${t("undone_1")}</p>`;
+      }catch(e){ el.innerHTML += `<p class="c-stop">${esc(tr(e))}</p>`; }
+    };
+    el.querySelector(".keep").onclick = async () => {
+      try{ await invoke("repair_looked_at", {id: r.id}); el.remove(); }
+      catch(e){ el.innerHTML += `<p class="c-stop">${esc(tr(e))}</p>`; }
+    };
+  });
+}
+
 /* A window that fails to start must say so.
 
    `loadLanguages` throws when a language file cannot be fetched, and an
@@ -2995,6 +3063,7 @@ window.addEventListener("load", async () => {
     });
   syncIndex();
   setInterval(syncIndex, 6*60*60*1000);
+  showRepairs();
  } catch(e) { bootFailed(e); }
 });
 </script>

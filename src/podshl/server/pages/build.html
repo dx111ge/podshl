@@ -187,6 +187,50 @@ const Emit = (() => {
   const kept = (L, indent, obj) =>
     Object.entries(obj || {}).forEach(([k, v]) => L.push(indent + k + ": " + JSON.stringify(v)));
 
+  /* SHA-256 of a text as UTF-8, in hex. Here rather than `crypto.subtle`
+     because that one is asynchronous and this writer is not; a maintainer's
+     files are a few kilobytes. The digest lets the mirror check an unchanged
+     project with one request, and is checked against the file (`SV133`). */
+  const sha256 = (() => {
+    const K = [];
+    const frac = x => ((x - Math.floor(x)) * 4294967296) >>> 0;
+    for (let n = 2, found = 0; found < 64; n++) {
+      let prime = true;
+      for (let f = 2; f * f <= n; f++) if (n % f === 0) { prime = false; break; }
+      if (prime) { K.push(frac(Math.cbrt(n))); found++; }
+    }
+    const H0 = [2, 3, 5, 7, 11, 13, 17, 19].map(p => frac(Math.sqrt(p)));
+    return text => {
+      const bytes = Array.from(new TextEncoder().encode(text));
+      const bits = bytes.length * 8;
+      bytes.push(0x80);
+      while (bytes.length % 64 !== 56) bytes.push(0);
+      for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (i * 8)) & 0xff);
+      const h = H0.slice();
+      const w = new Array(64);
+      const rot = (x, n) => (x >>> n) | (x << (32 - n));
+      for (let off = 0; off < bytes.length; off += 64) {
+        for (let t = 0; t < 16; t++) {
+          w[t] = (bytes[off + 4 * t] << 24) | (bytes[off + 4 * t + 1] << 16) |
+                 (bytes[off + 4 * t + 2] << 8) | bytes[off + 4 * t + 3];
+        }
+        for (let t = 16; t < 64; t++) {
+          const s0 = rot(w[t - 15], 7) ^ rot(w[t - 15], 18) ^ (w[t - 15] >>> 3);
+          const s1 = rot(w[t - 2], 17) ^ rot(w[t - 2], 19) ^ (w[t - 2] >>> 10);
+          w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0;
+        }
+        let [a, b, c, d, e, f, g, hh] = h;
+        for (let t = 0; t < 64; t++) {
+          const t1 = (hh + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + w[t]) | 0;
+          const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+          hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+        }
+        [a, b, c, d, e, f, g, hh].forEach((v, i) => { h[i] = (h[i] + v) | 0; });
+      }
+      return h.map(v => (v >>> 0).toString(16).padStart(8, "0")).join("");
+    };
+  })();
+
   function condition(c) {
     if (c.raw !== undefined) return JSON.stringify(c.raw);
     const v = String(c.value || "").trim();
@@ -203,7 +247,7 @@ const Emit = (() => {
     return JSON.stringify(out);
   }
 
-  function manifest(d) {
+  function manifest(d, digests) {
     const L = [];
     L.push("endpoint: " + q((d.endpoint || "").trim() || (d.anchor || "").trim()));
     if ((d.commit || "").trim()) L.push("commit: " + q(d.commit.trim()));
@@ -267,7 +311,12 @@ const Emit = (() => {
     const sols = (d.solutions || []).filter(s => (s.id || "").trim());
     L.push("");
     L.push(sols.length ? "solutions:" : "solutions: []");
-    sols.forEach(s => L.push("  - " + q(path(s))));
+    sols.forEach(s => {
+      const digest = (digests || {})[path(s)];
+      if (!digest) { L.push("  - " + q(path(s))); return; }
+      L.push("  - path: " + q(path(s)));
+      L.push("    sha256: " + q(digest));
+    });
     return L.join("\n") + "\n";
   }
 
@@ -310,10 +359,10 @@ const Emit = (() => {
   }
 
   function files(d) {
-    const out = {"agent.yaml": manifest(d)};
+    const sols = {}, digests = {};
     (d.solutions || []).filter(s => (s.id || "").trim())
-      .forEach(s => { out[path(s)] = solution(s); });
-    return out;
+      .forEach(s => { sols[path(s)] = solution(s); digests[path(s)] = sha256(sols[path(s)]); });
+    return Object.assign({"agent.yaml": manifest(d, digests)}, sols);
   }
 
   /* A project's existing files, as ingest's own parser read them, turned into
@@ -331,7 +380,9 @@ const Emit = (() => {
     const rest = (obj, skip) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => !skip.has(k)));
 
     const topKnown = new Set(["endpoint", "commit", "status", "langs", "problem_classes", "collect",
-                              "glossary", "escalate", "solutions", "successor"]);
+                              "glossary", "escalate", "solutions", "successor",
+                              // Derived from the files and written again from them.
+                              "solution_sha256"]);
     const d = {anchor: "", endpoint: m.endpoint || "", commit: "", status: m.status || "active",
                successor: typeof m.successor === "string" ? m.successor : "",
                langs: (m.langs || []).join(", "),
@@ -423,7 +474,7 @@ const Emit = (() => {
     return d;
   }
 
-  return {manifest, solution, files, path, fromParsed};
+  return {manifest, solution, files, path, fromParsed, sha256};
 })();
 </script>
 

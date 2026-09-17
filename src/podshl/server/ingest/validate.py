@@ -16,6 +16,7 @@ stops a broken document early.
 """
 from __future__ import annotations
 
+import hashlib
 from urllib.parse import urlparse
 
 from ... import spec_gate
@@ -54,6 +55,22 @@ def check_endpoint(endpoint: str, anchor_prefix: str, identity: str = "") -> Non
             f"{' or '.join(repr(p) for p in allowed)}. An anchor proves control "
             f"of a location; it cannot vouch for another one."
         )
+
+
+def check_digest(path: str, body: bytes, stated: str | None) -> None:
+    """SV133. A digest the manifest states is a claim about the file, and checked.
+
+    Refused rather than corrected: which of the two is wrong is the
+    maintainer's to say. The one sentence ingest and a draft's check both give.
+    """
+    if stated is None:
+        return
+    actual = hashlib.sha256(body).hexdigest()
+    if actual != stated:
+        raise IngestRefused(
+            f"{path}: its content has SHA-256 {actual}, and agent.yaml states {stated}. "
+            f"After editing a solution, write agent.yaml again with the builder, or "
+            f"correct the digest.")
 
 
 def check_english(langs: list[str]) -> None:

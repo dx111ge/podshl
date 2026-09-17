@@ -342,15 +342,23 @@ Parameter patterns are **anchored** by the client — a pattern free to match a
 substring is not a validation — and an undeclared parameter is refused along
 with an unknown action id.
 
-Version 1 defines three actions. The list is short on purpose: every entry is an
-operation somebody had to implement, test on three platforms and be willing to
-have run on a stranger's machine, and that cost is what keeps it honest.
+Version 1 defines three actions that need no privilege, and three that do. The
+list is short on purpose: every entry is an operation somebody had to implement,
+test and be willing to have run on a stranger's machine, and that cost is what
+keeps it honest.
 
-| Action | Mutating | Reversible | Parameters |
-|---|---|---|---|
-| `report_only` | no | — | none. State a finding and change nothing |
-| `set_config_key` | yes | yes | `file`, `key`, `value` |
-| `restore_backup` | yes | **no** | `file`. This is the undo, so it has no undo of its own |
+| Action | Mutating | Reversible | Elevated | Parameters |
+|---|---|---|---|---|
+| `report_only` | no | — | no | none. State a finding and change nothing |
+| `set_config_key` | yes | yes | no | `file`, `key`, `value` |
+| `restore_backup` | yes | **no** | no | `file`. This is the undo, so it has no undo of its own |
+| `restart_service` | yes | no | **yes** | `service`. Windows only. Stops and starts it again; there is nothing to undo |
+| `set_service_start` | yes | yes | **yes** | `service`, `start` (`auto`, `demand`, `disabled`). Windows only |
+| `set_machine_env` | yes | yes | **yes** | `name`, `value`; an empty value removes the variable. Windows only |
+
+The three elevated actions are examples, to be sharpened. A client refuses
+services and variables the operating system depends on by name, whatever the
+parameters' form allows, and says so.
 
 A client that implements more is free to; a vendor may only select from what the
 client it is talking to publishes, and the client names its own vocabulary when
@@ -478,6 +486,15 @@ Two things about it that are easy to get wrong:
   solution file, reached under consent. A bare string stays valid for every
   manifest published before this, and a client falls back to the identifier.
 
+- **A solution entry may carry the SHA-256 of its file.** An entry is either the
+  path on its own or `{ path, sha256 }`, the digest in lower-case hex over the
+  file's bytes. It is optional and a plain path stays valid. With a digest for
+  every file, a mirror checks an unchanged project with one conditional request
+  for the manifest instead of one per file. A digest is a claim and is checked:
+  a file whose bytes do not match is refused, and so is the project until it is
+  corrected. Editing a solution by hand therefore means writing its digest
+  again; the builder on an operator's `/publish/build` writes them.
+
 - **`problem_classes` names other people's software on purpose.** A project that
   repairs `pip` behaviour has to be able to say `pip`. That is nominative use,
   and it is what the open-source branch *is*: projects that fix software they
@@ -486,6 +503,22 @@ Two things about it that are easy to get wrong:
 A solution is YAML front matter and a human body, so that one solution is one
 pull request — the machine part small enough to check at a glance, the human
 part readable.
+
+An action marked `elevated` in the vocabulary needs administrator rights. A
+client that offers one performs it through a separate program that knows
+nothing else, after the operating system's own prompt, and reads the result
+back itself; it refuses what the operating system depends on. A publisher may
+propose one like any other action, and the person sees in the dry run that
+administrator permission will be asked for.
+
+A proposed change may say what software it is for, as `upstream`:
+`package` (the name the distribution's package manager uses), `issue` (the
+upstream issue or pull request it works around) and `fixed_in` (the first
+version that carries the fix). All optional. A client keeps them in its record
+of the change, together with the version its own package manager reports, and
+when that version moves it asks the person to look again — it never undoes a
+change on its own, because a backport or a fix that did not hold looks exactly
+like a fix from the outside.
 
 ## Conformance
 

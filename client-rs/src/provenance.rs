@@ -40,7 +40,7 @@ use std::path::PathBuf;
 /// What a package name may be. Deliberately narrower than any packaging
 /// system's own rule: this string is about to be an argument, and one that
 /// needs escaping to be safe is refused instead of escaped.
-fn name_ok(name: &str) -> bool {
+pub(crate) fn name_ok(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 100
         && name.starts_with(|c: char| c.is_ascii_alphanumeric())

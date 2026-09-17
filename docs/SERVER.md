@@ -536,25 +536,42 @@ owner.**
 Fetching from a forge on the request path would be wrong twice over — their rate
 limits become our capacity, and their outage becomes ours.
 
-* **Ingest on a schedule** with conditional `GET`, and the schedule follows how
-  quiet a project is. Fifteen minutes for every source is eleven requests a
-  second at ten thousand projects, and almost all of it is `304` about files
-  nobody has touched since last year — so the interval is a twenty-fourth of
-  the time since the last change, floored at fifteen minutes and capped at a
-  day. A project that changed an hour ago is still asked promptly, because right
-  after a change is when the next one is likely; one untouched for a month is
-  asked daily. The cap is load-bearing: anchor re-verification rides along with
-  ingest and `stale` is a promise at fourteen days, which a daily floor keeps
-  with a factor of fourteen to spare. `SV121`.
-  A maintainer who wants a crawl now re-POSTs `/claim/{host}/source`, which
-  queues an immediate one; there is no separate refresh button and no webhook.
+* **Fetch what is used** ([INGEST-REDESIGN.md](INGEST-REDESIGN.md), built on
+  2026-09-17). A source is *hot* while somebody used it in the last fourteen
+  days — the mirror card, a diagnosis, or its maintainer enrolling it — and
+  *cold* otherwise. Only hot sources are on the timer: once a day, file by file,
+  with conditional `GET`s (`SV125`). A use more than an hour after the last
+  check serves the stored version and puts the source at the front of the
+  worker's queue (`SV123`, `SV124`). A cold source is checked **before**
+  anything is served from it, because deleting a file is how a maintainer
+  withdraws an answer and a two-week-old copy may be exactly that answer
+  (`SV126`, `SV128`); if it cannot be checked, nothing is served and the answer
+  says why, as a `503` with `cannot_check`, `cannot_use` or `loading` — never as
+  "not mirrored" (`SV127`). Those checks run in a bounded pool, four at a time
+  per web process, one per source, with a five-second wait and a per-source
+  back-off from a minute to an hour (`SV130`). Cooling deletes nothing
+  (`SV131`).
 
-  **Not "fetch when somebody asks."** That would break three things at once:
-  their rate limits become our capacity, their outage becomes ours, and our own
-  fetch log becomes a record of who asked about which project and when. Asking
-  leaves no trace at the operator — `/diagnose` runs in a read-only transaction
-  — and it must not start leaving one at the forge instead.
-* **Serve from our database.** One indexed lookup, no external call.
+  A manifest may state each solution's SHA-256. Then a check of an unchanged
+  project is one conditional request, and a file whose bytes do not match its
+  digest is refused with both named on the dashboard (`SV133`). A digest can go
+  stale by hand-editing, so a hot source is still read file by file daily.
+
+  A maintainer who wants a change live now re-POSTs `/claim/{host}/source`: the
+  files are read in that request and the answer says what came of it.
+
+  **Anchors are checked weekly on their own**, used or not, and at most daily
+  alongside a check that happens anyway; the same job moves `stale` and
+  `unknown` (`SV129`). Until 2026-09-17 nothing called the grading at all.
+
+  **What the operator learns from a question.** Per source, the day it was last
+  used — no time of day, no count, nothing about who asked — written at most
+  once a day in its own short transaction, outside the query's read-only one
+  (`SV132`). The check a use triggers has a time of its own, so the operator's
+  records and the forge's logs say to within the hour that *somebody* used a
+  project. They say nothing about the person.
+* **Serve from our database.** For a project in use, one indexed lookup and no
+  external call.
 * **Publish the commit** we are serving, so anyone can check the mirror against
   the source — **and our own**, which is the same sentence turned on ourselves.
   `GET /` and the footer of every page say what this operator is running, as
@@ -573,7 +590,7 @@ request load tracks the number of users, and the two are independent.**
 * The **action vocabulary remains the real defence** — a malicious solution can
   still only propose operations the client implements, with validated parameters
   and a dry-run the user sees.
-* **Re-verify anchors along with ingest**, and grade the failure: `stale` at 14
+* **Re-verify anchors weekly**, and grade the failure: `stale` at 14
   days, `unknown` at 90, never `revoked` — see *Anchor liveness and project
   liveness are different things*.
 * **Follow no cross-host redirects.** Fetch the recorded URL or nothing.

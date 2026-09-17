@@ -157,32 +157,17 @@ def record_ingest(conn, source_id: int, fetched, *, changed: bool,
                   remember_validators: bool = True) -> None:
     """Update the source's polling state.
 
-    The backoff is not politeness for its own sake: their rate limits become our
-    capacity if we ignore them, and a source unchanged for a month does not need
-    asking every fifteen minutes.
+    **A hot source is checked once a day, and that is the whole timer.** Until
+    the redesign every source was, on a ramp off how long it had been quiet —
+    fifteen minutes after a change, a day after a month — whether anybody ever
+    asked about it or not. Now only a source used in the last fourteen days is
+    claimed at all (`scheduler.claim`), a use more than an hour after its last
+    check queues one (`on_demand.py`), and a maintainer's re-enrolment is how a
+    change goes live at once. So the timer's job is the daily file-by-file
+    check a stale digest cannot fool, and nothing else.
 
-    **That last sentence was true of this docstring and not of this code.** Only
-    a source that *failed* backed off; one that answered and had not changed was
-    asked again in fifteen minutes, for ever. `SERVER.md` puts the arithmetic on
-    it — ten thousand projects at that interval is eleven requests a second — and
-    almost every one of them is a `304` about a file nobody has touched since
-    last year.
-
-    So a quiet source is asked less often, on a ramp derived from how long it has
-    been quiet: **one twenty-fourth of that**, floored at fifteen minutes and
-    capped at a day. A project that changed an hour ago is still asked in fifteen
-    minutes; one that last changed a week ago is asked in seven hours; one
-    untouched for a month is asked daily. A change puts it straight back to
-    fifteen minutes, because the interesting period is right after a change.
-
-    The cap is the part that is load-bearing, and it is why this is a ramp rather
-    than "fetch when somebody asks". Re-verification of the anchor rides along
-    with ingest, and `stale` at fourteen days is a promise with a clock in it —
-    at a day's cap that promise still holds with a factor of fourteen to spare.
-    Fetching on the request path would break three things at once: their rate
-    limits become our capacity, their outage becomes ours, and our fetch log
-    becomes a record of who asked about which project and when. Asking leaves no
-    trace at the operator today, and it must not start leaving one at the forge.
+    A failing source still backs off, from fifteen minutes doubling to a day:
+    their rate limits become our capacity if we ignore them.
 
     `remember_validators` is False when the content was fetched but **refused**.
     Storing the ETag there would mean the next cycle sends `If-None-Match`, gets
@@ -208,18 +193,11 @@ def record_ingest(conn, source_id: int, fetched, *, changed: bool,
             "  last_changed = CASE WHEN %s THEN now() ELSE last_changed END, "
             "  declared_status = COALESCE(%s, declared_status), "
             "  successor_url = COALESCE(%s, successor_url), "
-            # Read off how long it has been quiet, which needs no column of its
-            # own: `last_changed` is already what "quiet" means. A change is
-            # handled by the CASE above setting it to `now()`, which makes this
-            # expression fifteen minutes on the same row.
-            "  next_fetch_at = now() + LEAST(GREATEST("
-            "      interval '15 minutes',"
-            "      (now() - COALESCE(CASE WHEN %s THEN now() ELSE last_changed END, now())) / 24),"
-            "    interval '24 hours') "
+            "  next_fetch_at = now() + interval '24 hours' "
             "WHERE id = %s",
             (remember_validators, fetched.etag,
              remember_validators, fetched.last_modified,
-             fetched.content_hash(), changed, declared_status, successor, changed, source_id),
+             fetched.content_hash(), changed, declared_status, successor, source_id),
         )
 
 

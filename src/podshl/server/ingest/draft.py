@@ -80,7 +80,9 @@ def check(agent_yaml: str, solutions: dict[str, str], anchor: str | None) -> dic
                             f"would find nothing there and refuse the whole project.")
             continue
         try:
-            sol = manifest.parse_solution(solutions[rel].encode("utf-8"), rel)
+            body = solutions[rel].encode("utf-8")
+            validate.check_digest(rel, body, (m.get("solution_sha256") or {}).get(rel))
+            sol = manifest.parse_solution(body, rel)
         except IngestRefused as e:
             refused[rel] = str(e)
             continue

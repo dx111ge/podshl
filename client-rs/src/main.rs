@@ -19,6 +19,10 @@ mod clientlog;
 mod a2a;
 mod actions;
 mod demo;
+mod elevate;
+// Shared with the helper, which uses the parts the client does not.
+#[allow(dead_code)]
+mod elevated;
 mod doctor;
 mod excerpt;
 mod flow;
@@ -44,6 +48,7 @@ mod probes;
 mod provenance;
 mod reads;
 mod redact;
+mod repair;
 mod report;
 mod trust;
 // Source-level checks only; nothing here ships in the binary.
@@ -164,7 +169,7 @@ fn set_project_root(path: Option<String>) -> Result<Value, String> {
                 return Err(m!("not_a_dir", p = pb.display()));
             }
             reads::set_project_root(Some(pb.clone()));
-            Ok(json!({"granted": true, "path": pb.to_string_lossy()}))
+            Ok(json!({"granted": true, "path": reads::display_path(&pb)}))
         }
         None => {
             reads::set_project_root(None);
@@ -268,11 +273,7 @@ async fn published_card(base: String, host: String) -> Result<Value, String> {
     } else {
         format!("{}/mirror/{}", base.trim_end_matches('/'), host)
     };
-    let resp = http::client()
-        .get(&url)
-        .timeout(std::time::Duration::from_secs(30))
-        .send().await.map_err(|e| m!("unreachable", e = e))?;
-    let v: Value = http::json_capped(resp, http::MAX_BODY).await?;
+    let v = from_operator(&host, || http::client().get(&url)).await?;
     clientlog::line(&format!("card {} -> attested={:?} collect={}", url,
         v.get("attested"),
         v.get("card").and_then(|c| c.get("collect")).and_then(|c| c.as_array())
@@ -415,14 +416,45 @@ async fn ask_published(base: String, subject: String, problem_class: String,
         "ask {} about {} class={} — {} fact(s), {} of them stated",
         base, subject, problem_class,
         facts.as_object().map(|o| o.len()).unwrap_or(0), stated.len()));
-    let resp = http::client()
-        .post(format!("{}/diagnose", base.trim_end_matches('/')))
-        .json(&json!({"subject": subject, "problem_class": problem_class,
-                      "facts": facts, "stated": stated}))
-        .timeout(std::time::Duration::from_secs(30))
-        .send().await.map_err(|e| m!("unreachable", e = e))?;
-    let v: Value = http::json_capped(resp, http::MAX_BODY).await?;
-    Ok(v)
+    let url = format!("{}/diagnose", base.trim_end_matches('/'));
+    let body = json!({"subject": subject, "problem_class": problem_class,
+                      "facts": facts, "stated": stated});
+    from_operator(&subject, || http::client().post(&url).json(&body)).await
+}
+
+/// One request to the operator about a published project, and the one answer
+/// that is neither a card nor "not mirrored".
+///
+/// The operator no longer keeps every project warm (`INGEST-REDESIGN.md`): one
+/// nobody asked about for two weeks is read from its forge before anything is
+/// served, and that answers `503` with a `code`. `loading` is asked again a
+/// few times, as the operator says; `cannot_check` and `cannot_use` are said
+/// as what they are. Reading either as "not mirrored" would tell a person the
+/// project publishes nothing, which is the one wrong thing to say here.
+async fn from_operator<F>(subject: &str, request: F) -> Result<Value, String>
+where
+    F: Fn() -> reqwest::RequestBuilder,
+{
+    const ATTEMPTS: usize = 4;
+    for attempt in 1..=ATTEMPTS {
+        let resp = request()
+            .timeout(std::time::Duration::from_secs(30))
+            .send().await.map_err(|e| m!("unreachable", e = e))?;
+        let v: Value = http::json_capped(resp, http::MAX_BODY).await?;
+        match v.get("code").and_then(|c| c.as_str()) {
+            Some("loading") if attempt < ATTEMPTS => {
+                let wait = v.get("retry_after").and_then(|w| w.as_u64()).unwrap_or(5).clamp(1, 10);
+                clientlog::line(&format!(
+                    "the operator is loading {subject}; asking again in {wait} s"));
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+            }
+            Some("loading") => return Err(m!("published_loading", host = subject)),
+            Some("cannot_check") => return Err(m!("published_cannot_check", host = subject)),
+            Some("cannot_use") => return Err(m!("published_cannot_use", host = subject)),
+            _ => return Ok(v),
+        }
+    }
+    Err(m!("published_loading", host = subject))
 }
 
 /// Attach free text the user has read and agreed to send. Separate command
@@ -824,9 +856,43 @@ fn dry_run(action: String, params: Value) -> Result<String, String> {
     actions::dry_run(&action, &params)
 }
 
+/// Run one consented action — after `repair` has written down what is about
+/// to change. `subject` is who proposed it, as the window verified it;
+/// `upstream` is what the publisher said about the software, checked as text
+/// here; `note` is free text nothing reads.
+///
+/// Off the window's thread: an action that needs administrator rights waits
+/// for Windows' prompt and, for a service, for the service.
 #[tauri::command]
-fn execute(action: String, params: Value, state: State<'_, AppState>) -> Result<Value, String> {
-    actions::execute(&action, &params, &state.root)
+async fn execute(action: String, params: Value, subject: Option<String>, upstream: Option<Value>,
+                 note: Option<String>, undoes: Option<String>,
+                 state: State<'_, AppState>) -> Result<Value, String> {
+    let root = state.root.clone();
+    let upstream = repair::Upstream::from_value(upstream.as_ref())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let ctx = repair::Context {
+            subject: subject.as_deref().unwrap_or(""),
+            upstream,
+            note,
+            undoes,
+        };
+        repair::execute(&action, &params, &root, &root, ctx, &repair::installed_version)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The changes this client made that a person should look at again, and why.
+/// Reads the package manager and the changed files; changes nothing.
+#[tauri::command]
+fn repairs_review(state: State<'_, AppState>) -> Value {
+    json!(repair::review(&state.root, &repair::installed_version))
+}
+
+/// The person looked at a change and keeps it, at the version installed now.
+#[tauri::command]
+fn repair_looked_at(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    repair::looked_at(&state.root, &id, &repair::installed_version)
 }
 
 /// Known without asking and without reading — shown, not hidden. The operating
@@ -1260,7 +1326,8 @@ fn main() {
             llm_get, llm_set, end_incident, grant_program_path, load_log_excerpt, anonymise_text,
             facts_as_sent,
             published_card, send_published_report, verify_log_entry,
-            provenance_check, issue_report, log_line
+            provenance_check, issue_report, log_line,
+            repairs_review, repair_looked_at
         ])
         .run(tauri::generate_context!())
         .expect("PODSHL could not start");

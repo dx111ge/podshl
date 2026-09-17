@@ -51,6 +51,29 @@ def actions() -> dict[str, dict]:
     return {a["id"]: a for a in vocabulary("actions")["actions"]}
 
 
+#: What an action call may say about the software it is for (`RR5`). The same
+#: rules as the client's `repair::Upstream`: text that would need escaping to
+#: be passed on is refused rather than escaped.
+_UPSTREAM = {
+    "package": re.compile(r"[A-Za-z0-9][A-Za-z0-9\-_.+@]{0,99}"),
+    "issue": re.compile(r"https://[^\s\x00-\x1f\x7f]{1,292}"),
+    "fixed_in": re.compile(r"[A-Za-z0-9][A-Za-z0-9.:\-+_~]{0,99}"),
+}
+
+
+def check_upstream(upstream) -> None:
+    """The optional `upstream` of an action call: package, issue, fixed_in."""
+    if upstream is None:
+        return
+    if not isinstance(upstream, dict):
+        raise SpecError("upstream must be a mapping of package, issue and fixed_in")
+    for key, value in upstream.items():
+        if key not in _UPSTREAM:
+            raise SpecError(f"upstream: unexpected {key!r} — permitted: {sorted(_UPSTREAM)}")
+        if not isinstance(value, str) or not _UPSTREAM[key].fullmatch(value):
+            raise SpecError(f"upstream: {key} {value!r} is not in the expected form")
+
+
 def check_action(call: dict) -> None:
     """One entry of a solution's `proposes` block. SV5."""
     known = actions()
@@ -88,6 +111,10 @@ def check_action(call: dict) -> None:
         if not re.fullmatch(declared[name], value):
             raise SpecError(
                 f"{action}: parameter {name}={value!r} does not match {declared[name]!r}")
+    try:
+        check_upstream(call.get("upstream"))
+    except SpecError as e:
+        raise SpecError(f"{action}: {e}") from e
 
 
 def check_log_source(log) -> None:

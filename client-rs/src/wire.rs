@@ -74,6 +74,11 @@ pub struct ActionCall {
     /// can evaluate is not a request for consent.
     #[serde(default)]
     pub because: String,
+    /// What the publisher says about the software the change is for — the
+    /// package, the upstream issue, the version that fixes it. Kept with the
+    /// repair record (`repair.rs`) and checked as text there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

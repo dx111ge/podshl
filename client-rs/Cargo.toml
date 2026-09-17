@@ -2,6 +2,9 @@
 name = "podshl-client"
 version = "0.1.5"
 edition = "2021"
+# Two programs: the client, and the helper that does what needs administrator
+# rights (`src/bin/podshl-elevate.rs`). `cargo run` means the client.
+default-run = "podshl-client"
 rust-version = "1.77"
 description = "Basic Agent — verifies a vendor, collects locally, asks, then acts"
 
@@ -48,6 +51,15 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 # Only to restore the default SIGPIPE disposition on the command-line path. The
 # Rust runtime sets SIGPIPE to SIG_IGN, which turns `demo | head` into a panic
 # and — with panic = "abort" below — a core dump.
+# The Service Control Manager and the machine's registry: read by the client,
+# written only by `podshl-elevate`. And the one call that asks Windows to start
+# that helper as administrator.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation", "Win32_Security", "Win32_System_Registry", "Win32_System_Services",
+  "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",
+] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

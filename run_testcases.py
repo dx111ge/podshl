@@ -376,6 +376,32 @@ def _():
     cargo("actions::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")
 
 
+@case("RR1", "A change is on record before it is made, written by code [rust]")
+def _():
+    cargo("repair::tests::the_record_is_written_before_the_change_and_by_code")
+
+
+@case("RR2", "No record, no change [rust]")
+def _():
+    cargo("repair::tests::a_record_that_cannot_be_written_stops_the_change")
+
+
+@case("RR3", "Looking again flags a change and never removes it [rust]")
+def _():
+    cargo("repair::tests::looking_again_flags_and_never_removes")
+
+
+@case("RR4", "Versions are ordered as pacman orders them [rust]")
+def _():
+    cargo("repair::tests::versions_are_ordered_as_pacman_orders_them")
+
+
+@case("RR5", "What a publisher says about the software is checked as text [rust]")
+def _():
+    cargo("repair::tests::a_publisher_s_upstream_is_checked_as_text")
+    sv("sv_an_action_s_upstream_is_checked_as_text")
+
+
 @case("A12", "The agent fixes it, the fix holds, and the undo puts it back [rust]")
 def _():
     cargo("actions::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")
@@ -631,7 +657,7 @@ def cargo_all():
     This reads the same run every other Rust case reads, so "all of them" is
     all of them rather than a second opinion from a second process.
     """
-    for target in (None, "cli"):
+    for target in (None, "cli", "elevate_helper"):
         results = rust_results(target)
         bad = sorted(n for n, how in results.items() if how == "FAILED")
         assert not bad, (
@@ -896,9 +922,60 @@ def _():
     sv("sv122_a_repository_sees_its_own_reports_and_only_its_own")
 
 
-@case("SV121", "A project that never changes is asked about less and less")
+@case("SV123", "A hot source checked within the hour is served without a fetch")
 def _():
-    sv("sv121_a_project_that_never_changes_is_asked_about_less_and_less")
+    sv("sv123_a_hot_source_checked_within_the_hour_is_served_without_a_fetch")
+
+
+@case("SV124", "A hot source checked longer ago is served at once and queued")
+def _():
+    sv("sv124_a_hot_source_checked_longer_ago_is_served_and_queued")
+
+
+@case("SV125", "A source nobody used for two weeks is on no timer")
+def _():
+    sv("sv125_a_source_nobody_used_for_two_weeks_is_on_no_timer")
+
+
+@case("SV126", "A cold source is checked before it is served")
+def _():
+    sv("sv126_a_cold_source_is_checked_before_it_is_served")
+
+
+@case("SV127", "A cold source that cannot be checked is not served")
+def _():
+    sv("sv127_a_cold_source_that_cannot_be_checked_is_not_served")
+
+
+@case("SV128", "A solution withdrawn while cold is never served")
+def _():
+    sv("sv128_a_solution_withdrawn_while_cold_is_never_served")
+
+
+@case("SV129", "Every anchor is checked weekly and graded on time")
+def _():
+    sv("sv129_every_anchor_is_checked_weekly_and_graded_on_time")
+
+
+@case("SV130", "On-demand checks are bounded")
+def _():
+    sv("sv130_on_demand_checks_are_bounded")
+
+
+@case("SV131", "A project's reports and trees survive it going cold")
+def _():
+    sv("sv131_a_project_s_reports_and_trees_survive_it_going_cold")
+
+
+@case("SV132", "A query leaves one date, at most once a day")
+def _():
+    sv("sv132_a_query_leaves_one_date_at_most_once_a_day")
+
+
+@case("SV133", "A solution that does not match its manifest digest is refused")
+def _():
+    sv("sv_a_digest_is_spelled_as_one")
+    sv("sv133_a_solution_that_does_not_match_its_digest_is_refused")
 
 
 @case("SV120", "A solution that ignores a switch is reachable under every value of it")
@@ -1529,49 +1606,51 @@ def _():
     cargo("jws::tests::a_small_order_public_key_is_refused")
 
 
-@case("L5", "No published action needs privilege, and none elevates in process")
+@case("L5", "What needs privilege is done by a separate helper, never in process [rust]")
 def _():
-    """The rule, held to the vocabulary rather than to a binary that does not exist.
+    """The rule this case always stood for, now that there is something to hold.
 
-    `L5` used to be `open` and stood for an unwritten elevated helper. Nothing
-    in the published vocabulary needs one: `report_only` changes nothing, and
-    `set_config_key` and `restore_backup` write configuration files beneath
-    roots the user granted, which is unprivileged by construction. Building the
-    helper now would mean shipping a privilege-escalation binary with nothing
-    to do, in a product whose argument is bounded effect.
-
-    So the case is the check instead. It fails the day the vocabulary gains an
-    action that needs privilege — at which point the helper has to exist, as a
-    **separate** binary, because an application able to elevate itself
-    in-process cannot honestly claim bounded effect.
+    Until 2026-09-17 nothing in the vocabulary needed privilege and the case was
+    that check. Three examples do now (`restart_service`, `set_service_start`,
+    `set_machine_env`), so the helper exists as its own program,
+    `podshl-elevate`, and the client's source is held to never writing a
+    service or the machine's registry itself. The vocabulary marks each action
+    that needs privilege, and only those are sent to the helper.
     """
     import json
     from pathlib import Path
 
     vocab = json.loads(Path("spec/vocabulary/actions.json").read_text(encoding="utf-8"))
-    ids = sorted(a["id"] for a in vocab["actions"])
-    assert ids == ["report_only", "restore_backup", "set_config_key"], (
-        f"the action vocabulary has changed to {ids}. Each new action has to be judged: "
-        f"does performing it need privilege the client does not have? If any does, the "
-        f"elevated helper must exist and must be its own binary.")
+    elevated = sorted(a["id"] for a in vocab["actions"] if a.get("elevated"))
+    assert elevated == ["restart_service", "set_machine_env", "set_service_start"], (
+        f"the actions that need privilege are now {elevated}. Each has to be performed by "
+        f"podshl-elevate and checked by client-rs/src/elevated.rs.")
+    assert all("elevated" in a for a in vocab["actions"]), "an action does not say whether it needs privilege"
+    assert Path("client-rs/src/bin/podshl-elevate.rs").is_file(), "the helper is gone"
+    cargo("elevate::tests::nothing_privileged_is_written_in_process")
 
-    # Every action that writes does so beneath a granted root, which is what
-    # makes "no privilege needed" true rather than merely likely.
-    src = Path("client-rs/src/actions.rs").read_text(encoding="utf-8")
-    for fn in ("fn set_config_key", "fn restore_backup"):
-        assert fn in src, f"{fn} is gone - where does that action write now?"
-    assert "root: &Path" in src, \
-        "the actions no longer take the granted root, so nothing bounds where they write"
 
-    # And nothing in the client asks the operating system to raise it.
-    for path in ("client-rs/src/actions.rs", "client-rs/src/main.rs"):
-        text = Path(path).read_text(encoding="utf-8")
-        for word in ("runas", "ShellExecute", "AdjustTokenPrivileges", "sudo ", "pkexec"):
-            assert word not in text, (
-                f"{path} reaches for privilege ({word!r}). If an action needs it, it goes "
-                f"through a separate binary - an application able to elevate itself "
-                f"in-process cannot honestly claim bounded effect.")
+@case("AN2", "A path in the person's own profile is shown without their account name [rust]")
+def _():
+    cargo("reads::tests::a_path_in_the_profile_is_shown_without_the_account_name")
 
+
+@case("EV1", "An administrator action is refused before the prompt unless it is one of three [rust]")
+def _():
+    cargo("elevated::tests::only_the_three_actions_with_their_parameters_pass")
+    cargo("elevated::tests::what_windows_needs_to_run_is_not_touched")
+    cargo("elevate::tests::a_refused_request_never_reaches_the_prompt")
+
+
+@case("EV2", "The helper checks again, and without privilege changes nothing [rust]")
+def _():
+    cargo("elevated::tests::the_command_line_says_exactly_the_request_and_nothing_else_passes")
+    cargo("a_refused_or_unprivileged_request_changes_nothing", target="elevate_helper")
+
+
+@case("EV3", "A change counts when the machine shows it, and its undo is the reading before [rust]")
+def _():
+    cargo("elevate::tests::a_change_is_what_the_second_reading_shows_and_its_undo_is_the_first")
 
 @case("L1", "doctor reports what actually resolves on this machine [rust]")
 def _():
@@ -3101,6 +3180,7 @@ def _():
     # still running is a claim nobody can act on.
     assert "successor:" not in first, (
         f"an active project was given a successor:\n{first}")
+    import hashlib
     for draft, files in zip(drafts, written):
         solutions = {k: v for k, v in files.items() if k != "agent.yaml"}
         assert len(solutions) == len(draft["solutions"]), files.keys()
@@ -3110,6 +3190,23 @@ def _():
         assert r.status_code == 200 and v["accepted"], (
             f"the mirror refuses what the builder wrote: {v}\n{files['agent.yaml']}")
         assert not v["warnings"], f"the builder's own draft carries warnings: {v['warnings']}"
+        # Every file it lists, with the digest of exactly the bytes it wrote
+        # (`SV133`), so the mirror can check the project with one request.
+        assert v["parsed"]["manifest"].get("solution_sha256") == {
+            rel: hashlib.sha256(text.encode("utf-8")).hexdigest()
+            for rel, text in solutions.items()}, (
+            f"the builder's digests are not the files':\n{files['agent.yaml']}")
+
+    # And a file edited after the builder wrote it is refused, by the same
+    # sentence ingest gives.
+    files = written[0]
+    rel = next(k for k in files if k != "agent.yaml")
+    edited = {k: v for k, v in files.items() if k != "agent.yaml"}
+    edited[rel] = edited[rel] + "One more line.\n"
+    v = httpx.post("http://127.0.0.1:8725/validate", timeout=30, json={
+        "agent_yaml": files["agent.yaml"], "solutions": edited,
+        "anchor": drafts[0]["anchor"]}).json()
+    assert not v["accepted"] and "SHA-256" in v["refused"].get(rel, ""), v
 
 
 @case("W20", "A project's existing files survive the builder unchanged in meaning")
@@ -3166,6 +3263,13 @@ def _():
 
         after = validate(written["agent.yaml"], {k: v for k, v in written.items() if k != "agent.yaml"})
         assert after["accepted"], f"{root}: the builder wrote files the mirror refuses: {after['refused']}"
+        # The digests are new and derived: the builder writes them from the
+        # files it writes, so they are held to those files rather than to the
+        # originals, which carry none.
+        digests = after["parsed"]["manifest"].pop("solution_sha256", None)
+        assert digests == {k: __import__("hashlib").sha256(v.encode("utf-8")).hexdigest()
+                           for k, v in written.items() if k != "agent.yaml"}, (root, digests)
+        before["parsed"]["manifest"].pop("solution_sha256", None)
         assert after["parsed"]["manifest"] == before["parsed"]["manifest"], (
             f"{root}: agent.yaml means something else after the builder:\n"
             f"before {before['parsed']['manifest']}\nafter  {after['parsed']['manifest']}")

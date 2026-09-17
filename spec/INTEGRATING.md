@@ -199,9 +199,14 @@ strictly worse — a signature over code certifies origin while granting unbound
 effect.
 
 The current list is in [`vocabulary/actions.json`](vocabulary/actions.json).
-Today it is three: `report_only`, `set_config_key`, `restore_backup`. It is
-short because every entry is an operation somebody had to implement, test on
-three platforms, and be willing to have run on a stranger's machine.
+Today it is six. Three need no privilege: `report_only`, `set_config_key`,
+`restore_backup`. Three need administrator rights and exist on Windows only, as
+examples to be sharpened: `restart_service`, `set_service_start`,
+`set_machine_env`. The client performs those through a separate helper after
+Windows' own prompt, refuses services and variables Windows depends on, and
+the dry run tells the person that administrator permission will be asked for.
+The list is short because every entry is an operation somebody had to
+implement, test, and be willing to have run on a stranger's machine.
 
 ### What you may ask to be read
 

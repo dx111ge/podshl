@@ -45,7 +45,7 @@ from . import config
 from .config import K_REPORTERS
 from .errors import NotClaimed, ServerError
 from .ingest.confusable import normalise_host
-from .ingest import tree_build
+from .ingest import on_demand, tree_build
 from .ingest.fetch import under_prefix
 
 # `docs_url`, `redoc_url` and `openapi_url` are switched off, and that is a
@@ -640,12 +640,19 @@ def diagnose(body: dict):
                  + ("WHERE a.value = %s" if subject.startswith(("https://", "http://"))
                     else "WHERE a.host = %s AND a.kind <> 'repo'")), (subject,))
             row = cur.fetchone()
-        if not row:
-            # Nobody published here. Not an accusation, and not an error.
-            return {"outcome": "no_statement",
-                    "reason": "nothing is mirrored for this subject",
-                    "note": "that says nothing about them"}
+    if not row:
+        # Nobody published here. Not an accusation, and not an error.
+        return {"outcome": "no_statement",
+                "reason": "nothing is mirrored for this subject",
+                "note": "that says nothing about them"}
 
+    # Outside the read-only transaction: a cold source is checked before
+    # anything is served from it, and a use is dated (`INGEST-REDESIGN.md`).
+    unavailable = on_demand.before_serving(row["source_id"])
+    if unavailable is not None:
+        return _unavailable(unavailable)
+
+    with db.read() as conn:
         tree_id = (cluster_tree.find_tree(conn, row["source_id"], problem_class)
                    if problem_class else None)
         if tree_id is None:
@@ -1274,30 +1281,54 @@ def claim_source(host: str, body: dict | None = None,
             with conn.cursor() as cur:
                 # Idempotent, and due immediately. Re-running it is how a
                 # maintainer who moved their files says so.
+                # Enrolling is a use: the maintainer has just published and
+                # needs to see at once whether it was taken.
                 cur.execute(
                     "INSERT INTO source (anchor_id, manifest_url, fetch_prefix) "
                     "VALUES (%s, %s, %s) "
                     "ON CONFLICT (anchor_id, manifest_url) DO UPDATE SET "
                     "  fetch_prefix = EXCLUDED.fetch_prefix, next_fetch_at = now(), "
-                    "  mirror_state = 'serving' "
+                    "  mirror_state = 'serving', last_used = current_date, "
+                    "  check_backoff_until = NULL, check_failures = 0 "
                     "RETURNING id, (xmax = 0) AS created",
                     (anchor_id, manifest_url, prefix))
                 row = cur.fetchone()
     except NotClaimed as e:
         return _err(e, status=403)
 
+    # **Loaded and validated now**, not on the next pass: re-posting after a
+    # change is how a maintainer makes it live, and a refusal is only useful
+    # while they are still looking. It carries on in the pool if it takes longer
+    # than a request should wait, and the dashboard shows the outcome then.
+    checked = on_demand.check_now(row["id"])
+
     return {
         "enrolled": host,
         "manifest_url": manifest_url,
         "fetch_prefix": prefix,
         "created": row["created"],
-        "note": "queued for the next crawl pass. A different prefix adds a source "
-                "rather than moving this one. Nothing is served until the whole "
-                "source validates — a partially valid source is not mirrored at all, "
-                "because the half that is missing is invisible to whoever reads the "
-                "other half.",
+        "check": _enrolment_check(checked),
+        "note": "a different prefix adds a source rather than moving this one. "
+                "Nothing is served until the whole source validates — a partially "
+                "valid source is not mirrored at all, because the half that is "
+                "missing is invisible to whoever reads the other half. After a "
+                "change to your files, post this again and they are read at once.",
         "then": f"/dashboard#{host}",
     }
+
+
+def _enrolment_check(result: dict | None) -> dict:
+    """What reading the files said, in the words the dashboard uses."""
+    if result is None or result["outcome"] == "busy":
+        return {"outcome": "running",
+                "note": "still reading your files; the dashboard shows the result"}
+    out = {"outcome": result["outcome"]}
+    if result.get("why"):
+        out["why"] = result["why"]
+    if result["outcome"] in ("stored", "unchanged"):
+        out["solutions"] = result.get("solutions")
+        out["no_tree"] = result.get("no_tree") or {}
+    return out
 
 
 @app.post("/claim/{host}/revoke")
@@ -1677,9 +1708,21 @@ def discovery_index(response: Response, request: Request):
 
 # ------------------------------------------------------------------ the mirror
 #
-# Serve from our database. One indexed lookup, no external call — fetching from
-# a forge on the request path would make their rate limits our capacity and
-# their outage our outage.
+# Serve from our database. For a project in use that is one indexed lookup and
+# no external call. A project nobody used for two weeks is checked first
+# (`on_demand.py`), in a bounded pool, because what it stored may be what its
+# maintainer has since withdrawn.
+
+
+def _unavailable(u, extra: dict | None = None) -> JSONResponse:
+    """A source that cannot be served right now, said as such.
+
+    503 and not 404: the project publishes something, and what is missing is
+    our reading of it. Never cached, because the next minute may differ.
+    """
+    return JSONResponse({**(extra or {}), **u.body()}, status_code=503,
+                        headers={"Cache-Control": "no-store",
+                                 "Retry-After": str(u.retry_after)})
 
 @app.get("/mirror/{host}")
 def mirror(host: str, response: Response,
@@ -1710,6 +1753,21 @@ def mirror(host: str, response: Response,
                 status_code=404, headers={"Cache-Control": "public, max-age=60"})
         identity = parsed[0]
 
+    where = ("WHERE a.kind = 'repo' AND a.value = %s"
+             if identity else "WHERE a.host = %s AND a.kind <> 'repo'")
+    with db.read() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT s.id FROM anchor a "
+                        "JOIN source s ON s.anchor_id = a.id AND s.mirror_state = 'serving' "
+                        "JOIN card c ON c.source_id = s.id AND c.valid_to IS NULL "
+                        + where, (identity or host,))
+            found = cur.fetchone()
+    # Outside the read-only transaction, for the reason `diagnose` gives.
+    unavailable = on_demand.before_serving(found["id"]) if found else None
+    if unavailable is not None:
+        return _unavailable(unavailable, {"host": host, "attested": False,
+                                          **({"anchor": identity} if identity else {})})
+
     with db.read() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -1721,9 +1779,7 @@ def mirror(host: str, response: Response,
                 "FROM anchor a "
                 "JOIN source s ON s.anchor_id = a.id AND s.mirror_state = 'serving' "
                 "JOIN card c ON c.source_id = s.id AND c.valid_to IS NULL "
-                + ("WHERE a.kind = 'repo' AND a.value = %s"
-                   if identity else "WHERE a.host = %s AND a.kind <> 'repo'"),
-                (identity or host,))
+                + where, (identity or host,))
             row = cur.fetchone()
             if not row:
                 # Not an accusation. `unknown` is the state of everyone who never

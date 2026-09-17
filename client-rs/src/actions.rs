@@ -19,6 +19,10 @@ pub struct ActionSpec {
     pub describes: &'static str,
     pub mutating: bool,
     pub reversible: bool,
+    /// Needs administrator rights, and is therefore performed by the separate
+    /// helper `podshl-elevate`, never in this process (`elevate.rs`). Windows
+    /// only, for now.
+    pub elevated: bool,
     /// parameter name -> anchored validation pattern
     pub params: &'static [(&'static str, &'static str)],
 }
@@ -29,6 +33,7 @@ pub const VOCABULARY: &[ActionSpec] = &[
         describes: "State a finding, change nothing",
         mutating: false,
         reversible: true,
+        elevated: false,
         params: &[],
     },
     ActionSpec {
@@ -39,6 +44,7 @@ pub const VOCABULARY: &[ActionSpec] = &[
         describes: "Undo a change",
         mutating: true,
         reversible: false,
+        elevated: false,
         params: &[("file", r"[\w./-]+\.(toml|ini|cfg|conf)")],
     },
     ActionSpec {
@@ -46,11 +52,39 @@ pub const VOCABULARY: &[ActionSpec] = &[
         describes: "Set a key in a configuration file",
         mutating: true,
         reversible: true,
+        elevated: false,
         params: &[
             ("file", r"[\w./-]+\.(toml|ini|cfg|conf)"),
             ("key", r"[A-Za-z_][\w.]{0,64}"),
             ("value", r"[\w.:/+-]{1,128}"),
         ],
+    },
+    // Three examples of what needs administrator rights, to be sharpened. The
+    // patterns and the lists of what they never touch are in `elevated.rs`,
+    // which the helper checks again.
+    ActionSpec {
+        id: "restart_service",
+        describes: "Restart a Windows service (administrator)",
+        mutating: true,
+        reversible: false,
+        elevated: true,
+        params: &[("service", crate::elevated::SERVICE)],
+    },
+    ActionSpec {
+        id: "set_service_start",
+        describes: "Set how a Windows service starts (administrator)",
+        mutating: true,
+        reversible: true,
+        elevated: true,
+        params: &[("service", crate::elevated::SERVICE), ("start", crate::elevated::START)],
+    },
+    ActionSpec {
+        id: "set_machine_env",
+        describes: "Set or remove a machine-wide environment variable (administrator)",
+        mutating: true,
+        reversible: true,
+        elevated: true,
+        params: &[("name", crate::elevated::ENV_NAME), ("value", crate::elevated::ENV_VALUE)],
     },
 ];
 
@@ -81,6 +115,9 @@ pub fn validate(id: &str, params: &Value) -> Result<BTreeMap<String, String>, St
             return Err(m!("param_unexpected", id = id, k = format!("{k:?}")));
         }
     }
+    if s.elevated {
+        crate::elevate::check(id, &out)?;
+    }
     Ok(out)
 }
 
@@ -92,6 +129,10 @@ pub fn dry_run(id: &str, params: &Value) -> Result<String, String> {
         "report_only" => m!("dry_report_only"),
         "set_config_key" => m!("dry_set_config_key", key = p["key"], value = p["value"], file = p["file"]),
         "restore_backup" => m!("dry_restore_backup", file = p["file"]),
+        "restart_service" => m!("dry_restart_service", s = p["service"]),
+        "set_service_start" => m!("dry_set_service_start", s = p["service"], start = p["start"]),
+        "set_machine_env" if p["value"].is_empty() => m!("dry_unset_machine_env", n = p["name"]),
+        "set_machine_env" => m!("dry_set_machine_env", n = p["name"], v = p["value"]),
         _ => "—".into(),
     })
 }
@@ -102,6 +143,7 @@ pub fn execute(id: &str, params: &Value, root: &Path) -> Result<Value, String> {
         "report_only" => Ok(serde_json::json!({ "reported": true })),
         "set_config_key" => set_config_key(&p, root),
         "restore_backup" => restore_backup(&p, root),
+        _ if spec(id).is_some_and(|s| s.elevated) => crate::elevate::run(id, &p),
         _ => Err(m!("not_implemented", id = id)),
     }
 }
@@ -394,7 +436,7 @@ mod tests {
                     .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
                     .collect();
                 json!({"id": a.id, "describes": a.describes, "mutating": a.mutating,
-                       "reversible": a.reversible, "params": params})
+                       "reversible": a.reversible, "elevated": a.elevated, "params": params})
             })
             .collect();
 

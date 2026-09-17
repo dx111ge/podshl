@@ -466,10 +466,58 @@ pub fn grant_program_path(program: &str, given: &str) -> Result<PathBuf, String>
 /// program was read from — correct, and not a path anybody recognises as theirs.
 pub fn display_path(p: &Path) -> String {
     let s = p.to_string_lossy();
-    match s.strip_prefix(r"\\?\") {
+    let plain = match s.strip_prefix(r"\\?\") {
         Some(rest) if rest.starts_with("UNC\\") => format!(r"\\{}", &rest[4..]),
         Some(rest) => rest.to_string(),
         None => s.to_string(),
+    };
+    shorten_profile(&plain, &profile_prefixes())
+}
+
+/// Where the person's own folders are, with the name to show instead.
+///
+/// **A path in someone's profile carries their account name**, and this
+/// window is photographed: people paste screenshots of it into issues, and
+/// this project's own published screenshots carried the developer's account
+/// name for that reason (`AN2`). So the part of a path that is the profile is
+/// shown the way the system itself spells it — `%LOCALAPPDATA%`, `%APPDATA%`,
+/// `%USERPROFILE%` on Windows, `~` elsewhere. The longest prefix wins, because
+/// `%LOCALAPPDATA%` lies inside `%USERPROFILE%`.
+fn profile_prefixes() -> Vec<(String, &'static str)> {
+    let mut out = vec![];
+    if cfg!(windows) {
+        for (var, label) in [("LOCALAPPDATA", "%LOCALAPPDATA%"), ("APPDATA", "%APPDATA%"),
+                             ("USERPROFILE", "%USERPROFILE%")] {
+            if let Some(v) = std::env::var_os(var) {
+                out.push((v.to_string_lossy().into_owned(), label));
+            }
+        }
+    } else if let Some(home) = std::env::var_os("HOME") {
+        out.push((home.to_string_lossy().into_owned(), "~"));
+    }
+    out
+}
+
+/// `path` with the longest matching prefix replaced by its label, but only at
+/// a folder boundary: `C:\Users\ann` is not a prefix of `C:\Users\anna`.
+/// Windows compares without case, as Windows does — ASCII only, so a byte
+/// offset in the folded string is the same offset in the original.
+fn shorten_profile(path: &str, prefixes: &[(String, &'static str)]) -> String {
+    let fold = |s: &str| if cfg!(windows) { s.to_ascii_lowercase() } else { s.to_string() };
+    let lower = fold(path);
+    let best = prefixes
+        .iter()
+        .map(|(p, label)| (p.trim_end_matches(['\\', '/']), *label))
+        .filter(|(p, _)| !p.is_empty())
+        .filter(|(p, _)| {
+            let p = fold(p);
+            lower.starts_with(&p)
+                && matches!(path[p.len()..].chars().next(), None | Some('\\') | Some('/'))
+        })
+        .max_by_key(|(p, _)| p.len());
+    match best {
+        Some((p, label)) => format!("{label}{}", &path[p.len()..]),
+        None => path.to_string(),
     }
 }
 
@@ -1833,6 +1881,39 @@ pub(crate) fn grants_held() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// AN2: a path in the person's own profile is shown without their
+    /// account name, and only a whole folder is replaced.
+    #[test]
+    fn a_path_in_the_profile_is_shown_without_the_account_name() {
+        let win = vec![
+            (r"C:\Users\ann\AppData\Local".to_string(), "%LOCALAPPDATA%"),
+            (r"C:\Users\ann\AppData\Roaming".to_string(), "%APPDATA%"),
+            (r"C:\Users\ann".to_string(), "%USERPROFILE%"),
+        ];
+        let cases = [
+            (r"C:\Users\ann\AppData\Local\Programs\Ollama\ollama.exe",
+             r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+            (r"C:\Users\ann\AppData\Roaming\tool\x.exe", r"%APPDATA%\tool\x.exe"),
+            (r"C:\Users\ann\bin\engram.exe", r"%USERPROFILE%\bin\engram.exe"),
+            (r"C:\Users\ann", "%USERPROFILE%"),
+            (r"C:\Users\anna\bin\engram.exe", r"C:\Users\anna\bin\engram.exe"),
+            (r"G:\Tools\engram.exe", r"G:\Tools\engram.exe"),
+        ];
+        for (given, shown) in cases {
+            assert_eq!(super::shorten_profile(given, &win), shown, "{given}");
+        }
+        let unix = vec![("/home/ann".to_string(), "~")];
+        assert_eq!(super::shorten_profile("/home/ann/.local/bin/engram", &unix), "~/.local/bin/engram");
+        assert_eq!(super::shorten_profile("/home/anna/bin/engram", &unix), "/home/anna/bin/engram");
+        assert_eq!(super::shorten_profile("/usr/bin/engram", &unix), "/usr/bin/engram");
+        // And what the window is given goes through it.
+        if let Some((prefix, label)) = super::profile_prefixes().into_iter().next() {
+            let shown = super::display_path(&Path::new(&prefix).join("x"));
+            assert!(shown.starts_with(label), "{shown}");
+        }
+    }
+
 
     /// `VS_EXTRA_ROOT` is process-wide and several cases set it. Run them one
     /// at a time, or one case's root becomes another's and the failure looks

@@ -48,6 +48,7 @@ MAX_NODES = 20_000
 MANIFEST_KEYS = frozenset({
     "endpoint", "problem_classes", "langs", "solutions", "status", "collect",
     "commit", "successor", "escalate", "glossary", "class_labels",
+    "solution_sha256",
 })
 
 #: A glossary's bounds. Its terms enter the prompt of the reader's own model, so
@@ -192,6 +193,38 @@ def _classes(raw) -> tuple[list[str], dict[str, str]]:
     return ids, labels
 
 
+def _solutions(raw) -> tuple[list, dict[str, str]]:
+    """The solution paths, and the SHA-256 a manifest states for any of them.
+
+    An entry is a path, or `{path, sha256}`. A digest is a claim, and the claim
+    is checked against the bytes when the file is fetched (`SV133`); here only
+    its spelling is, because a digest that could never match anything is a
+    mistake worth a sentence before anybody fetches a file for it.
+    """
+    if not isinstance(raw, list):
+        return raw, {}
+    paths, digests = [], {}
+    for entry in raw:
+        if isinstance(entry, dict):
+            unknown = set(entry) - {"path", "sha256"}
+            if unknown or not isinstance(entry.get("path"), str):
+                raise IngestRefused(
+                    "agent.yaml: a solutions entry is a path, or `path` with an "
+                    f"optional `sha256`; this one has {sorted(entry)}")
+            digest = entry.get("sha256")
+            if digest is not None:
+                if (not isinstance(digest, str) or len(digest) != 64
+                        or any(c not in "0123456789abcdef" for c in digest)):
+                    raise IngestRefused(
+                        f"agent.yaml: the sha256 of {entry['path']} must be 64 "
+                        f"lower-case hexadecimal characters, not {digest!r}")
+                digests[entry["path"]] = digest
+            paths.append(entry["path"])
+        else:
+            paths.append(entry)
+    return paths, digests
+
+
 def parse_manifest(raw: bytes) -> dict:
     """`agent.yaml`, as a dict, with the shape checked but not yet the content.
 
@@ -221,6 +254,19 @@ def parse_manifest(raw: bytes) -> dict:
     m["problem_classes"], _labels = _classes(m["problem_classes"])
     if _labels:
         m["class_labels"] = _labels
+
+    # **A solution entry may carry the digest of its file**, so a check of an
+    # unchanged project can stop at one conditional request for the manifest
+    # (`INGEST-REDESIGN.md`). Optional: a plain path keeps meaning exactly what
+    # it meant. The digests travel beside the paths rather than inside them, so
+    # everything downstream still reads a list of strings, and are absent -- not
+    # empty -- when a manifest names none.
+    # Only ever from the entries: a top-level `solution_sha256` a publisher
+    # wrote is not a digest anybody spelled next to a file.
+    m.pop("solution_sha256", None)
+    m["solutions"], _digests = _solutions(m["solutions"])
+    if _digests:
+        m["solution_sha256"] = _digests
 
     for name in ("problem_classes", "langs", "solutions"):
         if not isinstance(m[name], list) or not all(isinstance(x, str) for x in m[name]):
