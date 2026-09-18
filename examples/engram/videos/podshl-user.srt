@@ -1,0 +1,100 @@
+1
+00:00:02,001 --> 00:00:07,001
+A fix somebody made on this machine is still here — and something has moved since.
+
+2
+00:00:07,011 --> 00:00:11,011
+PODSHL says so at the start. It undoes nothing by itself.
+
+3
+00:00:12,074 --> 00:00:13,074
+Ask about something that is broken.
+
+4
+00:00:13,245 --> 00:00:15,245
+
+
+5
+00:00:16,338 --> 00:00:18,338
+The project, by name.
+
+6
+00:00:18,800 --> 00:00:24,800
+engram publishes support files in its own repository. Nothing was installed for this.
+
+7
+00:00:25,262 --> 00:00:31,262
+It offers to check where this machine got engram from. You can decline.
+
+8
+00:00:31,272 --> 00:00:37,272
+These are the problems engram says it can answer — their words, not a guess.
+
+9
+00:00:38,334 --> 00:00:41,334
+Search stopped finding things it used to find.
+
+10
+00:00:41,796 --> 00:00:49,796
+
+
+11
+00:00:49,805 --> 00:00:56,805
+Now it asks. Item by item, with the reason, and what it would read.
+
+12
+00:00:56,815 --> 00:00:59,815
+Nothing has been sent yet.
+
+13
+00:01:00,277 --> 00:01:08,277
+
+
+14
+00:01:08,286 --> 00:01:14,286
+Three things only a person can answer. They can be left blank.
+
+15
+00:01:16,803 --> 00:01:19,803
+Yes — and the reindex was never run.
+
+16
+00:01:20,265 --> 00:01:28,265
+
+
+17
+00:01:28,274 --> 00:01:35,274
+This is everything that would leave the machine, before it leaves.
+
+18
+00:01:35,283 --> 00:01:40,283
+Unanswered questions go as unanswered, rather than being left out.
+
+19
+00:01:40,745 --> 00:01:50,745
+
+
+20
+00:01:50,755 --> 00:01:56,755
+engram's own answer, from the files engram publishes.
+
+21
+00:01:56,764 --> 00:02:01,764
+The amber line marks what you said, not what was measured.
+
+22
+00:02:02,226 --> 00:02:08,226
+
+
+23
+00:02:08,235 --> 00:02:13,235
+Whether it worked is the one thing only you can tell them.
+
+24
+00:02:13,697 --> 00:02:21,697
+
+
+25
+00:02:21,707 --> 00:02:29,707
+And what nothing covers becomes Markdown you take to the project — anonymised, and shown first.
+
