@@ -36,10 +36,12 @@ Windows, Linux and macOS:
 is signed — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and
 exactly what they send.
 
-**Something to try it on:** [`examples/engram/`](examples/engram/) is a real
-project taken from nothing to a published answer — the `.podshl/` files it
-publishes, the screenshots above, and the walk that produced them. It is the
-shortest way to see both ends of this at once.
+**Something to try it on:** [`examples/engram/`](examples/engram/) takes a real
+project from nothing to an answer — the files a maintainer writes, the
+screenshots above, and the walk that produced them. That walkthrough is
+recorded against a local host, and engram's published files have moved on since
+it was made; it says so, and links the live ones. engram is registered on
+`sdota.de`, so the client finds it for real too.
 
 | You are | Start with |
 |---|---|

@@ -16,6 +16,17 @@ a mock-up.
 > repository; only the base URL is rewritten on the way out, which is the same
 > substitution the specification's own example host does and for the same
 > reason. Where the harness had to reach past a public route, it says so.
+>
+> **And engram has moved on since.** What is below is the set this walkthrough
+> was recorded against. The repository publishes a different one today: live at
+> `sdota.de`, engram offers `engram.start.wrong-build`,
+> `engram.search.stale-after-model-change` and `engram.llm.model-not-pulled`,
+> where this example has five older classes. Nobody had to be told — the files
+> live in the maintainer's own repository and the operator re-reads them, which
+> is the whole point of publishing this way. The current ones are at
+> [github.com/dx111ge/engram/tree/main/.podshl](https://github.com/dx111ge/engram/tree/main/.podshl);
+> compare them with [`.podshl/`](.podshl/) here and the difference *is* the
+> feature.
 
 ---
 
