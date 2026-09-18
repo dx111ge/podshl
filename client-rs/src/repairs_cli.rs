@@ -715,7 +715,21 @@ mod tests {
         for step in &plan {
             match step {
                 Step::Write { body, .. } => {
-                    assert!(body.contains("repairs review --notify") || body.contains("[Timer]"), "{body}");
+                    // Every system writes the same call, and each spells it its
+                    // own way: a shell line and a systemd `ExecStart` hold it
+                    // contiguously, a launchd plist holds it as argv elements,
+                    // and the systemd *timer* holds no command at all.
+                    //
+                    // This used to accept only the first two spellings, and
+                    // passed everywhere it was ever run — because until the
+                    // macOS walk existed it was never run on a Mac, where the
+                    // plan it checks is the plist. A case that cannot see a
+                    // third of what it covers.
+                    let argv_plist = ["repairs", "review", "--notify"]
+                        .iter().all(|w| body.contains(&format!("<string>{w}</string>")));
+                    assert!(body.contains("repairs review --notify")
+                            || argv_plist
+                            || body.contains("[Timer]"), "{body}");
                     assert!(!body.contains("rm ") && !body.contains("sudo"), "{body}");
                 }
                 Step::Run { program, args } => {
@@ -733,9 +747,31 @@ mod tests {
 
         let bad = PathBuf::from("/tmp/x'; rm -rf ~; '");
         assert!(hook_plan(&bad, true).is_err(), "a path with a quote was written into a hook");
-        assert!(omarchy_hook("/usr/bin/podshl-client").starts_with("#!/bin/bash\n"));
-        assert!(systemd_service("/usr/bin/podshl-client").contains("SuccessExitStatus=3"),
+        // **All four bodies, from whatever machine runs this.** `hook_plan`
+        // picks by `cfg!`, so the loop above only ever sees the plan for the
+        // system the suite happens to be on — which is why the plist's
+        // spelling went unchecked until a Mac ran it. These builders take a
+        // path and return a string, so each can be read anywhere.
+        let exe = "/usr/bin/podshl-client";
+        assert!(omarchy_hook(exe).starts_with("#!/bin/bash\n"));
+        assert!(omarchy_hook(exe).contains("repairs review --notify"));
+        assert!(systemd_service(exe).contains("SuccessExitStatus=3"),
                 "a review that found something would read as a failed unit");
+        assert!(systemd_service(exe).contains("repairs review --notify"));
+        assert!(SYSTEMD_TIMER.contains("[Timer]") && SYSTEMD_TIMER.contains("Persistent=true"),
+                "a machine that was off when the timer was due would never look");
+
+        let plist = launchd_plist(exe);
+        for w in ["repairs", "review", "--notify"] {
+            assert!(plist.contains(&format!("<string>{w}</string>")),
+                    "the launchd plist does not call {w}:\n{plist}");
+        }
+        assert!(plist.contains(LAUNCHD_LABEL), "{plist}");
+        assert!(plist.contains(exe), "{plist}");
+        // The same two refusals the loop makes of every body.
+        for body in [omarchy_hook(exe), systemd_service(exe), plist] {
+            assert!(!body.contains("rm ") && !body.contains("sudo"), "{body}");
+        }
     }
 
     /// RR11: the notification counts in whichever language it is read.
