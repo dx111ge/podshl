@@ -10,11 +10,27 @@ shown and agreed to separately — matches it against the project's own rules,
 and gives the project's own answer at the moment something broke. No server to
 run, no model to pay for, nothing to install per project.
 
-**Early beta.** The operator runs at **https://sdota.de**. Clients for Windows,
-Linux and macOS: **[download 0.1.5](https://github.com/dx111ge/podshl/releases/latest)**
-(unsigned — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and what
-they send). On Omarchy, add the plugin; its bar icon installs the client:
-`omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable`
+![The client showing a project's own answer: a command to run, why it applies,
+and a question about whether it worked](examples/engram/shots/client-en/07-their-answer.png)
+
+*The project's own answer, on the user's machine. The amber line marks what the
+person said rather than what was measured; every reading behind it was shown and
+agreed to first.*
+
+## Try it
+
+**Early beta**, against the operator at **https://sdota.de**.
+
+    # Omarchy: the bar icon installs the client on first click
+    omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable
+
+    # Linux, anywhere
+    chmod +x podshl-client-0.1.6-linux-x86_64 && ./podshl-client-0.1.6-linux-x86_64
+
+Windows, Linux and macOS:
+**[download 0.1.6](https://github.com/dx111ge/podshl/releases/latest)**. Nothing
+is signed — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and
+exactly what they send.
 
 | You are | Start with |
 |---|---|
@@ -40,59 +56,9 @@ they send). On Omarchy, add the plugin; its bar icon installs the client:
   different people reported the same thing, with names, addresses and tokens
   removed on their machine first.
 
-### Your own ticket system
-
-Today a diagnosis that nothing published covers ends as **Markdown you take to
-the project**: anonymised, editable, shown before it is copied, with the
-address from your `escalate.target` beside it. That works with every tracker
-there is — GitHub, GitLab, Jira, Redmine, Zammad, your own — because the
-thing carrying it is a person with a clipboard, and a person needs no
-integration.
-
-**An automatic path into your tracker is planned and not built.** If you run
-your own ticket system you already have the infrastructure that would make it
-worth doing, and "copy this into the browser" is a worse answer for you than
-for a project whose tracker is a GitHub tab. It is not built yet because the
-obvious ways of building it are all wrong:
-
-* a desktop client holding an API token for your tracker would be standing
-  credentials into your systems, on every user's machine;
-* relaying through the operator would make it a party to the content **and**
-  give it credentials to third-party trackers.
-
-Neither is a thing this project will ship. What it will look at is the shape
-that keeps the reporter in the loop — they still press send, nothing holds a
-credential it should not, and you receive a case rather than a paste. Until
-then, running an A2A endpoint yourself is the supported automatic path, and
-`spec/INTEGRATING.md` says what it has to answer.
-
-### "This works, but it should do X" — later
-
-Everything here is built around something being **wrong**: a problem class, a
-symptom a person recognises, readings that decide between published answers, an
-outcome saying whether the fix worked. A person who thinks your software should
-do something it does not have any of that. There is no symptom to read, nothing
-on their machine decides anything, and the report that would be assembled is a
-report about a machine that is behaving exactly as designed.
-
-**A feature request is a different thing and will get a different path.** It is
-written down here so it is a stated plan rather than a silence, and it is
-deliberately not next: the diagnosis path is not finished, and the two obvious
-shortcuts would spoil what exists.
-
-* Filing it as an outcome would put opinions into a corpus whose value is that
-  every row is a measurement. `uncovered` already means *nothing published
-  covers this* — adding *and it never will, because it is not a defect* to the
-  same table would make the maintainer's dashboard a wish list with readings
-  attached.
-* Letting a model turn a wish into a bug report is worse than nothing. It
-  produces a plausible issue about a defect that does not exist, and somebody
-  has to close it.
-
-What it probably looks like: the person's own words, no readings at all, the
-same anonymiser and the same consent, counted per project the way reports are
-counted so a maintainer can see that forty people asked for the same thing —
-and never mixed with the diagnoses. Nothing is designed yet.
+Two things this does *not* do yet — an automatic path into your tracker, and
+feature requests — are written down with the reasoning in
+**[MAINTAINERS.md](docs/MAINTAINERS.md)** rather than left as silences.
 
 ## For users
 
@@ -172,7 +138,7 @@ How the release packages are built, and what each one has been run on:
 | `deploy/` | Docker Compose, firewall and backup for running an operator |
 | `examples/engram/` | A real project taken from nothing to a dashboard, with screenshots and screencasts |
 | `packaging/` | The Arch package `podshl-bin` and the Omarchy plugin, whose own repository is assembled from here |
-| `docs/` | Installing, onboarding, the operator, releasing, the test cases, [REPAIRS.md](docs/REPAIRS.md) — keeping track of local fixes — and [FINDINGS.md](docs/FINDINGS.md), what was measured before this was built and what was discarded because of it |
+| `docs/` | Installing, onboarding, [what a maintainer gets](docs/MAINTAINERS.md), the operator, releasing, the test cases, [REPAIRS.md](docs/REPAIRS.md) — keeping track of local fixes — and [FINDINGS.md](docs/FINDINGS.md), what was measured before this was built and what was discarded because of it |
 | `scripts/` | `build/`, `release/`, `ci/`, `walk/` (driving the real window) and `dev/` (fixtures and measurements) |
 | `run_testcases.py` | Every case in `docs/TESTCASES*.md` marked `auto`, by id |
 

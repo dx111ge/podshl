@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "podshl.diagnose",
   "name": "PODSHL",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": "Sven Andreas",
   "license": "AGPL-3.0-or-later",
   "description": "Ask the projects you actually run what is wrong — every reading consented, nothing generated, nothing uploaded.",
