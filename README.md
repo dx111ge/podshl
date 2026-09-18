@@ -24,13 +24,22 @@ agreed to first.*
     # Omarchy: the bar icon installs the client on first click
     omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable
 
-    # Linux, anywhere
+    # Debian or Ubuntu: the .deb declares what it needs
+    sudo apt install ./PODSHL_0.1.6_amd64.deb
+
+    # the bare binary, on any Linux that already has WebKitGTK
+    # (libwebkit2gtk-4.1-0 and libgtk-3-0 — it is not self-contained, on purpose)
     chmod +x podshl-client-0.1.6-linux-x86_64 && ./podshl-client-0.1.6-linux-x86_64
 
 Windows, Linux and macOS:
 **[download 0.1.6](https://github.com/dx111ge/podshl/releases/latest)**. Nothing
 is signed — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and
 exactly what they send.
+
+**Something to try it on:** [`examples/engram/`](examples/engram/) is a real
+project taken from nothing to a published answer — the `.podshl/` files it
+publishes, the screenshots above, and the walk that produced them. It is the
+shortest way to see both ends of this at once.
 
 | You are | Start with |
 |---|---|
