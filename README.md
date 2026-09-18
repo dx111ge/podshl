@@ -10,12 +10,12 @@ shown and agreed to separately — matches it against the project's own rules,
 and gives the project's own answer at the moment something broke. No server to
 run, no model to pay for, nothing to install per project.
 
-![The client asking permission for two readings, one at a time, each with the
-reason it is needed and what would be read — and a button that refuses
-them](examples/engram/videos/podshl-consent.gif)
+![The client showing a project's own answer: a command to run, why it applies,
+and a question about whether it worked](examples/engram/shots/client-en/07-their-answer.png)
 
-*Asking, item by item, before anything is read — and nothing sent yet. Recorded
-on a real desktop against the live operator.*
+*The project's own answer, on the user's machine. The amber line marks what the
+person said rather than what was measured; every reading behind it was shown and
+agreed to first.*
 
 **Watch the whole thing** — a fix still sitting on the machine, a question, the
 project's own answer, and the notes to take to the project:

@@ -25,11 +25,6 @@ window first. The client is the one Omarchy's plugin installed — `podshl-bin`
 0.1.6 from the package, not a build from the tree — and it answers from
 engram's own published files through `sdota.de`.
 
-`podshl-consent.gif` is cut from the English walk (43s–59s, 9 fps, 620px wide,
-229 KB) and is what the front page shows: GitHub will not play an `.mp4` from a
-repository path in Markdown, so a GIF is the only moving picture that works
-there without a third party.
-
 | English | German | Length | For |
 |---|---|---|---|
 | [`podshl-user.mp4`](podshl-user.mp4) | [`podshl-user-de.mp4`](podshl-user-de.mp4) | 2:36 / 2:55, 960×780 | **The user.** A fix another tool made on this machine, still there and wanting another look; then a question about engram, the classes engram itself publishes, consent item by item, the three things only a person can answer, everything that would leave the machine shown before it leaves, engram's own answer, and the Markdown to take to the project. Subtitles are beside each in [`podshl-user.srt`](podshl-user.srt) and [`podshl-user-de.srt`](podshl-user-de.srt). The German cut also shows the **Original (EN)** chip, which the window offers because engram's labels and answer are machine-translated, and the panel that explains — in German — why the Markdown for the issue is English |
