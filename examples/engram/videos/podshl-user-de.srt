@@ -1,0 +1,100 @@
+1
+00:00:02,001 --> 00:00:08,001
+Eine Korrektur, die hier jemand gemacht hat, ist noch da — und seitdem hat sich etwas bewegt.
+
+2
+00:00:08,011 --> 00:00:13,011
+PODSHL sagt das beim Start. Von selbst macht es nichts rückgängig.
+
+3
+00:00:14,073 --> 00:00:16,073
+Frag nach etwas, das kaputt ist.
+
+4
+00:00:16,273 --> 00:00:18,273
+
+
+5
+00:00:19,385 --> 00:00:21,385
+Das Projekt, beim Namen.
+
+6
+00:00:21,846 --> 00:00:28,846
+engram veröffentlicht seine Hilfe im eigenen Repository. Dafür wurde nichts installiert.
+
+7
+00:00:29,308 --> 00:00:36,308
+Es bietet an nachzusehen, woher engram kommt. Du kannst ablehnen.
+
+8
+00:00:36,317 --> 00:00:43,317
+Das sind die Probleme, die engram beantworten kann — ihre Worte, nicht geraten.
+
+9
+00:00:44,380 --> 00:00:48,380
+Die Suche findet Dinge nicht mehr, die sie früher gefunden hat.
+
+10
+00:00:48,842 --> 00:00:57,842
+
+
+11
+00:00:57,852 --> 00:01:04,852
+Jetzt fragt es. Einzeln, mit dem Grund, und was es lesen würde.
+
+12
+00:01:04,861 --> 00:01:07,861
+Gesendet wurde noch nichts.
+
+13
+00:01:08,324 --> 00:01:17,324
+
+
+14
+00:01:17,333 --> 00:01:24,333
+Drei Angaben, die nur ein Mensch beantworten kann. Sie dürfen leer bleiben.
+
+15
+00:01:26,849 --> 00:01:29,849
+Ja — und die Neuindizierung lief nie.
+
+16
+00:01:30,311 --> 00:01:39,311
+
+
+17
+00:01:39,321 --> 00:01:46,321
+Das ist alles, was das Gerät verlassen würde, bevor es geht.
+
+18
+00:01:46,330 --> 00:01:52,330
+Unbeantwortete Fragen gehen als unbeantwortet mit, statt weggelassen zu werden.
+
+19
+00:01:52,792 --> 00:02:04,792
+
+
+20
+00:02:04,802 --> 00:02:11,802
+engrams eigene Antwort, aus den Dateien, die engram veröffentlicht.
+
+21
+00:02:11,811 --> 00:02:17,811
+Die orange Zeile markiert, was du gesagt hast — nicht, was gemessen wurde.
+
+22
+00:02:18,273 --> 00:02:25,273
+
+
+23
+00:02:25,283 --> 00:02:30,283
+Ob es funktioniert hat, kann nur du ihnen sagen.
+
+24
+00:02:30,745 --> 00:02:39,745
+
+
+25
+00:02:39,754 --> 00:02:48,754
+Und was nichts abdeckt, wird Markdown für das Projekt — anonymisiert, und vorher gezeigt.
+
