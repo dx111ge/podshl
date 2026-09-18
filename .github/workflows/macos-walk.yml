@@ -80,8 +80,14 @@ jobs:
           printf 'scale=1\n' > "$RUNNER_TEMP/app.conf"
           set +e; "$B" repairs review --offline; code=$?; set -e
           [ "$code" = 3 ] || { echo "a changed file did not exit 3 (got $code)"; exit 1; }
-          "$B" repairs review --offline | grep -q . || { echo "review said nothing"; exit 1; }
-          "$B" repairs restore "$id" | grep -q "app.conf" \
+          # Captured, not piped: `review` exits 3 when it finds something, and
+          # under `pipefail` a pipeline carries that 3 out, so `review | grep`
+          # fails on the very case it is checking for.
+          said=$("$B" repairs review --offline || true)
+          [ -n "$said" ] || { echo "review exited 3 and said nothing"; exit 1; }
+          echo "$said" | grep -q "app.conf" || { echo "review did not name it: $said"; exit 1; }
+          "$B" repairs restore "$id" > "$RUNNER_TEMP/restored.txt"
+          grep -q "app.conf" "$RUNNER_TEMP/restored.txt" \
             || { echo "restore did not name the file"; exit 1; }
           grep -q 'scale=1$' "$RUNNER_TEMP/app.conf" || { echo "the copy was not put back"; exit 1; }
           grep -q "repairs restore" "$PODSHL_LOG" || { echo "nothing was logged"; exit 1; }
