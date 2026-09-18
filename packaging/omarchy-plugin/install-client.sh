@@ -4,17 +4,13 @@
 # Run by the bar icon, in Omarchy's floating terminal, after the person pressed
 # Install on a panel that named this file. Nothing else in the plugin runs it.
 #
-# From the PKGBUILD that came with this plugin, in `package/`: the same file the
-# AUR would serve. makepkg downloads the released binary, checks it against the
-# sums in that PKGBUILD, and pacman installs it, so `pacman -R podshl-bin`
-# removes it like any other package. makepkg asks for the password here, in the
-# terminal.
+# From the PKGBUILD that came with this plugin, in `package/`. makepkg downloads
+# the released binary, checks it against the sums in that file, and pacman
+# installs it, so `pacman -R podshl-bin` removes it like any other package.
+# makepkg asks for your password here, in the terminal.
 #
-# It used to ask the AUR first and fall back to this. `podshl-bin` is not in the
-# AUR and cannot be: registration there has been paused since before the first
-# release. So the question had one answer, and asking it meant a branch nobody
-# could reach and nobody could test. When registration reopens this is the line
-# to change back.
+# Not from the AUR: registration there is closed at the moment, so `podshl-bin`
+# is not published there and this is the only way in.
 set -uo pipefail
 
 pkg=podshl-bin

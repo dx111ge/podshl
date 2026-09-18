@@ -14,8 +14,8 @@
 //     so and shows the exact command it would run;
 //   * "Install" opens Omarchy's own floating terminal on `install-client.sh`,
 //     which ships with this plugin: it builds `podshl-bin` from the PKGBUILD
-//     in `package/` with makepkg. It no longer asks the AUR first — that
-//     package is not there and cannot be while registration is paused. The
+//     in `package/` with makepkg, and from nowhere else. Not the AUR —
+//     registration there is closed, so the package is not published there. The
 //     terminal is not decoration: it ends in `sudo pacman`, and a password
 //     prompt needs somewhere to be typed. When it succeeds, the client starts.
 //
