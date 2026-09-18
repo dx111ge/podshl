@@ -462,6 +462,12 @@ function readValues(obj){
 /// every answer whose words stay here — and it says so rather than "null".
 const kvValue = v => v === null
   ? `<span class="held">${esc(t("held_back"))}</span>` : esc(JSON.stringify(v));
+/// The same table for words meant as text: a path, a date, a name — shown as
+/// they are rather than as JSON, which doubled every backslash in a path.
+function kvText(obj){
+  return `<div class="kv">` + Object.entries(obj||{}).map(([k,v])=>
+    `<div>${esc(k)}</div><div class="v">${esc(String(v))}</div>`).join("") + `</div>`;
+}
 function kv(obj){
   return `<div class="kv">` + Object.entries(obj||{}).map(([k,v])=>{
     const c = v===true?"t":v===false?"f":"";
@@ -2919,7 +2925,15 @@ $("lang").onchange=async()=>{
   catch(e){ logUi(`language ${pick} failed to load: ${e && e.message || e}`); $("lang").value=LANG; return; }
   LANG=pick;
   try{ localStorage.setItem("lang", LANG); }catch(_){}
-  applyLang();
+  // **When the introduction is rebuilt, the repair panels go with it.**
+  // `applyLang` protects a run's panels and empties `#main` otherwise, and
+  // before a run the repair panel stands beside the introduction — so picking
+  // a language threw away the one panel that greets somebody with a fix that
+  // wants another look, and left them on a screen that says nothing is wrong.
+  // Found by walking the panel in German; the first walk of it read English
+  // only and never touched the picker. Rebuilt rather than kept, because the
+  // point of the picker is to say it again in the chosen language.
+  if(applyLang()) showRepairs();
   syncHint(await refreshLlmChip());
 };
 
@@ -2932,6 +2946,9 @@ $("lang").onchange=async()=>{
 async function showRepairs(){
   let items;
   try{ items = await invoke("repairs_review"); }catch(e){ logUi(`repairs not reviewed: ${e}`); return; }
+  // Called again when the language changes, so anything this drew before goes
+  // first: a second copy of the same panel would read as a second finding.
+  for(const old of document.querySelectorAll("#main .panel.repair")) old.remove();
   if(!items || !items.length) return;
   const flagText = f => ({
     updated: t("repair_updated", {from: esc(f.from), to: esc(f.to)}),
@@ -2939,32 +2956,64 @@ async function showRepairs(){
     cannot_compare: esc(tr(f.why)),
     overwritten: t("repair_overwritten"),
     no_longer_set: t("repair_no_longer_set"),
+    file_changed: t("repair_file_changed"),
+    frozen: t("repair_frozen", {now: esc(f.installed), avail: esc(f.available)}),
+    original_changed: t("repair_original_changed"),
+    issue_closed: t("repair_issue_closed"),
+    pr_merged: t("repair_pr_merged"),
+    released_in: t("repair_released_in", {tag: esc(f.tag)}),
     target_gone: t("repair_target_gone"),
     backup_gone: t("repair_backup_gone"),
   })[f.kind] || esc(f.kind);
   items.forEach(({record: r, flags}) => {
     const when = new Date(r.at * 1000).toLocaleDateString(LANG);
-    const facts = {[t("repair_what")]: `${r.action} ${Object.entries(r.params).map(([k,v])=>`${k}=${v}`).join(" ")}`,
-                   [t("repair_when")]: when, [t("repair_who")]: r.subject || "—"};
+    const what = r.kind && r.kind !== "action"
+      ? `${({file: t("repair_kind_file"), package: t("repair_kind_package"), overlay: t("repair_kind_overlay")})[r.kind] || r.kind}${r.target ? ": " + r.target_shown : ""}`
+      : `${r.action} ${Object.entries(r.params).map(([k,v])=>`${k}=${v}`).join(" ")}`;
+    const facts = {[t("repair_what")]: what,
+                   [t("repair_when")]: when,
+                   [t(r.kind && r.kind !== "action" ? "repair_by" : "repair_who")]: r.subject || "—"};
     if(r.upstream && r.upstream.package) facts[t("repair_package")] =
       r.upstream.package + (r.installed ? ` ${r.installed.version}` : "");
     // As text to copy, not a link: the window opens nothing outside itself.
     if(r.upstream && r.upstream.issue) facts[t("repair_issue")] = r.upstream.issue;
     // An undo needs the file and its copy; offering it without them offers an error.
-    const canUndo = !!r.undo || (r.reversible && r.params.file &&
-      !flags.some(f => f.kind === "backup_gone" || f.kind === "target_gone"));
-    const el = add(`<h3>${t("repairs_h")}</h3><p>${t("repairs_1")}</p>
+    const gone = flags.some(f => f.kind === "backup_gone" || f.kind === "target_gone");
+    const external = r.kind === "file" && !!r.backup && r.reversible && !gone;
+    const canUndo = !!r.undo || external || (r.reversible && r.params.file && !gone);
+    // Only a GitHub link can be looked up, and only the person turns it on.
+    const watchable = /^https:\/\/github\.com\/[^/]+\/[^/]+\/(issues|pull)\/\d+/.test((r.upstream||{}).issue || "");
+    const el = add(`<h3>${t("repairs_h")}</h3><p>${t(r.kind && r.kind !== "action" ? "repairs_ext_1" : "repairs_1")}</p>
       <ul class="plain">${flags.map(f=>`<li><span>${flagText(f)}</span></li>`).join("")}</ul>
-      ${kv(facts)}
+      ${kvText(facts)}
+      ${watchable ? `<p class="note c-muted">${t(r.watch_issue ? "repair_watching_note" : "repair_watch_note")}</p>` : ""}
       <div class="btns">${canUndo ? `<button class="ghost undo">${t("undo")}</button>` : ""}
-        <button class="keep">${t("repair_keep")}</button></div>`, "panel");
+        ${watchable ? `<button class="ghost watch">${t(r.watch_issue ? "repair_unwatch" : "repair_watch")}</button>` : ""}
+        <button class="keep">${t("repair_keep")}</button></div>`, "panel repair");
+    const watch = el.querySelector(".watch");
+    if(watch) watch.onclick = async () => {
+      try{
+        await invoke("repair_watch", {id: r.id, on: !r.watch_issue});
+        r.watch_issue = !r.watch_issue;
+        watch.textContent = t(r.watch_issue ? "repair_unwatch" : "repair_watch");
+        const note = el.querySelector("p.note.c-muted");
+        if(note) note.textContent = t(r.watch_issue ? "repair_watching_note" : "repair_watch_note");
+      }catch(e){ el.innerHTML += `<p class="c-stop">${esc(tr(e))}</p>`; }
+    };
     const undo = el.querySelector(".undo");
     if(undo) undo.onclick = async () => {
       try{
-        const call = r.undo || {action:"restore_backup", params:{file:r.params.file}};
-        await invoke("execute", {action:call.action, params:call.params,
-                                 subject:r.subject, upstream:null, note:null, undoes:r.id});
-        el.className = "panel"; el.innerHTML = `<h3>${t("undone_h")}</h3><p>${t("undone_1")}</p>`;
+        if(external && !r.undo){
+          await invoke("repair_restore", {id: r.id});
+        } else {
+          const call = r.undo || {action:"restore_backup", params:{file:r.params.file}};
+          await invoke("execute", {action:call.action, params:call.params,
+                                   subject:r.subject, upstream:null, note:null, undoes:r.id});
+        }
+        // Still a repair panel: it keeps the mark, so a later language change
+        // takes it away with the rest rather than leaving one stale panel in
+        // the old language behind.
+        el.className = "panel repair"; el.innerHTML = `<h3>${t("undone_h")}</h3><p>${t("undone_1")}</p>`;
       }catch(e){ el.innerHTML += `<p class="c-stop">${esc(tr(e))}</p>`; }
     };
     el.querySelector(".keep").onclick = async () => {

@@ -194,6 +194,12 @@ operating system's credential store, never into a config file, and it is only
 ever sent to the host its provider preset names. The provider's address and
 model name are kept in `llm.json` under your config directory, in plain text.
 
+## Keeping track of local fixes
+
+Fixes made on this machine, by the client or by an agent, a script or you, can
+be recorded and looked at again after updates: `podshl-client repairs help`,
+described in [REPAIRS.md](REPAIRS.md).
+
 ## What leaves your machine, and when
 
 Nothing, unless you press a button that says so.
@@ -231,6 +237,10 @@ Nothing, unless you press a button that says so.
   the lines of a log, travels only if you agree to that separately: you see the
   exact words first, with names, addresses, tokens and times already replaced,
   and you can edit every one of them.
+* **An upstream issue you chose to watch** for a recorded fix is looked up on
+  GitHub directly, at most once a day. That tells GitHub which issue this
+  computer follows. It is off for every record until you switch it on
+  ([REPAIRS.md](REPAIRS.md)).
 
 ### The pseudonym
 
@@ -257,6 +267,7 @@ Under your config directory — `%APPDATA%\podshl` on Windows,
 | `llm.json` | Which model provider and model you chose, in plain text. The key itself is in the credential store |
 | `index_cache.json` | The last index fetched, so the next start can ask whether it changed rather than fetch it again |
 | `vendor_standing.json` | Your standing with each vendor, per pseudonym, reset with it |
+| `repairs.json`, `backups/` | The record of local fixes and the copies `repairs begin` kept ([REPAIRS.md](REPAIRS.md)) |
 
 A change the client applies leaves a `.bak` beside the file it changed, and it
 never overwrites one that is already there.
@@ -271,4 +282,5 @@ never overwrites one that is already there.
 
 Except where Windows' box is ticked, that leaves your data where it was: the
 files above, the API key in the credential store, and any `.bak` beside a file
-the client changed. Remove those yourself to leave nothing behind.
+the client changed. If you ran `podshl-client repairs install-hook`, run
+`repairs remove-hook` before uninstalling. Remove those yourself to leave nothing behind.

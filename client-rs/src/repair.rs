@@ -22,6 +22,19 @@
 //! compared. It does not undo the change. A backport, or a new version that
 //! still fails, makes a version number no proof; undoing stays the person's
 //! decision, through `restore_backup`.
+//!
+//! **Changes this client did not make are recorded the same way.** An agent, a
+//! skill or a person can register a fix made by other means — a file edited, a
+//! package built locally in place of the official one, a plugin or setting
+//! copied so that it overrides the original — through `podshl-client repairs
+//! add` (`repairs_cli.rs`). The tool names the thing; this code reads every
+//! value a later decision depends on: the file's digest, the installed and the
+//! available version, the original's digest.
+//!
+//! **Looking again runs without the window**, after an update: Omarchy's
+//! `post-update.d`, a systemd user timer, a launchd agent or a Windows scheduled
+//! task start `podshl-client repairs review`. It needs no model and no network,
+//! except for an upstream issue the person asked to watch (`upstream.rs`).
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -131,6 +144,67 @@ pub struct Record {
     /// Free text a model may add. Shown, never read by anything here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// `action` for a change this client made; `file`, `package` or `overlay`
+    /// for one registered from outside (`add_external`).
+    #[serde(default = "kind_action")]
+    pub kind: String,
+    /// The changed file's SHA-256 once the change was made, so a later edit or
+    /// an update that rewrites it is noticed whatever the file's format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_sha256: Option<String>,
+    /// What an override stands in front of, as it was when the copy was made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original: Option<Original>,
+    /// The person asked for `upstream.issue` to be looked up. Off unless they
+    /// did: each lookup tells GitHub which issue this machine follows.
+    #[serde(default)]
+    pub watch_issue: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue_state: Option<IssueState>,
+    /// When the record was forgotten, if it was. What it said is gone; that it
+    /// existed and was removed is not — see `forget`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forgotten_at: Option<u64>,
+}
+
+fn kind_action() -> String {
+    "action".into()
+}
+
+/// The component a local copy overrides, read when the copy was recorded.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Original {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+/// What the upstream issue or pull request said the last time it was asked.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct IssueState {
+    pub checked_at: u64,
+    /// `open`, `closed` (an issue) or `merged` (a pull request); `unknown` when
+    /// the lookup failed, with the reason in `error`.
+    pub state: String,
+    #[serde(default)]
+    pub is_pull: bool,
+    /// The first release that contains the merged change, found by code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub released_in: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl IssueState {
+    /// Nothing further can change what it says: released, or a closed issue.
+    fn settled(&self) -> bool {
+        self.released_in.is_some() || (self.state == "closed" && !self.is_pull)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -153,6 +227,19 @@ pub enum Flag {
     TargetGone,
     /// The copy an undo would restore is gone.
     BackupGone,
+    /// The file a registered fix changed is no longer what it was afterwards.
+    FileChanged,
+    /// A package built or pinned locally is older than the one the package
+    /// manager offers: the official component moved on without this machine.
+    Frozen { installed: String, available: String },
+    /// The component an override stands in front of has changed underneath it.
+    OriginalChanged,
+    /// The upstream issue is closed.
+    IssueClosed,
+    /// The upstream pull request is merged and in no release yet.
+    PrMerged,
+    /// The merged change is in this release, found by code.
+    ReleasedIn { tag: String },
 }
 
 impl Flag {
@@ -165,6 +252,12 @@ impl Flag {
             Flag::NoLongerSet => "no_longer_set",
             Flag::TargetGone => "target_gone",
             Flag::BackupGone => "backup_gone",
+            Flag::FileChanged => "file_changed",
+            Flag::Frozen { .. } => "frozen",
+            Flag::OriginalChanged => "original_changed",
+            Flag::IssueClosed => "issue_closed",
+            Flag::PrMerged => "pr_merged",
+            Flag::ReleasedIn { .. } => "released_in",
         }
     }
 }
@@ -230,8 +323,9 @@ fn tool(name: &str) -> Option<PathBuf> {
 
 /// The installed version of `package`, from the local package database only.
 ///
-/// `pacman -Q <name>` and `dpkg-query -W -f=${Version}`: one package, no
-/// network, no write — the same bounds as the provenance question.
+/// `pacman -Q`, `dpkg-query -W`, `brew list --versions`, and on Windows the
+/// uninstall entries in the registry: one package, no network, no write — the
+/// same bounds as the provenance question.
 pub fn installed_version(package: &str) -> Option<Installed> {
     if !crate::provenance::name_ok(package) {
         return None;
@@ -255,7 +349,187 @@ pub fn installed_version(package: &str) -> Option<Installed> {
             }
         }
     }
+    if let Some(exe) = tool("brew") {
+        if let Some((true, out)) = crate::reads::run_bounded(&exe, &["list", "--versions", package]) {
+            // `name 1.2.3 1.2.2` — the newest is last.
+            let mut words = out.lines().next().unwrap_or("").split_whitespace();
+            if words.next() == Some(package) {
+                if let Some(v) = words.last().filter(|v| version_ok(v)) {
+                    return Some(Installed { version: v.into(), source: "brew".into() });
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    if let Some(v) = windows_uninstall_version(package) {
+        return Some(Installed { version: v, source: "windows".into() });
+    }
     None
+}
+
+/// The version the package manager would install now, from its local
+/// database — `pacman -Si`, `apt-cache policy`, `brew info`. No network: the
+/// database is as fresh as the last update, which is when this is asked.
+/// Windows has no such database for arbitrary programs, so it says nothing.
+pub fn available_version(package: &str) -> Option<Installed> {
+    if !crate::provenance::name_ok(package) {
+        return None;
+    }
+    if let Some(exe) = tool("pacman") {
+        if let Some((true, out)) = crate::reads::run_bounded(&exe, &["-Si", package]) {
+            if let Some(v) = field(&out, "Version").filter(|v| version_ok(v)) {
+                return Some(Installed { version: v, source: "pacman".into() });
+            }
+        }
+    }
+    if let Some(exe) = tool("apt-cache") {
+        if let Some((true, out)) = crate::reads::run_bounded(&exe, &["policy", package]) {
+            if let Some(v) = field(&out, "Candidate").filter(|v| version_ok(v)) {
+                return Some(Installed { version: v, source: "apt".into() });
+            }
+        }
+    }
+    if let Some(exe) = tool("brew") {
+        if let Some((true, out)) =
+            crate::reads::run_bounded(&exe, &["info", "--json=v2", package])
+        {
+            let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+            let stable = v["formulae"][0]["versions"]["stable"].as_str()
+                .or_else(|| v["casks"][0]["version"].as_str());
+            if let Some(stable) = stable.filter(|s| version_ok(s)) {
+                return Some(Installed { version: stable.into(), source: "brew".into() });
+            }
+        }
+    }
+    None
+}
+
+/// `key : value`, first match, as pacman and apt print them.
+fn field(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|l| {
+        let (k, v) = l.split_once(':')?;
+        (k.trim() == key).then(|| v.trim().to_string()).filter(|v| !v.is_empty() && v != "(none)")
+    })
+}
+
+/// What the registry's uninstall entries say `package` is, for the whole
+/// machine and for this user. A program is matched by its entry's key or by
+/// its display name, case ignored, with spaces standing as `-` — a package
+/// name has none.
+#[cfg(windows)]
+fn windows_uninstall_version(package: &str) -> Option<String> {
+    use crate::elevated::wide;
+    use windows_sys::Win32::System::Registry::*;
+    const ROOTS: [(HKEY, &str); 3] = [
+        (HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ];
+    let want = package.to_ascii_lowercase();
+    let read_value = |key: HKEY, name: &str| -> Option<String> {
+        let mut buf = vec![0u16; 512];
+        let mut size = (buf.len() * 2) as u32;
+        let mut kind = 0u32;
+        let n = wide(name);
+        let ok = unsafe {
+            RegQueryValueExW(key, n.as_ptr(), std::ptr::null(), &mut kind,
+                             buf.as_mut_ptr() as *mut u8, &mut size)
+        } == 0 && kind == REG_SZ;
+        ok.then(|| {
+            let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            String::from_utf16_lossy(&buf[..end])
+        })
+    };
+    for (root, path) in ROOTS {
+        let mut key = std::ptr::null_mut();
+        if unsafe { RegOpenKeyExW(root, wide(path).as_ptr(), 0, KEY_READ, &mut key) } != 0 {
+            continue;
+        }
+        let mut found = None;
+        for i in 0.. {
+            let mut name = vec![0u16; 256];
+            let mut len = name.len() as u32;
+            let r = unsafe {
+                RegEnumKeyExW(key, i, name.as_mut_ptr(), &mut len, std::ptr::null(),
+                              std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
+            };
+            if r != 0 {
+                break;
+            }
+            let sub_name = String::from_utf16_lossy(&name[..len as usize]);
+            let mut sub = std::ptr::null_mut();
+            if unsafe { RegOpenKeyExW(key, wide(&sub_name).as_ptr(), 0, KEY_READ, &mut sub) } != 0 {
+                continue;
+            }
+            let display = read_value(sub, "DisplayName").unwrap_or_default();
+            let matches = sub_name.to_ascii_lowercase() == want
+                || display.to_ascii_lowercase() == want
+                || display.to_ascii_lowercase().replace(' ', "-") == want;
+            let version = if matches { read_value(sub, "DisplayVersion") } else { None };
+            unsafe { RegCloseKey(sub) };
+            if let Some(v) = version.filter(|v| version_ok(v)) {
+                found = Some(v);
+                break;
+            }
+        }
+        unsafe { RegCloseKey(key) };
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
+}
+
+// ------------------------------------------------------------------ digests
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// A file's digest, or a folder's: every file under it, in path order, each
+/// named and hashed. Bounded, because an override may point at a large tree
+/// and this runs after every update; past the bound it says nothing rather
+/// than something partial.
+pub fn digest_path(path: &Path) -> Option<String> {
+    const MAX_FILES: usize = 5000;
+    const MAX_BYTES: u64 = 256 * 1024 * 1024;
+    if path.is_file() {
+        return std::fs::read(path).ok().map(|b| sha256_hex(&b));
+    }
+    if !path.is_dir() {
+        return None;
+    }
+    let mut files = vec![];
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+            let p = entry.path();
+            let ft = entry.file_type().ok()?;
+            if ft.is_symlink() {
+                continue;
+            } else if ft.is_dir() {
+                stack.push(p);
+            } else if ft.is_file() {
+                files.push(p);
+                if files.len() > MAX_FILES {
+                    return None;
+                }
+            }
+        }
+    }
+    files.sort();
+    let mut total = 0u64;
+    let mut listing = String::new();
+    for f in files {
+        total += f.metadata().ok()?.len();
+        if total > MAX_BYTES {
+            return None;
+        }
+        let rel = f.strip_prefix(path).ok()?.to_string_lossy().replace('\\', "/");
+        listing.push_str(&format!("{rel}\t{}\n", sha256_hex(&std::fs::read(&f).ok()?)));
+    }
+    Some(sha256_hex(listing.as_bytes()))
 }
 
 // ------------------------------------------------------------------ versions
@@ -349,6 +623,15 @@ pub fn is_vcs(package: Option<&str>, version: &str) -> bool {
         .map(|re| re.is_match(version))
         .unwrap_or(false);
     vcs_package || vcs_version
+}
+
+/// A release tag as a version: `v1.2.3` and `release-1.2.3` are `1.2.3`.
+/// Anything that is still not a version stays unordered.
+pub fn tag_version(tag: &str) -> Option<String> {
+    let t = tag.trim();
+    let t = t.strip_prefix("release-").or_else(|| t.strip_prefix("release/")).unwrap_or(t);
+    let t = t.strip_prefix(['v', 'V']).filter(|r| r.starts_with(|c: char| c.is_ascii_digit())).unwrap_or(t);
+    version_ok(t).then(|| t.to_string())
 }
 
 /// pacman's `vercmp`: epoch first, then the version, then the release where
@@ -457,6 +740,12 @@ fn execute_with(
         seen: vec![],
         undo: None,
         note: ctx.note,
+        kind: kind_action(),
+        file_sha256: None,
+        original: None,
+        watch_issue: false,
+        issue_state: None,
+        forgotten_at: None,
     };
     let rid = record.id.clone();
     records.push(record);
@@ -536,13 +825,56 @@ fn still_holds(r: &Record, target: &Path) -> Option<bool> {
     }
 }
 
+/// Where the answers to "what is on this machine" and "what does upstream say"
+/// come from. The real ones read the package manager and GitHub; the suite
+/// passes its own.
+pub struct Lookups<'a> {
+    pub installed: &'a dyn Fn(&str) -> Option<Installed>,
+    pub available: &'a dyn Fn(&str) -> Option<Installed>,
+    /// Asked only for a record whose issue the person chose to watch, at most
+    /// once a day, and never again once the answer is settled. `None` asks
+    /// nobody and leaves what was last found as it is.
+    pub issue: Option<&'a dyn Fn(&str) -> IssueState>,
+}
+
+impl Lookups<'static> {
+    /// The machine's own answers, and no network at all.
+    pub fn offline() -> Lookups<'static> {
+        Lookups { installed: &installed_version, available: &available_version, issue: None }
+    }
+}
+
+/// How long an issue's state is trusted before it is asked again.
+pub const ISSUE_RECHECK_SECS: u64 = 24 * 3600;
+
+fn wants_issue_lookup(r: &Record, now_s: u64) -> bool {
+    r.watch_issue
+        && r.upstream.issue.as_deref().is_some_and(|u| crate::upstream::parse(u).is_some())
+        && match &r.issue_state {
+            None => true,
+            Some(st) => !st.settled() && now_s.saturating_sub(st.checked_at) >= ISSUE_RECHECK_SECS,
+        }
+}
+
+/// The version a fix is in: what the publisher or the person said, or else the
+/// release code found the merged change in.
+fn effective_fixed_in(r: &Record) -> Option<String> {
+    r.upstream.fixed_in.clone().or_else(|| {
+        r.issue_state.as_ref()?.released_in.as_deref().and_then(tag_version)
+    })
+}
+
 /// What is true of one record now, before anything a person already saw is
 /// taken away. Also the version the package manager reports, or empty.
-fn flags_for(r: &Record, installed: &dyn Fn(&str) -> Option<Installed>) -> (Vec<Flag>, String) {
+fn flags_for(r: &Record, look: &Lookups) -> (Vec<Flag>, String) {
     let mut flags = vec![];
     if let Some(t) = r.target.as_deref().map(Path::new) {
         if !t.exists() {
             flags.push(Flag::TargetGone);
+        } else if let Some(want) = r.file_sha256.as_deref() {
+            if digest_path(t).as_deref() != Some(want) {
+                flags.push(Flag::FileChanged);
+            }
         } else if still_holds(r, t) == Some(false) {
             flags.push(Flag::Overwritten);
         }
@@ -557,7 +889,7 @@ fn flags_for(r: &Record, installed: &dyn Fn(&str) -> Option<Installed>) -> (Vec<
     }
 
     let package = r.upstream.package.as_deref();
-    let now = package.and_then(installed);
+    let now = package.and_then(|p| (look.installed)(p));
     let then = r.installed.as_ref().map(|i| i.version.clone());
     match (&then, &now) {
         (_, None) if package.is_some() => flags.push(Flag::CannotCompare {
@@ -568,11 +900,50 @@ fn flags_for(r: &Record, installed: &dyn Fn(&str) -> Option<Installed>) -> (Vec<
         }
         _ => {}
     }
-    if let (Some(fixed), Some(now)) = (r.upstream.fixed_in.as_deref(), &now) {
-        match vercmp(package, &now.version, fixed) {
+
+    // A package held back on purpose: the official one moving on is the whole
+    // reason to look (`Frozen`). Asked of the package manager's own database,
+    // which the update just refreshed. "Moving on" is a change from what was
+    // offered when the fix was recorded, not only a higher number: a local
+    // build is often versioned 9999 exactly so that nothing ever outranks it.
+    if r.kind == "package" {
+        if let (Some(p), Some(now)) = (package, &now) {
+            if let Some(avail) = (look.available)(p) {
+                let recorded = r.original.as_ref().and_then(|o| o.version.as_deref());
+                let moved = recorded.is_some_and(|was| was != avail.version);
+                let ahead = vercmp(Some(p), &avail.version, &now.version) == Some(Ordering::Greater);
+                if moved || ahead {
+                    flags.push(Flag::Frozen { installed: now.version.clone(), available: avail.version });
+                }
+            }
+        }
+    }
+
+    if let Some(orig) = r.original.as_ref().filter(|_| r.kind != "package") {
+        let path_moved = orig.path.as_deref().zip(orig.sha256.as_deref())
+            .is_some_and(|(p, want)| digest_path(Path::new(p)).as_deref() != Some(want));
+        let package_moved = orig.package.as_deref().zip(orig.version.as_deref())
+            .is_some_and(|(p, was)| (look.installed)(p).map(|i| i.version).as_deref() != Some(was));
+        if path_moved || package_moved {
+            flags.push(Flag::OriginalChanged);
+        }
+    }
+
+    if let Some(st) = &r.issue_state {
+        if let Some(tag) = &st.released_in {
+            flags.push(Flag::ReleasedIn { tag: tag.clone() });
+        } else if st.state == "merged" {
+            flags.push(Flag::PrMerged);
+        } else if st.state == "closed" {
+            flags.push(Flag::IssueClosed);
+        }
+    }
+
+    if let (Some(fixed), Some(now)) = (effective_fixed_in(r), &now) {
+        match vercmp(package, &now.version, &fixed) {
             Some(Ordering::Less) => {}
             Some(_) => flags.push(Flag::UpstreamSaysFixed {
-                fixed_in: fixed.into(),
+                fixed_in: fixed,
                 installed: now.version.clone(),
             }),
             None => flags.push(Flag::CannotCompare { why: m!("repair_vcs", v = &now.version) }),
@@ -583,13 +954,30 @@ fn flags_for(r: &Record, installed: &dyn Fn(&str) -> Option<Installed>) -> (Vec<
 
 /// Every applied change that needs a person to look at it again, and why.
 ///
-/// Reads the package manager and the files; writes nothing and removes
-/// nothing. What a person already saw at the version installed now is left
-/// out; anything new, and everything after an update, is not.
-pub fn review(state_dir: &Path, installed: &dyn Fn(&str) -> Option<Installed>) -> Vec<Review> {
+/// Reads the package manager and the files, and removes nothing. It writes one
+/// thing: what a watched upstream issue said, so it is asked at most once a
+/// day. What a person already saw at the version installed now is left out;
+/// anything new, and everything after an update, is not.
+pub fn review(state_dir: &Path, look: &Lookups) -> Vec<Review> {
+    let mut records = load(state_dir);
+    let now_s = now();
+    let mut asked = false;
+    for r in records.iter_mut().filter(|r| r.state == "applied") {
+        let Some(ask) = look.issue else { break };
+        if wants_issue_lookup(r, now_s) {
+            let url = r.upstream.issue.clone().unwrap_or_default();
+            let mut st = ask(&url);
+            st.checked_at = now_s;
+            r.issue_state = Some(st);
+            asked = true;
+        }
+    }
+    if asked {
+        let _ = save(state_dir, &records);
+    }
     let mut out = vec![];
-    for r in load(state_dir).into_iter().filter(|r| r.state == "applied") {
-        let (mut flags, version) = flags_for(&r, installed);
+    for r in records.into_iter().filter(|r| r.state == "applied") {
+        let (mut flags, version) = flags_for(&r, look);
         if r.looked_at.as_deref() == Some(version.as_str()) {
             flags.retain(|f| !r.seen.iter().any(|k| k == f.kind()));
         }
@@ -603,17 +991,267 @@ pub fn review(state_dir: &Path, installed: &dyn Fn(&str) -> Option<Installed>) -
 /// A person looked at a change and keeps it: what they were shown is not
 /// raised again at the version installed now. A later update raises it
 /// afresh, and so does anything they were not shown.
-pub fn looked_at(
-    state_dir: &Path,
-    id: &str,
-    installed: &dyn Fn(&str) -> Option<Installed>,
-) -> Result<(), String> {
+pub fn looked_at(state_dir: &Path, id: &str, look: &Lookups) -> Result<(), String> {
     let mut records = read(state_dir)?;
     let r = records.iter_mut().find(|r| r.id == id).ok_or_else(|| m!("repair_unknown"))?;
-    let (flags, version) = flags_for(r, installed);
+    let (flags, version) = flags_for(r, look);
     r.looked_at = Some(version);
     r.seen = flags.iter().map(|f| f.kind().to_string()).collect();
     save(state_dir, &records)
+}
+
+/// Watch the record's upstream issue, or stop. Watching is what makes the
+/// review ask GitHub about it, so it is the person's switch and nobody else's.
+pub fn set_watch(state_dir: &Path, id: &str, on: bool) -> Result<(), String> {
+    let mut records = read(state_dir)?;
+    let r = records.iter_mut().find(|r| r.id == id).ok_or_else(|| m!("repair_unknown"))?;
+    if on && !r.upstream.issue.as_deref().is_some_and(|u| crate::upstream::parse(u).is_some()) {
+        return Err(m!("repair_no_issue_to_watch"));
+    }
+    r.watch_issue = on;
+    if !on {
+        r.issue_state = None;
+    }
+    save(state_dir, &records)
+}
+
+// ------------------------------------------------------------------ changes made elsewhere
+
+/// A change something other than this client made, as the tool that made it
+/// describes it. Names and paths only; every value a decision reads is taken
+/// from the machine when the record is written.
+#[derive(Debug, Clone, Default)]
+pub struct External {
+    /// `file`, `package` or `overlay`.
+    pub kind: String,
+    /// Who made it: an agent, a skill, a person.
+    pub by: String,
+    /// The changed file, or the local copy that overrides the original.
+    pub path: Option<PathBuf>,
+    pub upstream: Upstream,
+    /// For an overlay: what it stands in front of.
+    pub original_path: Option<PathBuf>,
+    pub original_package: Option<String>,
+    pub watch_issue: bool,
+    pub note: Option<String>,
+}
+
+fn by_ok(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 80 && !s.chars().any(|c| c.is_control())
+}
+
+/// Check what the tool said and turn it into a record, reading the machine.
+fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, String> {
+    if !by_ok(&ext.by) {
+        return Err(m!("repair_external_bad", k = "by"));
+    }
+    if ext.note.as_deref().is_some_and(|n| n.len() > 2000) {
+        return Err(m!("repair_external_bad", k = "note"));
+    }
+    let abs = |p: &Path| -> Result<PathBuf, String> {
+        p.canonicalize().map_err(|_| m!("repair_external_path", p = crate::reads::display_path(p)))
+    };
+    let mut rec = Record {
+        id,
+        at: now(),
+        action: format!("external:{}", ext.kind),
+        params: BTreeMap::new(),
+        target: None,
+        backup: None,
+        reversible: false,
+        subject: ext.by.clone(),
+        upstream: ext.upstream,
+        installed: None,
+        state: "applied".into(),
+        error: None,
+        looked_at: None,
+        seen: vec![],
+        undo: None,
+        note: ext.note,
+        kind: ext.kind.clone(),
+        file_sha256: None,
+        original: None,
+        watch_issue: false,
+        issue_state: None,
+        forgotten_at: None,
+    };
+    if ext.watch_issue {
+        if !rec.upstream.issue.as_deref().is_some_and(|u| crate::upstream::parse(u).is_some()) {
+            return Err(m!("repair_no_issue_to_watch"));
+        }
+        rec.watch_issue = true;
+    }
+    match ext.kind.as_str() {
+        "file" => {
+            let p = abs(ext.path.as_deref().ok_or_else(|| m!("repair_external_bad", k = "path"))?)?;
+            if !p.is_file() {
+                return Err(m!("repair_external_path", p = crate::reads::display_path(&p)));
+            }
+            rec.file_sha256 = digest_path(&p);
+            rec.target = Some(p.display().to_string());
+        }
+        "package" => {
+            let Some(pkg) = rec.upstream.package.clone() else {
+                return Err(m!("repair_external_bad", k = "package"));
+            };
+            // What the package manager offered instead, when the local build
+            // was recorded — the point from which "the official one moved on"
+            // is measured.
+            rec.original = Some(Original {
+                version: (look.available)(&pkg).map(|i| i.version),
+                package: Some(pkg),
+                ..Original::default()
+            });
+        }
+        "overlay" => {
+            let p = abs(ext.path.as_deref().ok_or_else(|| m!("repair_external_bad", k = "path"))?)?;
+            rec.file_sha256 = digest_path(&p);
+            rec.target = Some(p.display().to_string());
+            let mut orig = Original::default();
+            if let Some(op) = ext.original_path.as_deref() {
+                let op = abs(op)?;
+                orig.sha256 = digest_path(&op);
+                orig.path = Some(op.display().to_string());
+            }
+            if let Some(pkg) = ext.original_package {
+                if !crate::provenance::name_ok(&pkg) {
+                    return Err(m!("repair_external_bad", k = "original-package"));
+                }
+                orig.version = (look.installed)(&pkg).map(|i| i.version);
+                orig.package = Some(pkg);
+            }
+            if orig.path.is_none() && orig.package.is_none() {
+                return Err(m!("repair_external_bad", k = "original"));
+            }
+            rec.original = Some(orig);
+        }
+        _ => return Err(m!("repair_external_bad", k = "kind")),
+    }
+    rec.installed = rec.upstream.package.as_deref().and_then(|p| (look.installed)(p));
+    Ok(rec)
+}
+
+fn next_id(records: &[Record]) -> String {
+    format!("{}-{}", now(), records.len() + 1)
+}
+
+/// Record a change that has already been made. Nothing to undo it with is kept,
+/// so the record says it cannot be undone from here.
+pub fn add_external(state_dir: &Path, ext: External, look: &Lookups) -> Result<Record, String> {
+    let mut records = read(state_dir)?;
+    let rec = external_record(ext, next_id(&records), look)?;
+    records.push(rec.clone());
+    save(state_dir, &records)?;
+    Ok(rec)
+}
+
+/// Before a file is changed: a copy of it is kept under this client's state,
+/// and the record waits for `finish_external` to say the change is made.
+pub fn begin_external(state_dir: &Path, ext: External, look: &Lookups) -> Result<Record, String> {
+    if ext.kind != "file" {
+        return Err(m!("repair_external_bad", k = "kind"));
+    }
+    let mut records = read(state_dir)?;
+    let mut rec = external_record(ext, next_id(&records), look)?;
+    let target = PathBuf::from(rec.target.clone().unwrap_or_default());
+    let dir = state_dir.join("backups").join(&rec.id);
+    std::fs::create_dir_all(&dir).map_err(|e| m!("repair_not_written", e = e))?;
+    let copy = dir.join(target.file_name().unwrap_or_default());
+    std::fs::copy(&target, &copy).map_err(|e| m!("repair_not_written", e = e))?;
+    rec.backup = Some(copy.display().to_string());
+    rec.reversible = true;
+    rec.state = "pending".into();
+    // The digest is taken when the change is finished, not now.
+    rec.file_sha256 = None;
+    records.push(rec.clone());
+    save(state_dir, &records)?;
+    Ok(rec)
+}
+
+/// The change announced by `begin_external` is made: its digest is taken now.
+pub fn finish_external(state_dir: &Path, id: &str) -> Result<Record, String> {
+    let mut records = read(state_dir)?;
+    let r = records.iter_mut().find(|r| r.id == id && r.state == "pending")
+        .ok_or_else(|| m!("repair_unknown"))?;
+    let target = PathBuf::from(r.target.clone().unwrap_or_default());
+    r.file_sha256 = digest_path(&target);
+    r.state = "applied".into();
+    let out = r.clone();
+    save(state_dir, &records)?;
+    Ok(out)
+}
+
+/// Remove what a record said, and keep that it existed.
+///
+/// **The ledger is a record of what other tools did to this machine**, and the
+/// tools it records run as the person. If any of them could erase an entry,
+/// the entry would be worth nothing the moment it mattered — so removal is not
+/// an ordinary command; see `repairs_cli`, which will not do it without
+/// administrator rights and a person answering.
+///
+/// What it says goes: the path, the digest, who made it, the note, the
+/// upstream issue, and the copy kept to go back to. What stays is a stub — the
+/// id, when the change was recorded, its kind, and when it was forgotten. A
+/// ledger with a hole in it and a ledger that never had an entry look the same
+/// from outside, and they are not the same thing.
+pub fn forget(state_dir: &Path, id: &str) -> Result<Record, String> {
+    let mut records = read(state_dir)?;
+    let r = records.iter_mut()
+        .find(|r| r.id == id && r.state != "forgotten")
+        .ok_or_else(|| m!("repair_unknown"))?;
+    let was = r.clone();
+    // The copy goes with the record. Leaving it would keep on disk exactly the
+    // file contents the record was removed to be rid of, under a name derived
+    // from the id that is still in the stub.
+    if let Some(b) = r.backup.as_deref() {
+        let _ = std::fs::remove_file(b);
+        if let Some(dir) = Path::new(b).parent() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+    *r = Record {
+        id: was.id.clone(),
+        at: was.at,
+        action: String::new(),
+        params: BTreeMap::new(),
+        target: None,
+        backup: None,
+        reversible: false,
+        subject: String::new(),
+        upstream: Upstream::default(),
+        installed: None,
+        state: "forgotten".into(),
+        error: None,
+        looked_at: None,
+        seen: vec![],
+        undo: None,
+        note: None,
+        kind: was.kind.clone(),
+        file_sha256: None,
+        original: None,
+        watch_issue: false,
+        issue_state: None,
+        forgotten_at: Some(now()),
+    };
+    save(state_dir, &records)?;
+    Ok(was)
+}
+
+/// Put back the copy `begin_external` kept, on the person's word. The record
+/// stays, as `undone`.
+pub fn restore_external(state_dir: &Path, id: &str) -> Result<Record, String> {
+    let mut records = read(state_dir)?;
+    let r = records.iter_mut()
+        .find(|r| r.id == id && r.kind == "file" && (r.state == "applied" || r.state == "pending"))
+        .ok_or_else(|| m!("repair_unknown"))?;
+    let (Some(target), Some(backup)) = (r.target.clone(), r.backup.clone()) else {
+        return Err(m!("no_backup"));
+    };
+    std::fs::copy(&backup, &target).map_err(|_| m!("no_backup"))?;
+    r.state = "undone".into();
+    let out = r.clone();
+    save(state_dir, &records)?;
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -644,6 +1282,15 @@ mod tests {
 
     fn at(v: &str) -> impl Fn(&str) -> Option<Installed> + '_ {
         move |_| Some(Installed { version: v.into(), source: "pacman".into() })
+    }
+
+    fn nothing(_: &str) -> Option<Installed> {
+        None
+    }
+
+    /// Only what is installed, no package database and no network.
+    fn lk<'a>(installed: &'a dyn Fn(&str) -> Option<Installed>) -> Lookups<'a> {
+        Lookups { installed, available: &nothing, issue: None }
     }
 
     /// RR1: the record is on disk before the file is touched, and says what a
@@ -736,9 +1383,9 @@ mod tests {
         let changed = std::fs::read_to_string(&file).unwrap();
         let backup = std::fs::read_to_string(root.join("app.toml.bak")).unwrap();
 
-        assert!(review(&root, &at("2.4.0-3")).is_empty(), "nothing changed, yet a flag");
+        assert!(review(&root, &lk(&at("2.4.0-3"))).is_empty(), "nothing changed, yet a flag");
 
-        let flags = |v: &str| review(&root, &at(v)).pop().map(|r| r.flags).unwrap_or_default();
+        let flags = |v: &str| review(&root, &lk(&at(v))).pop().map(|r| r.flags).unwrap_or_default();
         assert_eq!(flags("2.4.0-4"), vec![Flag::Updated { from: "2.4.0-3".into(), to: "2.4.0-4".into() }],
                    "a new pkgrel is an update and nothing more");
         let fixed = flags("2.5.0-1");
@@ -753,7 +1400,7 @@ mod tests {
 
         // Looked at, at 2.5.0-1: quiet at that version, raised again at the next.
         let id = load(&root)[0].id.clone();
-        looked_at(&root, &id, &at("2.5.0-1")).unwrap();
+        looked_at(&root, &id, &lk(&at("2.5.0-1"))).unwrap();
         assert!(flags("2.5.0-1").is_empty(), "{:?}", flags("2.5.0-1"));
         assert!(!flags("2.5.1-1").is_empty(), "an update after the look raised nothing");
 
@@ -764,16 +1411,241 @@ mod tests {
 
         // Kept again, and that is not asked about at this version any more —
         // not at every start for as long as the file stays as it is.
-        looked_at(&root, &id, &at("2.5.0-1")).unwrap();
+        looked_at(&root, &id, &lk(&at("2.5.0-1"))).unwrap();
         assert!(flags("2.5.0-1").is_empty(), "{:?}", flags("2.5.0-1"));
         std::fs::write(&file, "modeset = 1\n").unwrap();
 
         // And an undo takes the record off the list, without deleting it.
         execute("restore_backup", &json!({"file": "app.toml"}), &root, &root,
                 ctx("app", None), &at("2.5.0-1")).unwrap();
-        assert!(review(&root, &at("9.9-1")).is_empty());
+        assert!(review(&root, &lk(&at("9.9-1"))).is_empty());
         assert_eq!(load(&root)[0].state, "undone");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn ext(kind: &str, path: Option<&Path>) -> External {
+        External { kind: kind.into(), by: "an agent".into(), path: path.map(Path::to_path_buf),
+                   ..External::default() }
+    }
+
+    /// RR6: a file another tool changes is recorded around the change — a copy
+    /// before, a digest after — and a later rewrite is noticed whatever the
+    /// file's format. The copy goes back only when a person asks.
+    #[test]
+    fn a_file_changed_elsewhere_is_recorded_watched_and_can_go_back() {
+        let root = dir("rr6");
+        let state = root.join("state");
+        let file = root.join("hyprland.conf");
+        std::fs::write(&file, "monitor=,preferred,auto,1\n").unwrap();
+        let look = lk(&nothing);
+
+        let rec = begin_external(&state, ext("file", Some(&file)), &look).unwrap();
+        assert_eq!(rec.state, "pending");
+        assert!(rec.reversible);
+        assert_eq!(std::fs::read_to_string(rec.backup.as_deref().unwrap()).unwrap(),
+                   "monitor=,preferred,auto,1\n", "the copy is not what was there before");
+        assert!(review(&state, &look).is_empty(), "a change not yet made was reviewed");
+
+        std::fs::write(&file, "monitor=,preferred,auto,1.25\n").unwrap();
+        let done = finish_external(&state, &rec.id).unwrap();
+        assert_eq!(done.state, "applied");
+        assert_eq!(done.file_sha256.as_deref(), Some(sha256_hex(b"monitor=,preferred,auto,1.25\n").as_str()));
+        assert!(review(&state, &look).is_empty(), "the change as made was flagged");
+
+        // An update writes the file again.
+        std::fs::write(&file, "monitor=,preferred,auto,auto\n").unwrap();
+        let found = review(&state, &look);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].flags, vec![Flag::FileChanged]);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "monitor=,preferred,auto,auto\n",
+                   "looking again touched the file");
+
+        restore_external(&state, &rec.id).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "monitor=,preferred,auto,1\n");
+        assert_eq!(load(&state)[0].state, "undone");
+        assert!(review(&state, &look).is_empty());
+
+        // After the fact: nothing to go back to, and it says so.
+        let late = add_external(&state, ext("file", Some(&file)), &look).unwrap();
+        assert!(!late.reversible && late.backup.is_none());
+        assert!(restore_external(&state, &late.id).is_err());
+
+        for (bad, why) in [
+            (External { by: String::new(), ..ext("file", Some(&file)) }, "by"),
+            (ext("script", Some(&file)), "kind"),
+            (ext("file", None), "path"),
+            (ext("file", Some(&root.join("missing.conf"))), "missing path"),
+            (ext("package", None), "package"),
+            (ext("overlay", Some(&file)), "original"),
+            (External { note: Some("x".repeat(3000)), ..ext("file", Some(&file)) }, "note"),
+        ] {
+            assert!(add_external(&state, bad, &look).is_err(), "accepted without {why}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// RR7: a package built or pinned locally is flagged when the official one
+    /// moves on — also when the local build is versioned 9999 so that nothing
+    /// ever outranks it, which is the common way of holding a package back.
+    #[test]
+    fn a_package_held_back_is_flagged_when_the_official_one_moves_on() {
+        let root = dir("rr7");
+        let offered = std::cell::RefCell::new("0.45.0-1".to_string());
+        let available = |_: &str| Some(Installed { version: offered.borrow().clone(), source: "pacman".into() });
+        let installed = at("9999-1");
+        let look = Lookups { installed: &installed, available: &available, issue: None };
+
+        let mut e = ext("package", None);
+        e.upstream.package = Some("hyprland".into());
+        let rec = add_external(&root, e, &look).unwrap();
+        assert_eq!(rec.installed.as_ref().unwrap().version, "9999-1");
+        assert_eq!(rec.original.as_ref().unwrap().version.as_deref(), Some("0.45.0-1"));
+        assert!(review(&root, &look).is_empty(), "nothing moved, yet a flag");
+
+        *offered.borrow_mut() = "0.45.2-1".into();
+        let found = review(&root, &look);
+        assert_eq!(found[0].flags, vec![Flag::Frozen { installed: "9999-1".into(), available: "0.45.2-1".into() }]);
+
+        // Without a recorded offer, a newer official version is enough.
+        let installed = at("0.44.0-1");
+        let look = Lookups { installed: &installed, available: &available, issue: None };
+        let mut e = ext("package", None);
+        e.upstream.package = Some("waybar".into());
+        let mut rec = external_record(e, "x".into(), &look).unwrap();
+        rec.original = None;
+        let (flags, _) = flags_for(&rec, &look);
+        assert!(flags.contains(&Flag::Frozen { installed: "0.44.0-1".into(), available: "0.45.2-1".into() }), "{flags:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// RR8: a copy that overrides a component is flagged when the component
+    /// changes underneath it — a folder's files, or its package's version.
+    #[test]
+    fn an_override_is_flagged_when_what_it_overrides_changes() {
+        let root = dir("rr8");
+        let official = root.join("official/plugin");
+        let copy = root.join("mine/plugin");
+        for d in [&official, &copy] {
+            std::fs::create_dir_all(d.join("lib")).unwrap();
+            std::fs::write(d.join("init.lua"), "return 1\n").unwrap();
+            std::fs::write(d.join("lib/util.lua"), "return 2\n").unwrap();
+        }
+        let version = std::cell::RefCell::new("1.0-1".to_string());
+        let installed = |_: &str| Some(Installed { version: version.borrow().clone(), source: "pacman".into() });
+        let look = lk(&installed);
+        let mut e = ext("overlay", Some(&copy));
+        e.original_path = Some(official.clone());
+        e.original_package = Some("some-plugin".into());
+        let rec = add_external(&root.join("state"), e, &look).unwrap();
+        let orig = rec.original.clone().unwrap();
+        assert!(orig.sha256.is_some() && orig.version.as_deref() == Some("1.0-1"), "{orig:?}");
+        let state = root.join("state");
+        assert!(review(&state, &look).is_empty());
+
+        std::fs::write(official.join("lib/util.lua"), "return 3\n").unwrap();
+        assert_eq!(review(&state, &look)[0].flags, vec![Flag::OriginalChanged]);
+        std::fs::write(official.join("lib/util.lua"), "return 2\n").unwrap();
+        assert!(review(&state, &look).is_empty(), "the same files, and still flagged");
+
+        *version.borrow_mut() = "1.1-1".into();
+        assert_eq!(review(&state, &look)[0].flags, vec![Flag::OriginalChanged]);
+        // And the copy itself, edited again.
+        std::fs::write(copy.join("init.lua"), "return 9\n").unwrap();
+        assert!(review(&state, &look)[0].flags.contains(&Flag::FileChanged));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// RR9: an upstream issue is asked about only when the person chose to
+    /// watch it, at most once a day, never again once settled, and never
+    /// offline; a release found by code becomes the version compared.
+    #[test]
+    fn a_watched_issue_is_asked_seldom_and_its_release_is_compared() {
+        let root = dir("rr9");
+        let file = root.join("app.conf");
+        std::fs::write(&file, "x = 1\n").unwrap();
+        let calls = std::cell::Cell::new(0);
+        let answer = std::cell::RefCell::new(IssueState { state: "merged".into(), is_pull: true,
+                                                          ..IssueState::default() });
+        let ask = |_: &str| { calls.set(calls.get() + 1); answer.borrow().clone() };
+        let installed = at("2.1.0-1");
+        let look = Lookups { installed: &installed, available: &nothing, issue: Some(&ask) };
+
+        let mut e = ext("file", Some(&file));
+        e.upstream.package = Some("app".into());
+        e.upstream.issue = Some("https://gitlab.com/o/r/-/issues/5".into());
+        assert!(add_external(&root, External { watch_issue: true, ..e.clone() }, &look).is_err(),
+                "a link nobody can look up was watched");
+        e.upstream.issue = Some("https://github.com/o/r/pull/5".into());
+        let rec = add_external(&root, e, &look).unwrap();
+
+        review(&root, &look);
+        assert_eq!(calls.get(), 0, "an issue nobody chose to watch was asked about");
+
+        set_watch(&root, &rec.id, true).unwrap();
+        let found = review(&root, &look);
+        assert_eq!(calls.get(), 1);
+        assert_eq!(found[0].flags, vec![Flag::PrMerged]);
+        review(&root, &look);
+        assert_eq!(calls.get(), 1, "asked twice within a day");
+
+        // A day later the release is out, and it is what the version is compared with.
+        let mut records = load(&root);
+        records[0].issue_state.as_mut().unwrap().checked_at -= ISSUE_RECHECK_SECS;
+        save(&root, &records).unwrap();
+        answer.borrow_mut().released_in = Some("v2.1.0".into());
+        let found = review(&root, &look);
+        assert_eq!(calls.get(), 2);
+        assert!(found[0].flags.contains(&Flag::ReleasedIn { tag: "v2.1.0".into() }), "{:?}", found[0].flags);
+        assert!(found[0].flags.contains(&Flag::UpstreamSaysFixed { fixed_in: "2.1.0".into(), installed: "2.1.0-1".into() }),
+                "{:?}", found[0].flags);
+
+        // Settled: never asked again. Offline: never asked, nothing written.
+        let mut records = load(&root);
+        records[0].issue_state.as_mut().unwrap().checked_at = 0;
+        save(&root, &records).unwrap();
+        review(&root, &look);
+        assert_eq!(calls.get(), 2, "a settled answer was asked again");
+        let before = std::fs::read_to_string(root.join(FILE)).unwrap();
+        review(&root, &lk(&installed));
+        assert_eq!(std::fs::read_to_string(root.join(FILE)).unwrap(), before);
+
+        set_watch(&root, &rec.id, false).unwrap();
+        assert!(load(&root)[0].issue_state.is_none(), "stopping kept what GitHub said");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A list written before these fields existed is still read.
+    #[test]
+    fn an_older_list_is_read() {
+        let root = dir("rr-old");
+        std::fs::write(root.join(FILE), r#"{"records":[{"id":"1-1","at":1,"action":"set_config_key",
+            "params":{"file":"a.toml","key":"k","value":"v"},"reversible":true,"subject":"x",
+            "state":"applied"}]}"#).unwrap();
+        let recs = load(&root);
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].kind, "action");
+        assert!(!recs[0].watch_issue);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_tag_is_read_as_the_version_it_names() {
+        assert_eq!(tag_version("v2.1.0").as_deref(), Some("2.1.0"));
+        assert_eq!(tag_version("release-0.45.0").as_deref(), Some("0.45.0"));
+        assert_eq!(tag_version("vendor").as_deref(), Some("vendor"), "a word starting with v lost its v");
+        assert_eq!(tag_version("v 1"), None);
+    }
+
+    /// The Windows side of "which version is installed": the uninstall entries.
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_program_s_version_is_read_from_its_uninstall_entry() {
+        // Something every Windows machine that runs this suite has.
+        let found = ["Git", "PODSHL", "Microsoft-Edge", "Microsoft-Edge-WebView2-Runtime"]
+            .iter().find_map(|p| installed_version(p));
+        assert!(found.as_ref().is_some_and(|i| i.source == "windows" && version_ok(&i.version)),
+                "no uninstall entry answered: {found:?}");
+        assert_eq!(installed_version("PodshlNoSuchProgram"), None);
     }
 
     /// RR4: pacman's ordering, including the cases a string comparison or a

@@ -114,10 +114,11 @@ assembled, never edited:
 
 copies `packaging/omarchy-plugin/`, `LICENSE`, and the AUR package's `PKGBUILD` and desktop
 entry into `package/`, and refuses when the PKGBUILD's version is not the
-client's. `install-client.sh` installs `podshl-bin` from the AUR when it is
-there and otherwise builds that `package/PKGBUILD` with makepkg — the AUR closed
-registration in September 2026, so until an account exists this is the path
-every plugin install takes. **So the plugin repository has to be republished
+client's. `install-client.sh` builds that `package/PKGBUILD` with makepkg. It
+used to ask the AUR first and fall back to this; the AUR closed registration in
+September 2026, so that question had one answer and the other branch was one
+nobody could reach or test. When registration reopens, that is the line to put
+back. **So the plugin repository has to be republished
 with every client release**, or its PKGBUILD points at the previous one.
 
 Before publishing, on an Omarchy desktop: `omarchy plugin validate`, then add it

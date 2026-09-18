@@ -402,6 +402,69 @@ def _():
     sv("sv_an_action_s_upstream_is_checked_as_text")
 
 
+@case("RR6", "A file changed by another tool is recorded, watched and can go back [rust]")
+def _():
+    cargo("repair::tests::a_file_changed_elsewhere_is_recorded_watched_and_can_go_back")
+
+
+@case("RR7", "A package held back is flagged when the official one moves on [rust]")
+def _():
+    cargo("repair::tests::a_package_held_back_is_flagged_when_the_official_one_moves_on")
+
+
+@case("RR8", "An override is flagged when what it overrides changes [rust]")
+def _():
+    cargo("repair::tests::an_override_is_flagged_when_what_it_overrides_changes")
+
+
+@case("RR9", "A watched issue is asked seldom, and a merged fix is followed to its release [rust]")
+def _():
+    cargo("repair::tests::a_watched_issue_is_asked_seldom_and_its_release_is_compared")
+    cargo("upstream::tests::a_merged_pull_request_is_followed_to_the_release_that_contains_it")
+    cargo("upstream::tests::only_a_github_issue_or_pull_link_is_looked_up")
+
+
+@case("RR10", "The review after updates runs the review and nothing else [rust]")
+def _():
+    cargo("repairs_cli::tests::the_hook_runs_the_review_and_nothing_else")
+    cargo("repairs_cli::tests::the_command_line_says_what_it_did_not_understand")
+
+
+@case("RR11", "One record is said in the singular, in every language [rust]")
+def _():
+    cargo("repairs_cli::tests::one_record_is_said_in_the_singular_in_every_language")
+
+
+@case("RR12", "The notification is PODSHL's own, and says so [rust]")
+def _():
+    cargo("repairs_cli::tests::the_windows_toast_is_shown_under_podshls_own_identity")
+
+
+@case("RR16", "A record can be removed, and almost nothing can remove one [rust]")
+def _():
+    cargo("repairs_cli::tests::removing_a_record_needs_the_privilege_and_a_person")
+    cargo("repairs_cli::tests::a_forgotten_record_leaves_a_stub_and_takes_its_copy")
+    # As a process, because the property is about what the command refuses.
+    cargo("forget_refuses_when_nobody_is_there_whatever_the_privilege", target="cli")
+
+
+@case("RR14", "What the repair record did is in the log [rust]")
+def _():
+    cargo("what_the_repair_record_did_is_in_the_log", target="cli")
+
+
+@case("RR15", "The uninstaller takes back what was registered outside the folder [rust]")
+def _():
+    cargo("repairs_cli::tests::the_uninstaller_takes_back_what_was_registered_outside_the_folder")
+
+
+@case("RR13", "The one repairs command that writes a file says which [rust]")
+def _():
+    # As a process. A version of this beside the code built the sentence
+    # itself, and passed with the printing taken out again.
+    cargo("restore_says_which_file_it_put_back", target="cli")
+
+
 @case("A12", "The agent fixes it, the fix holds, and the undo puts it back [rust]")
 def _():
     cargo("actions::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")

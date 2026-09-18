@@ -49,11 +49,13 @@ mod provenance;
 mod reads;
 mod redact;
 mod repair;
+mod repairs_cli;
 mod report;
 mod trust;
 // Source-level checks only; nothing here ships in the binary.
 #[cfg(test)]
 mod ui_contract;
+mod upstream;
 mod vendors;
 mod wire;
 
@@ -882,17 +884,51 @@ async fn execute(action: String, params: Value, subject: Option<String>, upstrea
     .map_err(|e| e.to_string())?
 }
 
-/// The changes this client made that a person should look at again, and why.
-/// Reads the package manager and the changed files; changes nothing.
+/// The changes that a person should look at again, and why — made by this
+/// client or registered by another tool. Reads the package manager and the
+/// changed files, and asks GitHub only about issues the person chose to watch;
+/// changes nothing on the machine. Off the window's thread, for that lookup.
 #[tauri::command]
-fn repairs_review(state: State<'_, AppState>) -> Value {
-    json!(repair::review(&state.root, &repair::installed_version))
+async fn repairs_review(state: State<'_, AppState>) -> Result<Value, String> {
+    let root = state.root.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut out = json!(repair::review(&root, &repairs_cli::live_lookups(false)));
+        // The window is photographed; the path is shown without the account name.
+        for item in out.as_array_mut().into_iter().flatten() {
+            let shown = item["record"]["target"].as_str()
+                .map(|t| reads::display_path(std::path::Path::new(t)));
+            if let (Some(shown), Some(rec)) = (shown, item["record"].as_object_mut()) {
+                rec.insert("target_shown".into(), json!(shown));
+            }
+        }
+        out
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// The person looked at a change and keeps it, at the version installed now.
 #[tauri::command]
 fn repair_looked_at(id: String, state: State<'_, AppState>) -> Result<(), String> {
-    repair::looked_at(&state.root, &id, &repair::installed_version)
+    repair::looked_at(&state.root, &id, &repair::Lookups::offline())?;
+    clientlog::line(&format!("repair kept {id}"));
+    Ok(())
+}
+
+/// The person's switch for asking GitHub about a record's upstream issue.
+#[tauri::command]
+fn repair_watch(id: String, on: bool, state: State<'_, AppState>) -> Result<(), String> {
+    repair::set_watch(&state.root, &id, on)?;
+    clientlog::line(&format!("repair watch {id} {}", if on { "on" } else { "off" }));
+    Ok(())
+}
+
+/// Put back the copy kept when another tool announced a change to a file.
+#[tauri::command]
+fn repair_restore(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let r = repair::restore_external(&state.root, &id)?;
+    clientlog::line(&format!("repair restore {id}: {}", r.target.as_deref().unwrap_or("?")));
+    Ok(())
 }
 
 /// Known without asking and without reading — shown, not hidden. The operating
@@ -1141,10 +1177,11 @@ fn run_subcommand(name: &str) -> Result<(), String> {
             Ok(())
         }
         "--help" | "-h" | "help" => {
-            println!("podshl-client [doctor|demo|invoke <command> [json]|--version]\n");
+            println!("podshl-client [doctor|demo|repairs …|invoke <command> [json]|--version]\n");
             println!("  (no argument)  the window");
             println!("  doctor         what this client can do on this machine");
             println!("  demo           the whole argument in five acts, against live services");
+            println!("  repairs        recorded local fixes: review, add, install-hook (repairs help)");
             println!("  invoke         one of the window's commands, without the window");
             println!("  --version      which version this is");
             Ok(())
@@ -1240,8 +1277,32 @@ fn issue_report(subject: String, problem: String, facts: Value, stated: Vec<Stri
 }
 
 
+/// A release build on Windows is a window program, and a window program has no
+/// console: everything a subcommand prints would go nowhere. Borrowing the
+/// console of whoever started it makes `podshl-client repairs review` in a
+/// terminal say what it found.
+#[cfg(windows)]
+fn attach_console() {
+    use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
 fn main() {
     if let Some(arg) = std::env::args().nth(1) {
+        #[cfg(windows)]
+        attach_console();
+        if arg == "repairs" {
+            exit_quietly_on_a_closed_pipe();
+            match repairs_cli::run(std::env::args().skip(2).collect()) {
+                Ok(code) => std::process::exit(code),
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        }
         if let Err(e) = run_subcommand(&arg) {
             eprintln!("{e}");
             std::process::exit(1);
@@ -1327,7 +1388,7 @@ fn main() {
             facts_as_sent,
             published_card, send_published_report, verify_log_entry,
             provenance_check, issue_report, log_line,
-            repairs_review, repair_looked_at
+            repairs_review, repair_looked_at, repair_watch, repair_restore
         ])
         .run(tauri::generate_context!())
         .expect("PODSHL could not start");

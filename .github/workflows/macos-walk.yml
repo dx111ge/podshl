@@ -1,0 +1,166 @@
+# The client, *run* on macOS — not only built.
+#
+# `macos.yml` builds the app on a hosted runner and attaches it to a release.
+# It has never started what it builds, so until now the macOS client was
+# published having never executed anywhere: `L4` and `P5` are `open`, and the
+# LaunchAgent that `repairs install-hook` writes said "not tested: no Mac
+# available" in REPAIRS.md.
+#
+# A hosted runner is a real Mac. It is not a *desktop* — nobody is logged in at
+# a screen — so this walks what does not need one and says plainly, in the job
+# summary, what it therefore cannot claim:
+#
+#   * it cannot show a notification banner appearing. `osascript` is invoked and
+#     its exit code read; that the banner is drawn is not proved here.
+#   * it cannot walk the window (`L4`) or a TCC prompt (`P5`). Both need a
+#     person in front of a screen, and both stay open.
+#
+# There is no macOS container and there cannot be one: containers share the
+# host kernel, and macOS needs Apple's. Running macOS in a VM on non-Apple
+# hardware is against Apple's licence, which is not a basis this project will
+# claim a walk from.
+name: macOS walk
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'client-rs/src/repairs_cli.rs'
+      - 'client-rs/src/repair.rs'
+      - 'client-rs/src/upstream.rs'
+      - '.github/workflows/macos-walk.yml'
+
+jobs:
+  walk:
+    name: The repair record, on a real Mac
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
+
+      - name: Build the client
+        working-directory: client-rs
+        run: cargo build --release --bin podshl-client
+
+      # The parts of the suite that need no counterparty and no network. The
+      # rest need services this runner does not have, and a job that started
+      # them would be testing the services.
+      - name: The cases, on macOS
+        working-directory: client-rs
+        run: |
+          set -euo pipefail
+          cargo test --release --bin podshl-client repair
+          cargo test --release --bin podshl-client upstream
+          cargo test --release --test cli
+
+      - name: It runs at all
+        run: |
+          set -euo pipefail
+          B=client-rs/target/release/podshl-client
+          file "$B"
+          "$B" --version
+          "$B" repairs help | head -3
+
+      - name: A fix is recorded, flagged, and put back
+        run: |
+          set -euo pipefail
+          B="$PWD/client-rs/target/release/podshl-client"
+          export VS_ROOT="$RUNNER_TEMP/state" PODSHL_LOG="$RUNNER_TEMP/client.log"
+          mkdir -p "$VS_ROOT"
+          printf 'scale=1\n' > "$RUNNER_TEMP/app.conf"
+          id=$("$B" repairs begin --kind file --by "the walk" --path "$RUNNER_TEMP/app.conf")
+          printf 'scale=1.25\n' >> "$RUNNER_TEMP/app.conf"
+          "$B" repairs done "$id"
+          # Nothing has moved yet.
+          "$B" repairs review --offline
+          # ...and now something else rewrites it.
+          printf 'scale=1\n' > "$RUNNER_TEMP/app.conf"
+          set +e; "$B" repairs review --offline; code=$?; set -e
+          [ "$code" = 3 ] || { echo "a changed file did not exit 3 (got $code)"; exit 1; }
+          "$B" repairs review --offline | grep -q . || { echo "review said nothing"; exit 1; }
+          "$B" repairs restore "$id" | grep -q "app.conf" \
+            || { echo "restore did not name the file"; exit 1; }
+          grep -q 'scale=1$' "$RUNNER_TEMP/app.conf" || { echo "the copy was not put back"; exit 1; }
+          grep -q "repairs restore" "$PODSHL_LOG" || { echo "nothing was logged"; exit 1; }
+
+      # The `package` kind on macOS reads `brew list --versions` for what is
+      # installed and `brew info` for what is offered. brew is on the runner.
+      - name: A package is read through brew
+        run: |
+          set -euo pipefail
+          B="$PWD/client-rs/target/release/podshl-client"
+          export VS_ROOT="$RUNNER_TEMP/state2"
+          mkdir -p "$VS_ROOT"
+          pkg=$(brew list --formula | head -1)
+          echo "recording $pkg, which brew says is $(brew list --versions "$pkg")"
+          "$B" repairs add --kind package --by "the walk" --package "$pkg"
+          "$B" repairs list --json > "$RUNNER_TEMP/pkg.json"
+          cat "$RUNNER_TEMP/pkg.json"
+          # Not a heredoc: inside a YAML block the terminator would be indented
+          # and the heredoc would never close.
+          python3 -c 'import json,sys; rec=json.load(open(sys.argv[1]))[0]; got=rec.get("installed") or {}; assert got.get("source")=="brew", f"the version did not come from brew: {rec}"; assert got.get("version"), f"no installed version was read: {rec}"; print("read from brew:", got)' "$RUNNER_TEMP/pkg.json"
+
+      - name: The LaunchAgent is written, loaded, run and taken away
+        run: |
+          set -euo pipefail
+          B="$PWD/client-rs/target/release/podshl-client"
+          export VS_ROOT="$RUNNER_TEMP/state"
+          plist="$HOME/Library/LaunchAgents/de.podshl.repairs.plist"
+
+          echo "--- what it says it will do ---"
+          "$B" repairs install-hook --print
+          "$B" repairs install-hook --print | grep -q "LaunchAgents/de.podshl.repairs.plist" \
+            || { echo "it did not choose the LaunchAgent"; exit 1; }
+
+          echo "--- doing it ---"
+          "$B" repairs install-hook
+          test -f "$plist" || { echo "no plist at $plist"; exit 1; }
+          plutil -lint "$plist"
+          echo "--- what launchd was handed ---"
+          cat "$plist"
+
+          echo "--- launchd knows it ---"
+          launchctl list | grep de.podshl.repairs \
+            || { echo "launchctl does not list the agent"; exit 1; }
+
+          echo "--- running it the way the timer would ---"
+          # Nothing is flagged in this state dir, so the review exits 0.
+          launchctl start de.podshl.repairs
+          sleep 5
+          launchctl list de.podshl.repairs || true
+
+          echo "--- taking it away ---"
+          "$B" repairs remove-hook
+          test ! -f "$plist" || { echo "the plist is still there"; exit 1; }
+          launchctl list | grep -q de.podshl.repairs \
+            && { echo "launchd still lists the agent"; exit 1; } || true
+          echo "the agent is gone"
+
+      # Invoked, and its exit code read. That a banner is *drawn* needs a
+      # logged-in session and is not claimed.
+      - name: The notification is invoked without error
+        run: |
+          set -euo pipefail
+          osascript -e 'display notification "walk" with title "PODSHL"' && echo "osascript exit 0" \
+            || { echo "osascript refused; on a runner this may be the missing session, not the code"; exit 1; }
+
+      - name: What this did and did not prove
+        if: always()
+        run: |
+          {
+            echo "### Walked on a real Mac (macos-14)"
+            echo
+            echo "* the client starts, and \`repair\`, \`upstream\` and the command-line cases pass here"
+            echo "* a fix is recorded, a later edit is flagged (exit 3), \`restore\` puts the copy back and says so, and the log has it"
+            echo "* a package's installed version is read through \`brew\`"
+            echo "* \`install-hook\` chooses the LaunchAgent, launchd loads it, \`remove-hook\` takes it away"
+            echo "* \`osascript\` is invoked and returns 0"
+            echo
+            echo "### Not proved here — a runner is a Mac, not a desktop"
+            echo
+            echo "* that a notification **banner appears**: no logged-in session"
+            echo "* the window (\`L4\`) and a TCC prompt (\`P5\`): both need a person at a screen"
+          } >> "$GITHUB_STEP_SUMMARY"

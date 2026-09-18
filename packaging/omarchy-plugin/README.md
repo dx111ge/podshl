@@ -23,10 +23,11 @@ this machine yet:
    run: `bash ~/.config/omarchy/plugins/podshl.diagnose/install-client.sh`,
    a short script that came with this plugin — read it first if you like;
 2. **Install** opens Omarchy's floating terminal on that script. It installs
-   the pacman package `podshl-bin`: from the AUR when the package is there,
-   and until then from the same PKGBUILD, shipped in `package/`, built with
-   `makepkg`, which checks the downloaded release against the sums in it. The
-   package manager asks for your password there;
+   the pacman package `podshl-bin` from the PKGBUILD shipped in `package/`,
+   built with `makepkg`, which checks the downloaded release against the sums
+   in it. `podshl-bin` is not in the AUR: registration there has been closed
+   since before the first release. The package manager asks for your password
+   there;
 3. when it succeeds, PODSHL starts. When it does not, the terminal says
    *PODSHL was not installed* above Omarchy's closing "Done!" prompt, which
    Omarchy shows whatever happened.

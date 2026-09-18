@@ -24,6 +24,26 @@
 !macro NSIS_HOOK_POSTUNINSTALL
   Delete "$INSTDIR\podshl-elevate.exe"
   RMDir "$INSTDIR"
+  ; Two things the client registers *outside* its own folder, which therefore
+  ; outlive it unless they are named here. Neither is the person's data, so
+  ; neither waits on the "delete application data" box — they are this
+  ; program's marks on the system, and the program is going.
+  ;
+  ;   * the daily task `repairs install-hook` creates. Left behind, Windows
+  ;     goes on running it once a day against an executable that is no longer
+  ;     there. `remove-hook` before uninstalling would have taken it, and
+  ;     nobody uninstalling a program thinks to do that first.
+  ;   * the notification identity `de.podshl.client`, which is what makes a
+  ;     toast say PODSHL rather than "Windows PowerShell". One key in the
+  ;     person's own hive, which would otherwise sit in their notification
+  ;     settings naming a program they removed.
+  ;
+  ; Not on an update: the new version wants both of them.
+  ${If} $UpdateMode <> 1
+    nsExec::Exec 'schtasks /Delete /F /TN "PODSHL\Repairs review"'
+    Pop $0
+    DeleteRegKey HKCU "Software\Classes\AppUserModelId\de.podshl.client"
+  ${EndIf}
   ${If} $DeleteAppDataCheckboxState = 1
   ${AndIf} $UpdateMode <> 1
     RMDir /r "$APPDATA\podshl"

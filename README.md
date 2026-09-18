@@ -106,6 +106,14 @@ and never mixed with the diagnoses. Nothing is designed yet.
   things at all — state a finding, set a key in a configuration file, or restore
   the copy it made — because a project may choose an operation and never invent
   one.
+* **A fix that is still on your machine is not forgotten.** Local fixes go
+  stale in ways nobody notices: an update overwrites one, the upstream bug gets
+  fixed and the workaround is now the problem, a copied plugin keeps running
+  while the packaged one moves on. Every change is written down before it is
+  made, and changes made by *other* tools — an agent, a script, you — can be
+  registered too. After an update, or once a day, the client says which ones
+  want another look and why; it undoes nothing by itself.
+  [REPAIRS.md](docs/REPAIRS.md)
 
 ## How it works
 
@@ -164,7 +172,7 @@ How the release packages are built, and what each one has been run on:
 | `deploy/` | Docker Compose, firewall and backup for running an operator |
 | `examples/engram/` | A real project taken from nothing to a dashboard, with screenshots and screencasts |
 | `packaging/` | The Arch package `podshl-bin` and the Omarchy plugin, whose own repository is assembled from here |
-| `docs/` | Installing, onboarding, the operator, releasing, the test cases, and [FINDINGS.md](docs/FINDINGS.md) — what was measured before this was built, and what was discarded because of it |
+| `docs/` | Installing, onboarding, the operator, releasing, the test cases, [REPAIRS.md](docs/REPAIRS.md) — keeping track of local fixes — and [FINDINGS.md](docs/FINDINGS.md), what was measured before this was built and what was discarded because of it |
 | `scripts/` | `build/`, `release/`, `ci/`, `walk/` (driving the real window) and `dev/` (fixtures and measurements) |
 | `run_testcases.py` | Every case in `docs/TESTCASES*.md` marked `auto`, by id |
 

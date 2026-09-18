@@ -118,3 +118,172 @@ fn an_unknown_subcommand_is_refused_by_name() {
         "the refusal does not name what is possible: {err}"
     );
 }
+
+/// RR13: `restore` is the one repairs command that writes to disk, and it said
+/// nothing at all — exit 0, and a file quietly rewritten.
+///
+/// **As a process, and that is the point.** The first version of this test
+/// lived beside the code and built the sentence itself: it asserted that
+/// `m_repair_cli_restored` exists and formats a path into it. That passes
+/// whether or not `restore` ever prints it — and it did pass, with the
+/// printing removed again. What has to be observed is the command's own
+/// output, which means running the command.
+#[test]
+fn restore_says_which_file_it_put_back() {
+    let dir = std::env::temp_dir().join(format!("podshl-restore-said-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("could not make a state directory");
+    let file = dir.join("settings.ini");
+    std::fs::write(&file, "scale=1\n").unwrap();
+
+    let repairs = |args: &[&str]| {
+        let out = bin().env("VS_ROOT", &dir).arg("repairs").args(args)
+            .output().expect("could not start the binary");
+        (out.status.code(), String::from_utf8_lossy(&out.stdout).into_owned(),
+         String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+
+    let (code, said, err) = repairs(&["begin", "--kind", "file", "--by", "walk",
+                                      "--path", &file.display().to_string()]);
+    assert_eq!(code, Some(0), "begin was refused: {err}");
+    let id = said.trim().to_string();
+    assert!(!id.is_empty(), "begin printed no record id");
+
+    std::fs::write(&file, "scale=1.25\n").unwrap();
+    let (code, _, err) = repairs(&["done", &id]);
+    assert_eq!(code, Some(0), "done was refused: {err}");
+
+    let (code, said, err) = repairs(&["restore", &id]);
+    assert_eq!(code, Some(0), "restore was refused: {err}");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "scale=1\n",
+               "restore did not put the copy back");
+    assert!(!said.trim().is_empty(),
+            "restore rewrote the file and printed nothing at all");
+    assert!(said.contains("settings.ini"),
+            "restore does not name the file it put back: {said:?}");
+
+    // The two that only keep the record straight stay quiet — the point is
+    // that the one which touches a file is distinguishable from them.
+    let (_, quiet, _) = repairs(&["keep", &id]);
+    assert!(quiet.trim().is_empty(), "keep now prints too: {quiet:?}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RR14: what the repair record did is in the log, including the one thing it
+/// does over the network.
+///
+/// The feature wrote nothing at all. That matters most where it runs
+/// unattended: the hook reviews after every update behind `|| true`, so a run
+/// that found something, asked GitHub about it and notified had left no trace
+/// but an exit code the hook throws away. And watching is the only part of
+/// this client that talks to GitHub — a person told in a panel that each check
+/// tells GitHub what this computer follows should be able to see afterwards
+/// that it happened, without having been at the window.
+#[test]
+fn what_the_repair_record_did_is_in_the_log() {
+    let dir = std::env::temp_dir().join(format!("podshl-repairlog-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("client.log");
+    let file = dir.join("settings.ini");
+    std::fs::write(&file, "scale=1\n").unwrap();
+
+    let repairs = |args: &[&str]| {
+        let out = bin().env("VS_ROOT", &dir).env("PODSHL_LOG", &log)
+            .arg("repairs").args(args).output().expect("could not start the binary");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let id = repairs(&["begin", "--kind", "file", "--by", "log walk",
+                       "--path", &file.display().to_string()]).trim().to_string();
+    std::fs::write(&file, "scale=1.25\n").unwrap();
+    repairs(&["done", &id]);
+    std::fs::write(&file, "scale=2\n").unwrap();
+    // `--offline` so the case asks nobody: what is checked here is that the
+    // review says what it concluded, not what GitHub answers today.
+    repairs(&["review", "--offline"]);
+    repairs(&["restore", &id]);
+
+    let text = std::fs::read_to_string(&log).expect("nothing was logged at all");
+    for want in ["repairs begin", "repairs done", "repairs review", "repairs restore"] {
+        assert!(text.contains(want), "the log does not say {want:?}:\n{text}");
+    }
+    assert!(text.contains(&id), "the log names no record id:\n{text}");
+    // The flag is named by its own name, not by a translated sentence.
+    assert!(text.contains("file_changed"), "the review logged no flag:\n{text}");
+    assert!(text.contains("1 want another look") || text.contains("want another look"),
+            "the review logged no conclusion:\n{text}");
+    // A log is the thing people paste into an issue, so it is anonymised like
+    // a report. The account name must not be in it.
+    if let Ok(user) = std::env::var("USERNAME").or_else(|_| std::env::var("USER")) {
+        if user.len() > 2 {
+            assert!(!text.contains(&user), "the log carries the account name:\n{text}");
+        }
+    }
+    // `PODSHL_LOG=0` is off, and off means nothing written.
+    let off = dir.join("off.log");
+    let _ = bin().env("VS_ROOT", &dir).env("PODSHL_LOG", "0")
+        .args(["repairs", "review", "--offline"]).output();
+    assert!(!off.exists());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RR16: `forget` never removes a record unattended.
+///
+/// **The one property worth asserting against the real process**, and the one
+/// that does not depend on how the machine running it is set up. A test is not
+/// privileged on a developer's Windows box and is root in the CI container, so
+/// *which* gate refuses differs — that both of them cannot be got past by
+/// something with no person behind it does not.
+///
+/// This is what the record is for. The agents, skills and scripts it keeps
+/// track of run as the person; a removal they could perform is a removal the
+/// thing being recorded could perform, and the entry would be worth nothing
+/// the moment it mattered.
+#[test]
+fn forget_refuses_when_nobody_is_there_whatever_the_privilege() {
+    let dir = std::env::temp_dir().join(format!("podshl-forget-cli-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("app.conf");
+    std::fs::write(&file, "before\n").unwrap();
+
+    let repairs = |args: &[&str]| {
+        let out = bin().env("VS_ROOT", &dir).arg("repairs").args(args)
+            .output().expect("could not start the binary");
+        (out.status.code(), String::from_utf8_lossy(&out.stdout).into_owned(),
+         String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+
+    let (_, id, _) = repairs(&["begin", "--kind", "file", "--by", "an agent",
+                               "--path", &file.display().to_string()]);
+    let id = id.trim().to_string();
+    std::fs::write(&file, "after\n").unwrap();
+    repairs(&["done", &id]);
+
+    // stdin here is not a terminal, and a test process is not elevated on
+    // Windows. Either way: refused, by name, and the record survives.
+    let (code, _, err) = repairs(&["forget", &id]);
+    assert_eq!(code, Some(1), "forget did not refuse: {err}");
+    assert!(!err.trim().is_empty(), "forget refused without saying why");
+
+    let ledger = std::fs::read_to_string(dir.join("repairs.json")).unwrap();
+    assert!(ledger.contains(&id), "the record was removed with nobody there:\n{ledger}");
+    assert!(!ledger.contains("\"forgotten\""), "the record was removed with nobody there:\n{ledger}");
+
+    // Feeding it the id on stdin is not being there either: stdin is a pipe.
+    let piped = bin().env("VS_ROOT", &dir).args(["repairs", "forget", &id])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().expect("could not start the binary");
+    let mut piped = piped;
+    use std::io::Write as _;
+    if let Some(mut si) = piped.stdin.take() { let _ = si.write_all(format!("{id}\n").as_bytes()); }
+    let out = piped.wait_with_output().expect("could not wait");
+    assert!(!out.status.success(), "forget accepted an id typed by a pipe");
+    let ledger = std::fs::read_to_string(dir.join("repairs.json")).unwrap();
+    assert!(!ledger.contains("\"forgotten\""), "a pipe removed a record:\n{ledger}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
