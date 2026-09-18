@@ -1,6 +1,6 @@
 [package]
 name = "podshl-client"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 # Two programs: the client, and the helper that does what needs administrator
 # rights (`src/bin/podshl-elevate.rs`). `cargo run` means the client.

@@ -11,7 +11,7 @@
 
 pkgname=podshl-bin
 _bin=podshl-client
-pkgver=0.1.5
+pkgver=0.1.6
 pkgrel=1
 pkgdesc="Ask the projects you run what is wrong with your machine; every reading consented, nothing uploaded without asking"
 arch=('x86_64')

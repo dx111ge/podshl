@@ -41,8 +41,11 @@ refuses an unsigned downloaded app until the quarantine attribute is removed
 who built something, and there is no certificate yet — that is a decision with a
 price, not work.
 
-On Windows, **if** an action ever needs privilege it must go through a separate
-binary; no published action does, and `L5` fails the day one would.
+On Windows an action that needs privilege goes through a separate binary, and
+one exists: `podshl-elevate`, built by the installer script and put beside the
+client. Three example actions are marked `elevated` and only it performs them —
+the client asks Windows to start it with the `runas` verb, so the prompt is
+Windows' own. `L5` is `auto`.
 
 ### Linux, in the container
 
