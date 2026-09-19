@@ -45,12 +45,13 @@ source=(
   "$_bin.desktop"
   "$pkgname.repairs.json"
 )
-sha256sums=('16e6b220c94878154a290605dc7410e38e689ce4ad184c7889c61cac1b0d92d3'
+sha256sums=('ba0ad25f6cd2218e8f06cb532772996e65c61644d2569044c8cb7b60c95eb027'
             '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0'
             '4633d1d532bcf4719ce173d420f649d9fc60abe788a329bf51b4f76951b190f8'
             '0ded5f06da14c6700741dc4fa3bcdde8ea53c8b1410c11f4504c023d94955c7a'
             'a54ca58f500ea79efe69c591718b1def452ad98f9f3f60f4f62233ed1e82ecf0'
-            '8dd7df2997e5b5108a66e8ce624ea3e7ed02859f10a97eeb15789d88fbc628ff')
+            '8dd7df2997e5b5108a66e8ce624ea3e7ed02859f10a97eeb15789d88fbc628ff'
+            '5b7de693aff7325d4f36d376a5fc8bfa3d38283589861d7241387010585914fb')
 
 package() {
   install -Dm755 "$_bin-$pkgver" "$pkgdir/usr/bin/$_bin"
