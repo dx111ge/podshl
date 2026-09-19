@@ -23,6 +23,11 @@ project's own answer, and the notes to take to the project:
 [Deutsch, 2:55](examples/engram/videos/podshl-user-de.mp4) ·
 [what a maintainer does](examples/engram/videos/podshl-maintainer.mp4)
 
+**The record of local fixes on its own** — `podshl-repairs` on a clean Omarchy:
+an agent's change recorded without anybody writing it, undone, overwritten by an
+update and noticed, and a workaround kept with its reason:
+[English, 3:54](examples/repairs/podshl-repairs.mp4)
+
 ## Try it
 
 **Early beta**, against the operator at **https://sdota.de**.

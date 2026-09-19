@@ -13,6 +13,7 @@ These three do it the other way round, on the real desktop:
 | `rec.sh` | `grim` on a timer into a frame directory, and `ffmpeg` afterwards. Fully detached, because a background loop that inherits stdout keeps an ssh session open until it exits — and goes on filling the disk while it does |
 | `take-user.sh`, `take-user-de.sh` | the drive: pointer and keyboard, one continuous pass, writing an `.srt` as it goes so the narration is timed to what actually happened. **Two scripts, not one with a flag** — German strings are longer, the panels sit differently, and every coordinate had to be measured again |
 | `enc.sh` | frames plus subtitles into H.264 |
+| `take-repairs.sh`, `enc-repairs.sh` | the `podshl-repairs` take (`examples/repairs/`): commands pasted into a real terminal rather than typed, the screen recorded with `gpu-screen-recorder` at 30 fps, every step checked as it happens so the take stops rather than subtitling what did not occur, and the 3840x1080 screen cropped to its middle with a pan to the notice |
 
 ## What it needs
 

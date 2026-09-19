@@ -8,6 +8,12 @@ anything by itself**: a newer version is a reason to look, not proof that the
 fix can go, because a backport or a fix that did not hold looks the same from
 here.
 
+**Watch it:** [`examples/repairs/podshl-repairs.mp4`](../examples/repairs/podshl-repairs.mp4)
+(3:54) — installed from the release on a clean Omarchy, an agent's change
+recorded and undone, a kept change overwritten and noticed, a workaround kept
+with its reason. What each part shows is in
+[`examples/repairs/README.md`](../examples/repairs/README.md).
+
 The record is `repairs.json` in the client's settings folder
 (`%APPDATA%\podshl` on Windows, `~/Library/Application Support/podshl` on
 macOS, `~/.config/podshl` on Linux; `VS_ROOT` overrides it). Every field a
