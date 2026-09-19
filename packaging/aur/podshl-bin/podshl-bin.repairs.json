@@ -1,0 +1,10 @@
+{
+  "records": [
+    {
+      "id": "outside-the-aur",
+      "kind": "package",
+      "package": "podshl-bin",
+      "reason": "podshl-bin is built from its PKGBUILD, not installed from the AUR: AUR registration is closed, so it cannot be published there yet, and the name is not registered. An AUR helper looks every such package up on each update, and whoever registered the name could have their package installed in its place. Keep it out of the helper's reach until it is in the AUR under its maintainer — a local pacman repository, or IgnorePkg in /etc/pacman.conf."
+    }
+  ]
+}

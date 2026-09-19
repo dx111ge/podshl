@@ -1,0 +1,139 @@
+.TH PODSHL-REPAIRS.D 5 2026-09-19 "podshl-repairs 0.1.8" "File Formats"
+.SH NAME
+podshl-repairs.d \- what a package or plugin declares about the way it changes a machine
+.SH SYNOPSIS
+.I /usr/share/podshl/repairs.d/*.json
+.br
+.I ~/.local/share/podshl/repairs.d/*.json
+.br
+.I ~/.config/omarchy/plugins/*/repairs.d/*.json
+.SH DESCRIPTION
+The maintainer knows why, and the person does not.
+A package or plugin that deliberately leaves the ordinary path \(em installed
+from a PKGBUILD because it cannot be in the AUR, a patched copy standing in for
+a broken upstream release, a file outside itself it has to change \(em carries a
+reason nobody on the machine will ever write down.
+So it says it, once, in a small file it installs, and
+.BR podshl\-repairs (1)
+keeps it as a record like any other and looks at it again after every update.
+.PP
+A
+.B package
+installs its declaration into
+.IR /usr/share/podshl/repairs.d/ .
+An installer that puts something into the home directory uses
+.IR ~/.local/share/podshl/repairs.d/ .
+An
+.B Omarchy plugin
+ships one inside itself, in
+.IR repairs.d/ ;
+Omarchy installs plugins into
+.IR ~/.config/omarchy/plugins/<name>/ .
+.PP
+Nothing needs
+.B podshl\-repairs
+to be installed: a declaration is a file that is read if something reads it.
+.SH FORMAT
+One JSON object with a list of entries:
+.PP
+.nf
+.RS
+{
+  "records": [
+    {
+      "id": "outside\-the\-aur",
+      "kind": "package",
+      "package": "podshl\-bin",
+      "reason": "Installed from a PKGBUILD, not the AUR: AUR registration
+                 is closed. The name is not registered there.",
+      "until": { "issue": "https://github.com/owner/repo/issues/1" }
+    }
+  ]
+}
+.RE
+.fi
+.TP
+.B id
+The entry's identity, across versions of the package: letters, digits,
+.BR \- ,
+.B _
+and
+.BR . ,
+at most 64 characters.
+Keep it the same from one version to the next, or the record starts again.
+.TP
+.B kind
+.B file
+(a file edited in place;
+.B path
+names it),
+.B package
+(a package built, installed or held outside the usual channel;
+.B package
+names it), or
+.B overlay
+(a copy standing in front of a component;
+.B path
+names the copy,
+.B original
+and/or
+.B original_package
+what it overrides).
+.TP
+.B reason
+Why, in the words a person will read a year from now.
+Required: a declaration that does not say why is refused.
+At most 2000 characters.
+.TP
+.B until
+What would make the entry unnecessary:
+.B issue
+(the upstream issue or pull request, an https URL) and/or
+.B fixed_in
+(the first version that carries the fix).
+Once the installed version reaches
+.BR fixed_in ,
+the record says the change may no longer be needed.
+The issue is shown; GitHub is asked about it only if the person chooses to
+watch it.
+.SH WITHDRAWING AN ENTRY
+When a later version no longer needs an entry, the maintainer withdraws it,
+with the reason and whatever the person should now clean up:
+.PP
+.nf
+.RS
+{ "records": [
+  { "id": "outside\-the\-aur",
+    "retired": "Now in the AUR; the [podshl] repository in
+                /etc/pacman.conf can go." }
+] }
+.RE
+.fi
+.PP
+The record says so once, with that reason, and is quiet after the person has
+looked at it.
+An entry that simply disappears from the file while the package is still
+installed is treated as withdrawn without a reason.
+When the package or plugin is removed and its declaration file with it, the
+record says that the declarer is gone.
+.PP
+.B Nothing is ever removed from the record, and nothing is done.
+A declaration cannot undo a change, cannot change a file, and cannot switch
+on a lookup; the worst a malicious one can do is add a line to a list.
+.SH WHO DECLARED IT
+The record names who declared an entry by asking, not by reading the file:
+.BR "pacman \-Qo" " or " "dpkg \-S"
+for a file in
+.IR /usr/share ,
+and the plugin directory for a file in an Omarchy plugin.
+A name written into the file is never taken as its author.
+.SH ERRORS
+An entry that cannot be taken \(em no id, an unknown kind, no reason, a path
+that does not exist \(em is left out, and the reason is written to
+.IR ~/.local/state/podshl/client.log .
+A file that is not readable JSON is left out as a whole, and the records it
+made before are not treated as withdrawn.
+.SH SEE ALSO
+.BR podshl\-repairs (1)
+.PP
+https://github.com/dx111ge/podshl/blob/main/docs/REPAIRS.md

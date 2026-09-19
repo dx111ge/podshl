@@ -36,14 +36,14 @@ update and noticed, and a workaround kept with its reason:
     omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable
 
     # Debian or Ubuntu: the .deb declares what it needs
-    sudo apt install ./PODSHL_0.1.7_amd64.deb
+    sudo apt install ./PODSHL_0.1.8_amd64.deb
 
     # the bare binary, on any Linux that already has WebKitGTK
     # (libwebkit2gtk-4.1-0 and libgtk-3-0 — it is not self-contained, on purpose)
-    chmod +x podshl-client-0.1.7-linux-x86_64 && ./podshl-client-0.1.7-linux-x86_64
+    chmod +x podshl-client-0.1.8-linux-x86_64 && ./podshl-client-0.1.8-linux-x86_64
 
 Windows, Linux and macOS:
-**[download 0.1.7](https://github.com/dx111ge/podshl/releases/latest)**. Nothing
+**[download 0.1.8](https://github.com/dx111ge/podshl/releases/latest)**. Nothing
 is signed — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and
 exactly what they send.
 
@@ -78,6 +78,13 @@ it was made; it says so, and links the live ones. engram is registered on
   different people reported the same thing, with names, addresses and tokens
   removed on their machine first.
 
+* **Say why your package leaves the ordinary path.** Built outside the AUR,
+  patching a system file until upstream fixes a bug, shipping a copy in front of
+  a packaged component: one JSON file your package or Omarchy plugin installs,
+  and the record of local fixes keeps your reason on the machine and tells the
+  person when your next version withdraws it —
+  [DECLARING.md](docs/DECLARING.md), `man 5 podshl-repairs.d`.
+
 Two things this does *not* do yet — an automatic path into your tracker, and
 feature requests — are written down with the reasoning in
 **[MAINTAINERS.md](docs/MAINTAINERS.md)** rather than left as silences.
@@ -99,9 +106,12 @@ feature requests — are written down with the reasoning in
   fixed and the workaround is now the problem, a copied plugin keeps running
   while the packaged one moves on. Every change is written down before it is
   made, and changes made by *other* tools — an agent, a script, you — can be
-  registered too. After an update, or once a day, the client says which ones
-  want another look and why; it undoes nothing by itself.
-  [REPAIRS.md](docs/REPAIRS.md)
+  registered too; on Omarchy, what your default agent writes is recorded by
+  itself. After an update, or once a day, the client says which ones want
+  another look and why; it undoes nothing by itself. On Linux it also comes on
+  its own, without the window, in one line:
+  `curl -fsSL https://raw.githubusercontent.com/dx111ge/podshl/main/packaging/repairs/install.sh | bash`
+  — [REPAIRS.md](docs/REPAIRS.md), `man podshl-repairs`.
 
 ## How it works
 

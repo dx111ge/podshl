@@ -25,9 +25,14 @@
 //! bring the record's digest up to date — so undo goes back to before the
 //! agent touched the file, which is what somebody undoing it means.
 //!
-//! **What it cannot see.** Only the agent's own file tools pass through its
-//! hooks. A change made through a shell command — `sed -i`, `tee`, a script —
-//! is not a file write the agent reports, and is not recorded here.
+//! **Shell commands too.** Agents write config files with a shell command as
+//! often as with their file tools — `cat >> file`, `sed -i`, `tee` — and
+//! Omarchy's own instructions for agents do it that way. Before the agent
+//! runs a command, every file the command names is copied aside; after it,
+//! each one that changed becomes a record with that copy, and each one the
+//! command created becomes a record without. Nothing the command did not
+//! name: a file reached through a variable, a glob or a script it calls is a
+//! gap, and one this says rather than guesses at.
 //!
 //! Only Claude Code for now. Each agent has its own hook format and its own
 //! input, and a format written from documentation rather than measured is the
@@ -42,8 +47,16 @@ use std::path::{Path, PathBuf};
 /// The agents whose hook format has been measured.
 pub const MEASURED: &[&str] = &["claude"];
 
-/// The tools whose writes are recorded.
-pub const MATCHER: &str = "Write|Edit|MultiEdit|NotebookEdit";
+/// The tools whose writes are recorded: the file tools, and the shell.
+pub const MATCHER: &str = "Write|Edit|MultiEdit|NotebookEdit|Bash";
+
+/// A file larger than this is not copied aside before a shell command: a
+/// config file is not, and a binary a command merely names should not cost
+/// a copy on every call.
+const SHELL_COPY_MAX: u64 = 4 * 1024 * 1024;
+
+/// At most this many files named in one shell command are looked at.
+const SHELL_PATHS_MAX: usize = 32;
 
 /// Why a file was not recorded. Not logged: a skipped file is the ordinary
 /// case, and a line per skip would fill the log with every edit to source.
@@ -55,12 +68,16 @@ pub enum Skip {
     AgentsOwn,
     TheRecordItself,
     NotAFile,
+    /// A copy somebody keeps by hand (`file.bak.123`, `file.orig`, `file~`):
+    /// the change is the file next to it.
+    AHandCopy,
 }
 
 /// Where the record lives, where the agent keeps its own files, and what
 /// counts as temporary. A value rather than constants so the flow can be
 /// tested: a test's files live in the temp dir, which the live rules skip.
 pub struct Places {
+    pub home: PathBuf,
     pub state_dir: PathBuf,
     pub agent_dir: PathBuf,
     pub temp: Vec<PathBuf>,
@@ -70,6 +87,7 @@ impl Places {
     /// This machine's.
     pub fn live(state_dir: &Path, home: &Path) -> Places {
         Places {
+            home: home.to_path_buf(),
             state_dir: state_dir.to_path_buf(),
             agent_dir: claude_dir(home),
             temp: vec![
@@ -101,6 +119,17 @@ pub fn worth_recording(path: &Path, at: &Places) -> Result<(), Skip> {
     }
     if at.temp.iter().any(|t| path.starts_with(t)) {
         return Err(Skip::Temporary);
+    }
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if name.ends_with('~')
+        || name.contains(".bak")
+        || name.ends_with(".orig")
+        || name.ends_with(".swp")
+    {
+        return Err(Skip::AHandCopy);
     }
     // Every directory above the file, up to the filesystem root: `.git` as a
     // directory is a repository, as a file a worktree or a submodule.
@@ -165,6 +194,10 @@ pub enum Done {
     Added(String),
     /// Before a write to a file this session already recorded: nothing to do.
     AlreadyRecorded(String),
+    /// Before a shell command: this many files it names are watched.
+    ShellWatching(usize),
+    /// After a shell command: the records it made or brought up to date.
+    ShellRecorded(Vec<String>),
 }
 
 /// One call of the hook: `event` is `pre` or `post`, `input` what the agent
@@ -174,6 +207,9 @@ pub fn handle(event: &str, agent: &str, input: &str, at: &Places) -> Result<Done
         return Err(format!("unknown hook event {event:?}: pre or post"));
     }
     let input: Value = serde_json::from_str(input).map_err(|e| format!("not JSON: {e}"))?;
+    if input.get("tool_name").and_then(|v| v.as_str()) == Some("Bash") {
+        return shell(event, agent, &input, at);
+    }
     let Some(path) = target_of(&input) else {
         return Ok(Done::Skipped(Skip::NoPath));
     };
@@ -233,6 +269,232 @@ pub fn handle(event: &str, agent: &str, input: &str, at: &Places) -> Result<Done
             sessions.insert(k, rec.id.clone());
             save_sessions(state_dir, &sessions)?;
             Ok(Done::Added(rec.id))
+        }
+    }
+}
+
+/// The files a shell command names, as far as they can be read without
+/// running it: absolute paths, `~/` and `$HOME/`, and relative ones against
+/// the command's directory — the one it starts in, then the one each `cd` or
+/// `pushd` in it moves to (`cd ~/.config/hypr && cp looknfeel.lua …` is how
+/// agents write it). A word with any other variable, a glob or a command
+/// substitution in it names nothing that can be known in advance.
+pub fn named_paths(command: &str, cwd: Option<&Path>, home: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = vec![];
+    let mut here: Option<PathBuf> = cwd.filter(|c| c.is_absolute()).map(Path::to_path_buf);
+    let mut after_cd = false;
+    let split = |c: char| c.is_whitespace() || ";|&<>()'\"`=,".contains(c);
+    for word in command.split(split) {
+        let w = word.trim();
+        if w.is_empty() {
+            continue;
+        }
+        let cd = std::mem::replace(&mut after_cd, w == "cd" || w == "pushd");
+        if w.starts_with('-') || after_cd {
+            continue;
+        }
+        let in_home = w
+            .strip_prefix("$HOME/")
+            .or_else(|| w.strip_prefix("${HOME}/"))
+            .or_else(|| w.strip_prefix("~/"))
+            .or_else(|| (w == "~" || w == "$HOME").then_some(""));
+        if in_home
+            .unwrap_or(w)
+            .contains(['$', '*', '?', '[', '{', '\\'])
+        {
+            continue;
+        }
+        let w = in_home
+            .map(|rest| home.join(rest).display().to_string())
+            .unwrap_or_else(|| w.to_string());
+        let p = PathBuf::from(&w);
+        let p = if p.is_absolute() {
+            p
+        } else {
+            match &here {
+                Some(c) => c.join(&p),
+                None => continue,
+            }
+        };
+        if cd {
+            // Where the rest of the command runs, if it is a directory.
+            if p.is_dir() {
+                here = Some(p);
+            }
+            continue;
+        }
+        // A bare word is a path only when there is a file by that name;
+        // otherwise every argument would be one.
+        if !w.contains('/') && !p.is_file() {
+            continue;
+        }
+        // A file that is there, or one the command could create: its
+        // directory is there.
+        if !(p.is_file() || (!p.exists() && p.parent().is_some_and(|d| d.is_dir()))) {
+            continue;
+        }
+        if !out.contains(&p) {
+            out.push(p);
+        }
+        if out.len() >= SHELL_PATHS_MAX {
+            break;
+        }
+    }
+    out
+}
+
+/// What a shell command's `pre` kept, for its `post`.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Staged {
+    path: PathBuf,
+    /// The copy from before, when the file was there.
+    copy: Option<PathBuf>,
+    /// The record this session already has for the file.
+    known: Option<String>,
+}
+
+fn staging_root(state_dir: &Path) -> PathBuf {
+    state_dir.join("agent-shell")
+}
+
+/// One command's staging place: by the id the agent gives the tool call, or
+/// by the session and the command when it gives none.
+fn staging_dir(state_dir: &Path, input: &Value, session: &str, command: &str) -> PathBuf {
+    let id = match input.get("tool_use_id").and_then(|v| v.as_str()) {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => format!("{session}\n{command}"),
+    };
+    let h = repair::sha256_hex(id.as_bytes());
+    staging_root(state_dir).join(&h[..24])
+}
+
+/// A shell command, before and after it runs.
+fn shell(event: &str, agent: &str, input: &Value, at: &Places) -> Result<Done, String> {
+    let command = input
+        .get("tool_input")
+        .and_then(|t| t.get("command"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let session = input
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("no-session")
+        .to_string();
+    let state_dir = at.state_dir.as_path();
+    let dir = staging_dir(state_dir, input, &session, command);
+    let manifest = dir.join("staged.json");
+    if event == "pre" {
+        forget_stale_staging(state_dir);
+        let cwd = input.get("cwd").and_then(|v| v.as_str()).map(Path::new);
+        let sessions = load_sessions(state_dir);
+        let mut staged = vec![];
+        for (n, path) in named_paths(command, cwd, &at.home).into_iter().enumerate() {
+            if worth_recording(&path, at).is_err() {
+                continue;
+            }
+            if let Some(id) = sessions.get(&key(&session, &path)) {
+                staged.push(Staged {
+                    path,
+                    copy: None,
+                    known: Some(id.clone()),
+                });
+                continue;
+            }
+            let copy = if path.is_file() {
+                if !std::fs::metadata(&path).is_ok_and(|m| m.len() <= SHELL_COPY_MAX) {
+                    continue;
+                }
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                let c = dir.join(n.to_string());
+                if std::fs::copy(&path, &c).is_err() {
+                    // Not readable as the person: not theirs to record.
+                    continue;
+                }
+                Some(c)
+            } else {
+                None
+            };
+            staged.push(Staged {
+                path,
+                copy,
+                known: None,
+            });
+        }
+        if staged.is_empty() {
+            return Ok(Done::ShellWatching(0));
+        }
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let text = serde_json::to_string(&staged).map_err(|e| e.to_string())?;
+        std::fs::write(&manifest, text).map_err(|e| e.to_string())?;
+        return Ok(Done::ShellWatching(staged.len()));
+    }
+    let Ok(text) = std::fs::read_to_string(&manifest) else {
+        return Ok(Done::ShellRecorded(vec![]));
+    };
+    let staged: Vec<Staged> = serde_json::from_str(&text).unwrap_or_default();
+    let mut sessions = load_sessions(state_dir);
+    let look = Lookups::offline();
+    let mut ids = vec![];
+    let mut result = Ok(());
+    for s in staged {
+        if !s.path.is_file() {
+            continue;
+        }
+        if let Some(id) = s.known {
+            if repair::refresh_digest(state_dir, &id).is_ok() {
+                ids.push(id);
+            }
+            continue;
+        }
+        let ext = External {
+            kind: "file".into(),
+            by: agent.to_string(),
+            path: Some(s.path.clone()),
+            upstream: Upstream::default(),
+            original_path: None,
+            original_package: None,
+            watch_issue: false,
+            note: Some(format!(
+                "recorded by the {agent} hook from a shell command, session {session}"
+            )),
+        };
+        let made = match &s.copy {
+            Some(copy) if repair::digest_path(copy) == repair::digest_path(&s.path) => continue,
+            Some(copy) => repair::record_external_with_copy(state_dir, ext, copy, &look),
+            None => repair::add_external(state_dir, ext, &look),
+        };
+        match made {
+            Ok(rec) => {
+                sessions.insert(key(&session, &s.path), rec.id.clone());
+                ids.push(rec.id);
+            }
+            Err(e) => result = Err(e),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    if !ids.is_empty() {
+        save_sessions(state_dir, &sessions)?;
+    }
+    result?;
+    Ok(Done::ShellRecorded(ids))
+}
+
+/// Copies from commands whose `post` never came — the person said no to the
+/// command, or the agent was stopped — are not kept past an hour: they are
+/// copies of the person's files, and nothing will ever read them.
+fn forget_stale_staging(state_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(staging_root(state_dir)) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age.as_secs() > 3600);
+        if old {
+            let _ = std::fs::remove_dir_all(e.path());
         }
     }
 }
@@ -325,6 +587,7 @@ mod tests {
 
     fn places(base: &Path) -> Places {
         Places {
+            home: base.join("home"),
             state_dir: base.join("state"),
             agent_dir: base.join("home/.claude"),
             temp: vec![],
@@ -434,6 +697,133 @@ mod tests {
         );
         let live = Places::live(&at.state_dir, &base.join("home"));
         assert_eq!(worth_recording(&conf, &live), Err(Skip::Temporary));
+    }
+
+    /// What Claude Code passes a hook for a shell command.
+    fn bash(command: &str, cwd: &Path, id: &str) -> String {
+        json!({
+            "session_id": "s1",
+            "cwd": cwd.display().to_string(),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_use_id": id,
+            "tool_input": { "command": command }
+        })
+        .to_string()
+    }
+
+    /// RR28: a file an agent changes with a shell command is recorded with
+    /// a copy from before the command; one it only reads is not; one it
+    /// creates is recorded without a copy; a copy kept by hand next to the
+    /// file is not a change of its own; a later command on the same file in
+    /// the same session brings the same record up to date.
+    #[test]
+    fn an_agents_shell_command_is_recorded_like_its_file_writes() {
+        let base = tmp("rr28");
+        let at = places(&base);
+        let hypr = base.join("home/.config/hypr");
+        std::fs::create_dir_all(&hypr).unwrap();
+        let conf = hypr.join("looknfeel.lua");
+        std::fs::write(&conf, "-- defaults\n").unwrap();
+
+        // Omarchy's way: a copy by hand, then an append.
+        let cmd = "cp ~/.config/hypr/looknfeel.lua ~/.config/hypr/looknfeel.lua.bak.$(date +%s)\n\
+                   cat >> ~/.config/hypr/looknfeel.lua <<'EOF'\ngaps_in = 3\nEOF\n\
+                   cat ~/.config/hypr/hyprland.lua; hyprctl reload";
+        assert_eq!(
+            handle("pre", "claude", &bash(cmd, &base, "t1"), &at),
+            Ok(Done::ShellWatching(2)),
+            "the file it changes and the one it only reads"
+        );
+        std::fs::copy(&conf, hypr.join("looknfeel.lua.bak.1")).unwrap();
+        std::fs::write(&conf, "-- defaults\ngaps_in = 3\n").unwrap();
+        let Ok(Done::ShellRecorded(ids)) = handle("post", "claude", &bash(cmd, &base, "t1"), &at)
+        else {
+            panic!("the command was not recorded");
+        };
+        assert_eq!(ids.len(), 1, "{ids:?}");
+        let all = repair::load(&at.state_dir);
+        assert_eq!(all.len(), 1, "{all:?}");
+        let rec = &all[0];
+        assert_eq!(rec.state, "applied");
+        assert!(rec.reversible);
+        assert_eq!(
+            std::fs::read_to_string(rec.backup.as_ref().unwrap()).unwrap(),
+            "-- defaults\n",
+            "the copy is not from before the command"
+        );
+        assert!(repair::review(&at.state_dir, &Lookups::offline()).is_empty());
+
+        // Only reading it: nothing.
+        let read = "cat ~/.config/hypr/looknfeel.lua";
+        handle("pre", "claude", &bash(read, &base, "t0"), &at).unwrap();
+        assert_eq!(
+            handle("post", "claude", &bash(read, &base, "t0"), &at),
+            Ok(Done::ShellRecorded(ids.clone())),
+            "an unchanged file already recorded is only brought up to date"
+        );
+        let other = hypr.join("bindings.lua");
+        std::fs::write(&other, "bind\n").unwrap();
+        let look = "grep bind $HOME/.config/hypr/bindings.lua";
+        handle("pre", "claude", &bash(look, &base, "t2"), &at).unwrap();
+        assert_eq!(
+            handle("post", "claude", &bash(look, &base, "t2"), &at),
+            Ok(Done::ShellRecorded(vec![]))
+        );
+
+        // The same file again in the session: the same record, current.
+        let again = "sed -i s/3/2/ ~/.config/hypr/looknfeel.lua";
+        handle("pre", "claude", &bash(again, &base, "t3"), &at).unwrap();
+        std::fs::write(&conf, "-- defaults\ngaps_in = 2\n").unwrap();
+        assert_eq!(
+            handle("post", "claude", &bash(again, &base, "t3"), &at),
+            Ok(Done::ShellRecorded(ids.clone()))
+        );
+        assert_eq!(repair::load(&at.state_dir).len(), 1);
+        assert!(repair::review(&at.state_dir, &Lookups::offline()).is_empty());
+
+        // A file the command creates, named relative to where it runs.
+        let new = "echo x > extra.conf";
+        handle("pre", "claude", &bash(new, &hypr, "t4"), &at).unwrap();
+        // A bare word is only a file when there is one: `extra.conf` is not
+        // there yet, so it is not watched — the gap the module says.
+        std::fs::write(hypr.join("extra.conf"), "x\n").unwrap();
+        assert_eq!(
+            handle("post", "claude", &bash(new, &hypr, "t4"), &at),
+            Ok(Done::ShellRecorded(vec![]))
+        );
+        let made = "echo x > ./made.conf";
+        handle("pre", "claude", &bash(made, &hypr, "t5"), &at).unwrap();
+        std::fs::write(hypr.join("made.conf"), "x\n").unwrap();
+        assert!(matches!(
+            handle("post", "claude", &bash(made, &hypr, "t5"), &at),
+            Ok(Done::ShellRecorded(v)) if v.len() == 1
+        ));
+        assert_eq!(repair::load(&at.state_dir).len(), 2);
+
+        // Nothing left staged.
+        let left = std::fs::read_dir(at.state_dir.join("agent-shell"))
+            .map(|d| d.count())
+            .unwrap_or(0);
+        assert_eq!(left, 0, "copies left behind");
+
+        let home = base.join("home");
+        // Claude's own spelling on Omarchy (take 7): into the directory
+        // first, then bare names.
+        let took = "cd ~/.config/hypr && cp looknfeel.lua looknfeel.lua.bak.$(date +%s) \
+                    && cat >> looknfeel.lua <<'EOF'\ngaps_in = 3\nEOF\nhyprctl reload";
+        assert_eq!(
+            named_paths(took, Some(Path::new("/")), &home),
+            vec![conf.clone()]
+        );
+
+        // What cannot be known in advance names nothing.
+        assert!(named_paths("cat $XDG_CONFIG_HOME/x ~/.config/*/y", None, &home).is_empty());
+        assert_eq!(
+            named_paths("tee ~/.config/hypr/looknfeel.lua >/dev/null", None, &home),
+            vec![conf.clone()],
+            "a device is not a file"
+        );
     }
 
     /// Input that is not what Claude Code sends is an error the command line

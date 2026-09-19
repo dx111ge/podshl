@@ -1,7 +1,8 @@
 # The record of local fixes, on a clean Omarchy
 
-[`podshl-repairs.mp4`](podshl-repairs.mp4) — 3:54, English subtitles burned in
-([`podshl-repairs.srt`](podshl-repairs.srt) beside it).
+[`podshl-repairs.mp4`](podshl-repairs.mp4), English subtitles in a band of
+their own under the picture. There is deliberately no `.srt` beside it: a
+player that finds one with the same name shows the text twice.
 
 One continuous take on a real Omarchy desktop, recorded on 2026-09-19 with
 `scripts/walk/omarchy/take-repairs.sh` and nothing edited afterwards. Every

@@ -22,7 +22,7 @@ echo "Building the PKGBUILD that came with this plugin:"
 echo "  $here/package/PKGBUILD"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-cp "$here/package/PKGBUILD" "$here/package/podshl-client.desktop" "$work/" || exit 1
+cp "$here/package/PKGBUILD" "$here/package/podshl-client.desktop" "$here/package/podshl-bin.repairs.json" "$work/" || exit 1
 (cd "$work" && makepkg --syncdeps --install --needed --noconfirm) || exit 1
 
 # makepkg can end without an error and without the package.

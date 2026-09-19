@@ -176,6 +176,33 @@ pub struct Record {
     /// existed and was removed is not — see `forget`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forgotten_at: Option<u64>,
+    /// Declared by a package rather than recorded by a person or an agent —
+    /// see `declared.rs`. What was declared, by which file, and what became of
+    /// the declaration since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared: Option<Declared>,
+}
+
+/// Where a declared record came from, and what its declaration says now.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Declared {
+    /// The declaration file, resolved.
+    pub file: String,
+    /// The entry's `id` in that file: the record's identity across updates.
+    pub entry: String,
+    /// The package that owns the declaration file, as the package manager
+    /// says — never as the file says. `None` for a declaration no package
+    /// owns, such as one an installer put into the home directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// The maintainer withdrew the entry: their reason, or empty when the
+    /// entry simply is not declared any more while the package still is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+    /// The declaration file is gone: the package that declared this was
+    /// removed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gone: bool,
 }
 
 fn kind_action() -> String {
@@ -254,6 +281,11 @@ pub enum Flag {
     PrMerged,
     /// The merged change is in this release, found by code.
     ReleasedIn { tag: String },
+    /// The package's maintainer withdrew what the package declared — with
+    /// their reason, or none when the entry was simply dropped.
+    Retired { reason: String },
+    /// The package that declared this is no longer installed.
+    DeclarerGone,
 }
 
 impl Flag {
@@ -272,6 +304,8 @@ impl Flag {
             Flag::IssueClosed => "issue_closed",
             Flag::PrMerged => "pr_merged",
             Flag::ReleasedIn { .. } => "released_in",
+            Flag::Retired { .. } => "retired",
+            Flag::DeclarerGone => "declarer_gone",
         }
     }
 }
@@ -293,7 +327,7 @@ fn path(root: &Path) -> PathBuf {
 /// **A list that cannot be read is not an empty list.** Read as empty, the next
 /// change would write a new list over it and every earlier record would be
 /// gone — so a change is refused instead, and the file is left for a person.
-fn read(root: &Path) -> Result<Vec<Record>, String> {
+pub(crate) fn read(root: &Path) -> Result<Vec<Record>, String> {
     let text = match std::fs::read_to_string(path(root)) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
@@ -317,7 +351,7 @@ pub fn load(root: &Path) -> Vec<Record> {
 
 /// Written whole to a file beside it and moved into place, so a crash leaves
 /// the old list or the new one and never half of either.
-fn save(root: &Path, records: &[Record]) -> Result<(), String> {
+pub(crate) fn save(root: &Path, records: &[Record]) -> Result<(), String> {
     std::fs::create_dir_all(root).map_err(|e| m!("repair_not_written", e = e))?;
     let tmp = root.join(format!("{FILE}.tmp"));
     let body = serde_json::to_string_pretty(&serde_json::json!({ "records": records }))
@@ -851,6 +885,7 @@ fn execute_with(
         watch_issue: false,
         issue_state: None,
         forgotten_at: None,
+        declared: None,
     };
     let rid = record.id.clone();
     records.push(record);
@@ -994,6 +1029,29 @@ fn effective_fixed_in(r: &Record) -> Option<String> {
 /// taken away. Also the version the package manager reports, or empty.
 fn flags_for(r: &Record, look: &Lookups) -> (Vec<Flag>, String) {
     let mut flags = vec![];
+    // A declaration withdrawn, or whose package is gone, is that and nothing
+    // else: its package being unknown or at another version is the same news
+    // said twice, and the second time less clearly.
+    if let Some(d) = &r.declared {
+        let now = r
+            .upstream
+            .package
+            .as_deref()
+            .and_then(|p| (look.installed)(p))
+            .map(|i| i.version)
+            .unwrap_or_default();
+        if d.gone {
+            return (vec![Flag::DeclarerGone], now);
+        }
+        if let Some(reason) = &d.retired {
+            return (
+                vec![Flag::Retired {
+                    reason: reason.clone(),
+                }],
+                now,
+            );
+        }
+    }
     if let Some(t) = r.target.as_deref().map(Path::new) {
         if !t.exists() {
             flags.push(Flag::TargetGone);
@@ -1194,7 +1252,7 @@ fn by_ok(s: &str) -> bool {
 }
 
 /// Check what the tool said and turn it into a record, reading the machine.
-fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, String> {
+pub(crate) fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, String> {
     if !by_ok(&ext.by) {
         return Err(m!("repair_external_bad", k = "by"));
     }
@@ -1228,6 +1286,7 @@ fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, 
         watch_issue: false,
         issue_state: None,
         forgotten_at: None,
+        declared: None,
     };
     if ext.watch_issue {
         if rec
@@ -1303,7 +1362,7 @@ fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, 
     Ok(rec)
 }
 
-fn next_id(records: &[Record]) -> String {
+pub(crate) fn next_id(records: &[Record]) -> String {
     format!("{}-{}", now(), records.len() + 1)
 }
 
@@ -1335,6 +1394,35 @@ pub fn begin_external(state_dir: &Path, ext: External, look: &Lookups) -> Result
     rec.state = "pending".into();
     // The digest is taken when the change is finished, not now.
     rec.file_sha256 = None;
+    records.push(rec.clone());
+    save(state_dir, &records)?;
+    Ok(rec)
+}
+
+/// A change already made, with a copy of the file from before it that was
+/// kept somewhere else — by an agent hook that could not know, before a shell
+/// command ran, which of the files it names the command would change. The
+/// record is finished at once: `before` becomes its copy, the digest is the
+/// file's now.
+pub fn record_external_with_copy(
+    state_dir: &Path,
+    ext: External,
+    before: &Path,
+    look: &Lookups,
+) -> Result<Record, String> {
+    if ext.kind != "file" {
+        return Err(m!("repair_external_bad", k = "kind"));
+    }
+    let mut records = read(state_dir)?;
+    let mut rec = external_record(ext, next_id(&records), look)?;
+    let target = PathBuf::from(rec.target.clone().unwrap_or_default());
+    let dir = state_dir.join("backups").join(&rec.id);
+    std::fs::create_dir_all(&dir).map_err(|e| m!("repair_not_written", e = e))?;
+    let copy = dir.join(target.file_name().unwrap_or_default());
+    std::fs::copy(before, &copy).map_err(|e| m!("repair_not_written", e = e))?;
+    rec.backup = Some(copy.display().to_string());
+    rec.reversible = true;
+    rec.file_sha256 = digest_path(&target);
     records.push(rec.clone());
     save(state_dir, &records)?;
     Ok(rec)
@@ -1424,6 +1512,7 @@ pub fn forget(state_dir: &Path, id: &str) -> Result<Record, String> {
         watch_issue: false,
         issue_state: None,
         forgotten_at: Some(now()),
+        declared: None,
     };
     save(state_dir, &records)?;
     Ok(was)

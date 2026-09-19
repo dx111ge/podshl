@@ -20,6 +20,8 @@ pub mod actions;
 // What a coding agent changes, recorded through its own hooks.
 pub mod agent_hook;
 pub mod clientlog;
+// What a package declares about itself, taken into the record.
+pub mod declared;
 pub mod elevate;
 pub mod elevated;
 pub mod http;

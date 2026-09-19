@@ -1,0 +1,223 @@
+.TH PODSHL-REPAIRS 1 2026-09-19 "podshl-repairs 0.1.8" "User Commands"
+.SH NAME
+podshl-repairs \- keep a record of local fixes, and look at them again after updates
+.SH SYNOPSIS
+.B podshl-repairs
+.I command
+.RI [ options ]
+.br
+.B podshl-repairs
+.RB [ \-\-version | \-V ]
+.RB [ \-\-help | \-h ]
+.SH DESCRIPTION
+A local fix outlives its reason.
+The bug it works around gets fixed upstream, an update overwrites it, or a
+cloned plugin keeps running while the packaged one moves on, and a year later
+nobody knows why it is there.
+.B podshl-repairs
+keeps a record of such changes and looks at them again after every update or
+once a day.
+.PP
+It
+.B never removes or undoes anything by itself.
+A newer version is a reason to look, not proof that a fix can go: a backport
+and a fix that did not hold look the same from here.
+.PP
+Records come from three places:
+.IP \(bu 2
+a person, a script or an agent registering a change
+.RB ( add ,
+or
+.B begin
+and
+.B done
+around it);
+.IP \(bu 2
+a coding agent's own hooks, which record what it writes outside git
+repositories
+.RB ( install\-agent\-hook );
+.IP \(bu 2
+packages and Omarchy plugins that declare why they leave the ordinary path;
+see
+.BR podshl\-repairs.d (5).
+.PP
+Every field a decision reads is written by code: versions come from the
+package manager, paths are resolved, digests are computed.
+A note or a reason is kept and shown, and nothing reads it.
+.PP
+Every command also answers
+.B \-\-help
+without running.
+.SH COMMANDS
+.TP
+.BR review " [" \-\-json "] [" \-\-notify "] [" \-\-offline ]
+What wants another look, and why: a file changed since the fix or gone, the
+copy an undo needs gone, a package updated or frozen behind the official one,
+what an override stands in front of changed, an upstream issue closed or its
+fix released, a declaration withdrawn by its maintainer or its package
+removed.
+Takes in what installed packages and plugins declare first.
+.B \-\-notify
+also shows a desktop notification; on Omarchy it stays until dismissed and
+a click opens the review in a terminal.
+.B \-\-offline
+asks nobody, not even about watched issues.
+.TP
+.BR list " [" \-\-json ]
+Every record.
+.TP
+.BR show " " \fIID\fR " [" \-\-json ]
+Everything about one record: its state, why it was made \(em the note, or the
+maintainer's reason for a declared one \(em who declared it and whether that
+was withdrawn, the upstream issue and whether it is watched, the version with
+the fix, whether there is a copy to go back to, and when it was recorded.
+.TP
+.BR add " \-\-kind " file | package | overlay " \-\-by " \fINAME\fR " [" options ]
+Record a change that has already been made.
+Nothing is kept to go back to.
+Options:
+.BI \-\-path " P"
+(file, overlay),
+.BI \-\-package " NAME"
+(package),
+.BI \-\-original " P"
+and
+.BI \-\-original\-package " NAME"
+(overlay: what the copy stands in front of),
+.BI \-\-issue " URL"
+(the upstream issue or pull request),
+.BI \-\-fixed\-in " V"
+(the first version with the fix),
+.B \-\-watch
+(ask GitHub about the issue),
+.BI \-\-note " TEXT".
+.TP
+.BR begin " \-\-kind file \-\-by " \fINAME\fR " \-\-path " \fIP\fR " [" options ]
+Before changing a file: keep a copy of it and print the record's id.
+.TP
+.BI done " ID"
+The change announced by
+.B begin
+is made; its digest is taken now.
+.TP
+.BI keep " ID"
+Looked at, and kept: what was shown is not raised again until something
+changes.
+.TP
+.BI watch " ID " on | off
+Ask GitHub about the record's issue, at most once a day, straight to its
+public API and never through anybody else.
+Off unless switched on per record: each lookup tells GitHub which issue this
+machine follows.
+.TP
+.BI restore " ID"
+Put back the copy
+.B begin
+kept.
+.TP
+.BI forget " ID"
+Remove what a record said.
+Needs administrator or root rights and the id typed back at a real terminal;
+no option skips either.
+A stub stays, saying that a record existed and when it was removed.
+.TP
+.BR install\-hook " [" \-\-print ]
+.TQ
+.BR remove\-hook " [" \-\-print ]
+Run
+.B review \-\-notify
+after every Omarchy update (a post\-update hook), or once a day elsewhere (a
+systemd user timer, a launchd agent, a scheduled task).
+.B \-\-print
+says what would be done and does nothing.
+.TP
+.BR install\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-print ]
+.TQ
+.BR remove\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-print ]
+Record what a coding agent writes outside git repositories, through the
+agent's own hooks: a copy before each file write or shell command, the
+record finished after it, one record per file per session.
+A shell command is seen through the files it names.
+On Omarchy the default agent is taken unless one is named.
+Measured for
+.B claude
+only; other agents are refused by name.
+Everything else in the agent's settings is kept, and the change to them is
+itself recorded.
+.TP
+.BR agent\-hook " " pre | post " [" \-\-agent " " \fINAME\fR ]
+What the agent's hooks call, with the agent's own JSON on standard input.
+Always exits 0: a record missed is a gap, an agent stopped by one is a
+removed tool.
+.TP
+.BR \-\-version ", " \-V
+The version.
+.TP
+.BR help ", " \-\-help ", " \-h
+The commands.
+.SH EXIT STATUS
+.TP
+.B 0
+Nothing to look at, or the command did what it was asked.
+.TP
+.B 3
+.B review
+found something to look at.
+.TP
+.B 1
+An error; the reason is on standard error.
+.SH FILES
+.TP
+.I ~/.config/podshl/repairs.json
+The record.
+.TP
+.I ~/.config/podshl/backups/
+The copies
+.B begin
+keeps.
+.TP
+.I ~/.local/state/podshl/client.log
+What every command that changes something did, anonymised.
+.TP
+.I ~/.config/omarchy/hooks/post\-update.d/podshl\-repairs
+The Omarchy update hook.
+.TP
+.I /usr/share/podshl/repairs.d/ ~/.local/share/podshl/repairs.d/ ~/.config/omarchy/plugins/*/repairs.d/
+Declarations; see
+.BR podshl\-repairs.d (5).
+.SH ENVIRONMENT
+.TP
+.B VS_ROOT
+Keep the record somewhere else.
+.TP
+.B PODSHL_LOG=0
+Write no log.
+.TP
+.B CLAUDE_CONFIG_DIR
+Where Claude Code keeps its settings, when not
+.IR ~/.claude .
+.SH EXAMPLES
+Record a change before making it, and undo it:
+.PP
+.nf
+.RS
+id=$(podshl\-repairs begin \-\-kind file \-\-by me \-\-path ~/.config/app/app.conf)
+# ... change the file ...
+podshl\-repairs done "$id"
+podshl\-repairs restore "$id"
+.RE
+.fi
+.PP
+A package built locally until an upstream fix is released, watched:
+.PP
+.nf
+.RS
+podshl\-repairs add \-\-kind package \-\-by me \-\-package hyprland \e
+    \-\-issue https://github.com/hyprwm/Hyprland/pull/1234 \-\-watch
+.RE
+.fi
+.SH SEE ALSO
+.BR podshl\-repairs.d (5),
+.BR podshl\-client (1)
+.PP
+https://github.com/dx111ge/podshl/blob/main/docs/REPAIRS.md

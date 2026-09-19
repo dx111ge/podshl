@@ -22,7 +22,7 @@ cd "$(dirname "$0")/../.."
 mkdir -p "$DEST/package"
 cp packaging/omarchy-plugin/manifest.json packaging/omarchy-plugin/BarWidget.qml packaging/omarchy-plugin/README.md \
    packaging/omarchy-plugin/install-client.sh packaging/omarchy-plugin/preview.png LICENSE "$DEST/"
-cp packaging/aur/podshl-bin/PKGBUILD packaging/aur/podshl-bin/podshl-client.desktop "$DEST/package/"
+cp packaging/aur/podshl-bin/PKGBUILD packaging/aur/podshl-bin/podshl-client.desktop packaging/aur/podshl-bin/podshl-bin.repairs.json "$DEST/package/"
 # LF everywhere, whatever the publishing machine's git does: a shell script and a
 # PKGBUILD with CRLF fail on the desktop they are for.
 printf '* text=auto eol=lf\n' > "$DEST/.gitattributes"

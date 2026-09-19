@@ -2964,6 +2964,8 @@ async function showRepairs(){
     released_in: t("repair_released_in", {tag: esc(f.tag)}),
     target_gone: t("repair_target_gone"),
     backup_gone: t("repair_backup_gone"),
+    retired: f.reason ? t("repair_retired", {reason: esc(f.reason)}) : t("repair_retired_silent"),
+    declarer_gone: t("repair_declarer_gone"),
   })[f.kind] || esc(f.kind);
   items.forEach(({record: r, flags}) => {
     const when = new Date(r.at * 1000).toLocaleDateString(LANG);

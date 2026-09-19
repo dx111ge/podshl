@@ -93,10 +93,14 @@ pub fn state_root() -> PathBuf {
 const USAGE: &str = "\
 podshl-client repairs <command>
 
+  --version, -V
+        the version
   review [--json] [--notify] [--offline]
         what wants another look; exit 0 nothing, 3 something, 1 error
   list [--json]
         every record
+  show ID [--json]
+        everything about one record: why, who declared it, upstream, the copy
   add --kind file|package|overlay --by NAME [--path P] [--package NAME]
       [--original P] [--original-package NAME] [--issue URL] [--fixed-in V]
       [--watch] [--note TEXT]
@@ -200,6 +204,21 @@ pub fn live_lookups(offline: bool) -> Lookups<'static> {
     l
 }
 
+/// What installed packages declare, into the record before it is shown —
+/// see `declared.rs`. Each thing it did, or could not do, is a line in the
+/// log: a maintainer whose declaration is refused finds out why there.
+pub fn take_declarations(root: &Path) {
+    let look = repair::Lookups::offline();
+    match crate::declared::sync(root, &crate::declared::Sources::live(), &look) {
+        Ok(said) => {
+            for line in said {
+                crate::clientlog::line(&format!("repairs declared: {line}"));
+            }
+        }
+        Err(e) => crate::clientlog::line(&format!("repairs declared: not taken: {e}")),
+    }
+}
+
 /// One line per flag, in the words the window uses.
 pub fn describe(r: &Review) -> Vec<String> {
     use repair::Flag::*;
@@ -225,6 +244,9 @@ pub fn describe(r: &Review) -> Vec<String> {
             IssueClosed => m!("repair_cli_issue_closed"),
             PrMerged => m!("repair_cli_pr_merged"),
             ReleasedIn { tag } => m!("repair_cli_released_in", t = tag),
+            Retired { reason } if reason.is_empty() => m!("repair_cli_retired_silent"),
+            Retired { reason } => m!("repair_cli_retired", r = reason),
+            DeclarerGone => m!("repair_cli_declarer_gone"),
         })
         .collect()
 }
@@ -316,9 +338,84 @@ fn title(r: &repair::Record) -> String {
     format!("[{}] {} — {} ({})", r.id, r.kind, what, r.subject)
 }
 
+/// A date, from seconds since the epoch, as YYYY-MM-DD (UTC) — without
+/// pulling in a date library for one line.
+fn epoch_date(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    // Howard Hinnant's days_from_civil, inverted.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Everything about one record a person needs a year later: what, why, who
+/// said so, what upstream has to do, and whether there is a way back.
+fn show_lines(r: &repair::Record) -> Vec<String> {
+    let mut out = vec![title(r), m!("repair_cli_show_state", s = &r.state)];
+    if let Some(n) = r.note.as_deref().filter(|n| !n.trim().is_empty()) {
+        out.push(m!("repair_cli_show_why", v = n));
+    }
+    if let Some(d) = &r.declared {
+        let who = d
+            .package
+            .clone()
+            .unwrap_or_else(|| crate::reads::display_path(Path::new(&d.file)));
+        out.push(m!("repair_cli_show_declared", v = who));
+        if d.gone {
+            out.push(format!("  {}", m!("repair_cli_declarer_gone")));
+        } else if let Some(why) = &d.retired {
+            out.push(format!(
+                "  {}",
+                if why.is_empty() {
+                    m!("repair_cli_retired_silent")
+                } else {
+                    m!("repair_cli_retired", r = why)
+                }
+            ));
+        }
+    }
+    if let Some(issue) = &r.upstream.issue {
+        out.push(m!("repair_cli_show_issue", v = issue));
+        out.push(if r.watch_issue {
+            m!("repair_cli_show_watched")
+        } else {
+            m!("repair_cli_show_not_watched", id = &r.id)
+        });
+    }
+    if let Some(f) = &r.upstream.fixed_in {
+        out.push(m!("repair_cli_show_fixed_in", v = f));
+    }
+    if let Some(i) = &r.installed {
+        out.push(m!("repair_cli_show_installed", v = &i.version));
+    }
+    match r.backup.as_deref().filter(|_| r.reversible) {
+        Some(b) => out.push(m!(
+            "repair_cli_show_copy",
+            v = crate::reads::display_path(Path::new(b))
+        )),
+        None => out.push(m!("repair_cli_show_no_copy")),
+    }
+    out.push(m!("repair_cli_show_when", v = epoch_date(r.at)));
+    out
+}
+
 pub fn run(words: Vec<String>) -> Result<i32, String> {
     let mut a = Args { words };
     let cmd = a.positional().unwrap_or_else(|| "help".into());
+    // `<command> --help` asks for help, as with Omarchy's own commands
+    // (`omarchy plugin add --help`), rather than being refused as an argument
+    // the command does not know — and it never runs the command.
+    if a.words.iter().any(|w| w == "--help" || w == "-h") {
+        println!("{}", usage());
+        return Ok(0);
+    }
     let root = state_root();
     match cmd.as_str() {
         "review" => {
@@ -326,6 +423,7 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
             let notify_out = a.flag("--notify");
             let offline = a.flag("--offline");
             a.done()?;
+            take_declarations(&root);
             let found = repair::review(&root, &live_lookups(offline));
             // What the scheduled run concluded. Without it the only trace of a
             // review that happened while nobody was looking is an exit code
@@ -387,6 +485,7 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
         "list" => {
             let json_out = a.flag("--json");
             a.done()?;
+            take_declarations(&root);
             let all = repair::load(&root);
             if json_out {
                 println!(
@@ -453,6 +552,30 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
                 }
             ));
             println!("{}", rec.id);
+            Ok(0)
+        }
+        "show" => {
+            let json_out = a.flag("--json");
+            let id = a
+                .positional()
+                .ok_or_else(|| "show needs a record id".to_string())?;
+            a.done()?;
+            take_declarations(&root);
+            let all = repair::load(&root);
+            let r = all
+                .iter()
+                .find(|r| r.id == id)
+                .ok_or_else(|| m!("repair_unknown"))?;
+            if json_out {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(r).map_err(|e| e.to_string())?
+                );
+            } else {
+                for line in show_lines(r) {
+                    println!("{line}");
+                }
+            }
             Ok(0)
         }
         "done" | "keep" | "restore" => {
@@ -579,7 +702,7 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
             Ok(0)
         }
         "agent-hook" => {
-            // Called by the agent, on every file write, with the agent
+            // Called by the agent, on every file write and shell command, with the agent
             // waiting. Whatever happens here, the answer is 0: a record
             // missed is a gap, an agent stopped by a record is a removed tool.
             let event = a.positional().unwrap_or_default();
@@ -604,6 +727,12 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
                 }
                 Ok(crate::agent_hook::Done::Finished(id)) => {
                     crate::clientlog::line(&format!("repairs agent-hook {agent}: finished {id}"))
+                }
+                Ok(crate::agent_hook::Done::ShellRecorded(ids)) if !ids.is_empty() => {
+                    crate::clientlog::line(&format!(
+                        "repairs agent-hook {agent}: shell command, {}",
+                        ids.join(" ")
+                    ))
                 }
                 Ok(_) => {}
                 Err(e) => eprintln!("podshl agent hook: {e}"),
@@ -648,8 +777,8 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
             }
             println!("write  {}", settings.display());
             if install {
-                println!("  before a file write: {pre}");
-                println!("  after a file write:  {post}");
+                println!("  before a file write or a shell command: {pre}");
+                println!("  after it:                                {post}");
             } else {
                 println!("  the two entries of this hook are taken out; nothing else changes");
             }
@@ -693,6 +822,15 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
                 rec.id
             ));
             println!("recorded as {}", rec.id);
+            Ok(0)
+        }
+        "--version" | "-V" | "version" => {
+            let name = if standalone() {
+                "podshl-repairs"
+            } else {
+                "podshl-client repairs"
+            };
+            println!("{name} {}", env!("CARGO_PKG_VERSION"));
             Ok(0)
         }
         "help" | "--help" | "-h" => {
@@ -1182,6 +1320,125 @@ fn which(name: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RR27: `show` says everything about one record a person needs a year
+    /// later — why, who declared it and whether that was withdrawn, upstream,
+    /// the version with the fix, whether there is a way back, and when.
+    #[test]
+    fn show_says_why_who_upstream_and_whether_there_is_a_way_back() {
+        assert_eq!(epoch_date(0), "1970-01-01");
+        assert_eq!(epoch_date(1_709_164_800), "2024-02-29");
+        assert_eq!(epoch_date(1_789_822_433), "2026-09-19");
+
+        let mut r: repair::Record = serde_json::from_value(json!({
+            "id": "1-1", "at": 1_789_822_433u64, "action": "external:package", "params": {},
+            "reversible": false, "subject": "declared by podshl-bin", "state": "applied",
+            "kind": "package",
+            "note": "Built outside the AUR, because registration is closed.",
+            "upstream": { "package": "podshl-bin", "issue": "https://github.com/o/r/issues/1",
+                          "fixed_in": "0.2.0" },
+            "installed": { "version": "0.1.8-1", "source": "pacman" },
+            "declared": { "file": "/usr/share/podshl/repairs.d/podshl-bin.json",
+                          "entry": "outside-the-aur", "package": "podshl-bin" }
+        }))
+        .unwrap();
+        let text = show_lines(&r).join("\n");
+        for want in [
+            "Built outside the AUR, because registration is closed.",
+            "podshl-bin",
+            "https://github.com/o/r/issues/1",
+            "watch 1-1 on",
+            "0.2.0",
+            "0.1.8-1",
+            "2026-09-19",
+        ] {
+            assert!(text.contains(want), "show does not say {want:?}:\n{text}");
+        }
+        let lines = show_lines(&r);
+        assert!(
+            crate::msg::is("repair_cli_show_no_copy", &lines[lines.len() - 2]),
+            "a record without a copy does not say there is no way back:
+{text}"
+        );
+
+        // Withdrawn by its maintainer: said, with the reason.
+        r.declared.as_mut().unwrap().retired = Some("Now in the AUR.".into());
+        let text = show_lines(&r).join("\n");
+        assert!(text.contains("Now in the AUR."), "{text}");
+    }
+
+    /// RR26: the man pages say what the program does. Every command and every
+    /// flag in the built-in help is in `podshl-repairs(1)`, and every field a
+    /// declaration is read for is in `podshl-repairs.d(5)` — so a command added
+    /// to one and not the other fails here rather than in somebody's terminal.
+    #[test]
+    fn the_man_pages_name_every_command_flag_and_field() {
+        let read = |name: &str| {
+            let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../packaging/repairs")
+                .join(name);
+            std::fs::read_to_string(&p)
+                .unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+                .replace("\\-", "-")
+                .replace("\\e", "\\")
+        };
+        let man1 = read("podshl-repairs.1");
+        let man5 = read("podshl-repairs.d.5");
+
+        // Commands: the first word of each entry in the usage, indented by two.
+        let mut commands = vec![];
+        for line in USAGE.lines() {
+            if let Some(rest) = line.strip_prefix("  ") {
+                if rest.starts_with(' ') {
+                    continue;
+                }
+                let first = rest.split([' ', ',']).next().unwrap_or("");
+                if !first.is_empty() {
+                    commands.push(first.to_string());
+                }
+            }
+        }
+        assert!(commands.len() > 10, "found too few commands: {commands:?}");
+        for c in &commands {
+            let marked = [".B ", ".BR ", ".BI "].iter().any(|m| {
+                man1.lines().any(|l| {
+                    l.starts_with(m) && l[m.len()..].trim_start_matches('"').starts_with(c.as_str())
+                })
+            });
+            assert!(marked, "podshl-repairs(1) has no entry for `{c}`");
+        }
+        // Flags: every --word in the usage.
+        let re = regex::Regex::new(r"--[a-z][a-z-]*").unwrap();
+        for f in re.find_iter(USAGE).map(|m| m.as_str()) {
+            assert!(man1.contains(f), "podshl-repairs(1) does not mention {f}");
+        }
+        // The agent-hook command the hooks call is on the page too.
+        assert!(
+            man1.contains("agent-hook"),
+            "the command the hooks call is not documented"
+        );
+
+        for field in [
+            "id",
+            "kind",
+            "reason",
+            "until",
+            "issue",
+            "fixed_in",
+            "path",
+            "package",
+            "original",
+            "original_package",
+            "retired",
+        ] {
+            assert!(
+                man5.contains(&format!(".B {field}\n"))
+                    || man5.contains(&format!("\"{field}\""))
+                    || man5.contains(&format!(".B {field}")),
+                "podshl-repairs.d(5) does not describe the field `{field}`"
+            );
+        }
+    }
 
     /// RR20: the notification names the program that raised it, and on
     /// Omarchy a click opens the review.

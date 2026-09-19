@@ -488,10 +488,98 @@ def _():
     cargo("repairs_cli::tests::the_notification_names_the_program_that_raised_it")
 
 
+@case("RR24", "What a package or plugin declares becomes a record, attributed by the package manager [rust]")
+def _():
+    cargo("declared::tests::a_packages_declaration_becomes_a_record_that_follows_its_updates")
+    cargo("declared::tests::an_omarchy_plugin_declares_like_a_package")
+    cargo("declared::tests::a_broken_declaration_is_said_and_the_rest_still_taken")
+
+
+@case("RR25", "A maintainer withdraws a declaration in an update, and the record says so once [rust]")
+def _():
+    cargo("declared::tests::a_maintainer_withdraws_a_declaration_and_the_record_says_so_once")
+
+
+@case("RR26", "The man pages name every command, flag and declaration field [rust]")
+def _():
+    cargo("repairs_cli::tests::the_man_pages_name_every_command_flag_and_field")
+
+
+@case("RR27", "show says why, who declared it, upstream, and whether there is a way back [rust]")
+def _():
+    cargo("repairs_cli::tests::show_says_why_who_upstream_and_whether_there_is_a_way_back")
+
+
+@case("RR23", "The one-line install checks the download, installs it with its hook, and refuses a tampered one")
+def _():
+    # The release is served from a directory, the way GitHub lays it out
+    # (download/v<version>/<file>), and the program is a stand-in that writes
+    # down what it was asked — so what the installer set up is observable
+    # without installing hooks on the machine running the suite.
+    import functools, hashlib, http.server, shutil, socket, tempfile, threading
+    root = Path(tempfile.mkdtemp(prefix="podshl-install-"))
+    try:
+        rel = root / "releases" / "download" / "v9.9.9"
+        rel.mkdir(parents=True)
+        name = "podshl-repairs-9.9.9-linux-x86_64"
+        prog = rel / name
+        prog.write_text('#!/bin/sh\necho "$@" >> "$HOME/asked"\n')
+        good = prog.read_bytes()
+        man = rel / "podshl-repairs.1"
+        man.write_text(".TH PODSHL-REPAIRS 1\n")
+        (rel / "SHA256SUMS").write_text(
+            f"{hashlib.sha256(good).hexdigest()}  {name}\n"
+            f"{hashlib.sha256(man.read_bytes()).hexdigest()}  podshl-repairs.1\n")
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            def install(home):
+                home.mkdir(parents=True)
+                env = {**os.environ, "HOME": str(home), "PODSHL_VERSION": "9.9.9",
+                       "PODSHL_RELEASES": f"http://127.0.0.1:{port}/releases"}
+                return subprocess.run(["bash", "packaging/repairs/install.sh"], env=env,
+                                      capture_output=True, text=True, timeout=60)
+
+            home = root / "home-a"
+            r = install(home)
+            assert r.returncode == 0, r.stdout + r.stderr
+            placed = home / ".local" / "bin" / "podshl-repairs"
+            assert placed.read_bytes() == good, "what was installed is not what was released"
+            assert os.access(placed, os.X_OK), "installed without the executable bit"
+            asked = (home / "asked").read_text()
+            assert "install-hook" in asked, f"the update hook was not set up: {asked!r}"
+            assert "checked against SHA256SUMS" in r.stdout, r.stdout
+            page = home / ".local" / "share" / "man" / "man1" / "podshl-repairs.1"
+            assert page.read_bytes() == man.read_bytes(), "the man page was not installed"
+
+            # The same release with the program changed after the sums were
+            # written: refused, and nothing left behind.
+            prog.write_bytes(good + b"# changed\n")
+            home = root / "home-b"
+            r = install(home)
+            assert r.returncode != 0, "a program that does not match its sums was installed"
+            assert "does not match" in r.stderr, r.stderr
+            assert not (home / ".local" / "bin" / "podshl-repairs").exists(), \
+                "a refused program was left in ~/.local/bin"
+        finally:
+            httpd.shutdown()
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 @case("RR21", "What a coding agent writes outside a repository is recorded, once per session [rust]")
 def _():
     cargo("agent_hook::tests::an_agents_edit_outside_a_repository_is_recorded_once_per_session")
     cargo("agent_hook::tests::a_hook_call_it_cannot_read_is_an_error_not_a_stop")
+
+
+@case("RR28", "What a coding agent changes with a shell command is recorded like its file writes [rust]")
+def _():
+    cargo("agent_hook::tests::an_agents_shell_command_is_recorded_like_its_file_writes")
 
 
 @case("RR22", "Installing the agent hook keeps everything else in the agent's settings [rust]")

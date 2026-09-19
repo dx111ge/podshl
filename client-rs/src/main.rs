@@ -1090,6 +1090,7 @@ async fn execute(
 async fn repairs_review(state: State<'_, AppState>) -> Result<Value, String> {
     let root = state.root.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        repairs_cli::take_declarations(&root);
         let mut out = json!(repair::review(&root, &repairs_cli::live_lookups(false)));
         // The window is photographed; the path is shown without the account name.
         for item in out.as_array_mut().into_iter().flatten() {

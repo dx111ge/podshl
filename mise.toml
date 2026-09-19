@@ -150,6 +150,9 @@ cp "$TARGET/release/podshl-client" "$OUT/podshl-client-$V-linux-x86_64"
 # about the window and nothing guarantees it builds the other programs.
 (cd client-rs && cargo build --release --bin podshl-repairs)
 cp "$TARGET/release/podshl-repairs" "$OUT/podshl-repairs-$V-linux-x86_64"
+# Its man pages, beside it and in the same SHA256SUMS, so the one-line
+# installer checks them like the program.
+cp packaging/repairs/podshl-repairs.1 packaging/repairs/podshl-repairs.d.5 "$OUT/"
 # **This version's .deb, not every .deb ever built there.** The bundle
 # directory keeps what previous builds left, so a bare `*.deb` copied 0.1.0 and
 # 0.1.1 into the 0.1.2 release — twice, caught by hand both times, and the

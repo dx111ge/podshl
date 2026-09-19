@@ -1,59 +1,56 @@
 #!/bin/bash
 # One continuous take of podshl-repairs on a clean Omarchy, in a real terminal
-# on the real desktop.
+# on the real desktop, with a real Claude.
 #
-# Unlike `take-user.sh` there is no window to click through: the record is a
-# command-line program, so the take puts commands into a Ghostty and waits for
-# the shell to be idle again — no fixed sleeps guessing how long Claude or
-# makepkg takes. Two things are pointer work: the notice Omarchy shows after
-# the post-update hook, and the terminal its click opens.
+# **Pasted, not typed.** `wtype` lost characters on this layout: a rehearsal
+# turned `http://127.0.0.1:8765` into `http//127.0.0.18765`, and every command
+# after the download ran against a program never installed, while the
+# subtitles went on describing a story that was not happening. So commands go
+# through the clipboard, are shown for a moment, then run; and every step that
+# matters is checked, and the take stops at the first that did not happen.
 #
-# **Pasted, not typed.** `wtype` lost characters on this layout: the first
-# rehearsal turned `http://127.0.0.1:8765` into `http//127.0.0.18765` and
-# `$RAW/PKGBUILD` into `PKGB;SuILD`, and every command after the download ran
-# against a program that was never installed — while the subtitles went on
-# describing the story as if it had worked. So each command goes through the
-# clipboard, is shown for a moment, then runs; and every step that matters is
-# checked, and the take stops at the first one that did not happen.
+# **Claude is used the way a person uses it**: `claude`, a request typed in plain
+# words, Enter on its question before it writes, `/exit`. The take waits for
+# the record the agent hook writes, not for a guessed number of seconds, and
+# presses Enter now and then while it waits — the answer to its question
+# before an edit, whose first choice is Yes. The trust question in a new folder
+# is answered once, at the start, with Down and Enter, because its first
+# choice is No. An Enter or a Down with nothing to answer does nothing.
 #
-# **Recorded with gpu-screen-recorder**, which Omarchy uses itself: `grim` on a
-# timer managed 1.5 frames a second at 3840x1080. The screen is recorded
-# whole; `enc-repairs.sh` crops the middle to 1920x1080 and pans right while
-# the notice (top right) is the thing to look at, at the times written to
-# `$DIR/pan` as the take happens, like the subtitles.
+# **Recorded with gpu-screen-recorder**, as Omarchy does; the screen is
+# recorded whole, and `enc-repairs.sh` crops it, pans to the notice at the
+# times written to `$DIR/pan`, and puts the subtitles in a band of their own.
 #
-# Needs: a clean machine (no podshl-repairs, no ledger, no hooks), Claude set
-# as Omarchy's default agent and logged in, ydotoold running.
+# Needs: a clean machine (no podshl-repairs, no ledger, no hooks, no
+# podshl-bin), Claude as Omarchy's default agent and logged in, ydotoold.
 #
-#   REL=… RAW=… take-repairs.sh <dir>   # screen.mp4, take.srt, pan in <dir>
+#   take-repairs.sh <dir>                    # the published release
+#   INSTALL=… RAW=… PODSHL_RELEASES=… PODSHL_VERSION=… take-repairs.sh <dir>   # a mirror
 set -uo pipefail
 export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
 export YDOTOOL_SOCKET=/run/user/1000/.ydotool_socket
 export HYPRLAND_INSTANCE_SIGNATURE=$(ls -t /run/user/1000/hypr | head -1)
 export PATH=$HOME/.local/bin:$PATH
 DIR=${1:?output directory}
-REL=${REL:-https://github.com/dx111ge/podshl/releases/download/v0.1.7}
+INSTALL=${INSTALL:-https://raw.githubusercontent.com/dx111ge/podshl/main/packaging/repairs/install.sh}
 RAW=${RAW:-https://raw.githubusercontent.com/dx111ge/podshl/main/packaging/aur/podshl-bin}
 R=$HOME/.local/bin/podshl-repairs
 LF=$HOME/.config/hypr/looknfeel.lua
-rm -rf "$DIR"; mkdir -p "$DIR"
+rm -rf "$DIR"; mkdir -p "$DIR" ~/podshl-pkg
 
-# ---------------------------------------------------------------- preparation
-# The repository script the AUR case shows and runs, written here so the take
-# shows exactly what it runs.
-mkdir -p ~/podshl-pkg
-cat > ~/podshl-pkg/local-repo.sh <<'EOF'
-#!/bin/bash
-# A local pacman repository holding podshl-bin, so it is no longer a foreign
-# package and no AUR helper looks its name up.
-set -e
-install -d -m755 /var/lib/podshl/repo
-cp podshl-bin-*.pkg.tar.zst /var/lib/podshl/repo/
-repo-add -q /var/lib/podshl/repo/podshl.db.tar.gz /var/lib/podshl/repo/podshl-bin-*.pkg.tar.zst
-printf '\n[podshl]\nSigLevel = Optional TrustAll\nServer = file:///var/lib/podshl/repo\n' >> /etc/pacman.conf
-pacman -Sy --noconfirm >/dev/null
-echo "podshl-bin now comes from the local repository [podshl]"
-EOF
+# Windows titled PODSHL: this take's terminal, and the review a click on the
+# notice opens. One left from an earlier take was taken for this one's — the
+# first by that title — and every command went to a window nobody watched.
+podshl_windows() { hyprctl clients -j | python3 -c '
+import json,sys
+print(" ".join(c["address"] for c in json.load(sys.stdin) if c["title"]=="PODSHL"))'; }
+close_podshl_windows() {
+  for a in $(podshl_windows); do
+    hyprctl dispatch "hl.dsp.window.close({ window = \"address:$a\" })" >/dev/null
+  done
+}
+[ -z "$(podshl_windows)" ] || { echo "PODSHL windows are open from before: reset first" >&2; exit 1; }
+trap close_podshl_windows EXIT
 
 hyprctl dispatch "hl.dsp.focus({ workspace = 9 })" >/dev/null
 setsid uwsm-app -- ghostty --class=org.omarchy.terminal --title=PODSHL --font-size=17 \
@@ -70,9 +67,7 @@ SHELLPID=$(pgrep -P "$GPID" -x bash | head -1)
 ydotool mousemove --absolute -x 500 -y 520
 
 # Checks read uncommented lines only: Omarchy's looknfeel.lua carries every
-# option as a commented example (`--     gaps_in = 0,`), and a plain grep for
-# the option found it in every state — which stopped the second rehearsal at an
-# undo that had worked.
+# option as a commented example (`--     gaps_in = 0,`).
 
 # ---------------------------------------------------------------- helpers
 paste_() { printf '%s' "$1" | wl-copy >/dev/null 2>&1; sleep 0.2; wtype -M ctrl -M shift v -m shift -m ctrl; }
@@ -80,14 +75,31 @@ idle() { sleep 0.8; while pgrep -P "$SHELLPID" >/dev/null; do sleep 0.3; done; s
 run_() { paste_ "$1"; sleep 1.1; wtype -k Return; }
 t() { run_ "$1"; idle; }
 cls() { wtype -M ctrl l -m ctrl; sleep 0.5; }
+records() { [ -x "$R" ] && "$R" list --json 2>/dev/null || echo '[]'; }
+# The newest record whose `by` contains $1 and whose file or package contains $2.
+latest() {
+  records | python3 -c "
+import json,sys
+try: rs=json.load(sys.stdin)
+except Exception: rs=[]
+rs=[r for r in rs if sys.argv[1] in r['subject'] and sys.argv[2] in ((r.get('target') or '')+' '+(r.get('upstream',{}).get('package') or ''))]
+print(rs[-1]['id'] if rs else '')" "$1" "$2"
+}
+count() { records | python3 -c "
+import json,sys
+print(sum(1 for r in json.load(sys.stdin) if sys.argv[1] in r['subject'] and sys.argv[2] in (r.get('target') or '')))" "$1" "$2"; }
+state_of() { records | python3 -c "
+import json,sys
+print(next((r['state'] for r in json.load(sys.stdin) if r['id']==sys.argv[1]),''))" "$1"; }
 
-# Off camera: what an ordinary Omarchy shell would have. The take runs bash
-# without its startup files, so it has neither Omarchy's prompt setup nor
-# OMARCHY_PATH — and without that, `omarchy-refresh-config` said "Not a
-# shipped user config" and stopped the third rehearsal. Taken from an
-# interactive shell rather than written here.
+# Off camera: what an ordinary Omarchy shell would have (bash without its
+# startup files has neither the prompt nor OMARCHY_PATH), plus a mirror's
+# release location when rehearsing.
 OP=$(bash -ic 'echo "$OMARCHY_PATH"' 2>/dev/null | tail -1)
-run_ "export OMARCHY_PATH=$OP PS1='\$ '; clear"; idle
+extra=""
+[ -n "${PODSHL_RELEASES:-}" ] && extra="$extra PODSHL_RELEASES=$PODSHL_RELEASES"
+[ -n "${PODSHL_VERSION:-}" ] && extra="$extra PODSHL_VERSION=$PODSHL_VERSION"
+run_ "export OMARCHY_PATH=$OP$extra PS1='\$ '; clear"; idle
 sleep 1
 
 SRT="$DIR/take.srt"; PAN="$DIR/pan"; : > "$SRT"; : > "$PAN"; N=0
@@ -104,7 +116,6 @@ endsub() {
   N=$((N+1)); { echo "$N"; echo "$(ts "$OPEN_START") --> $(ts "$(now)")"; echo "$OPEN"; echo; } >> "$SRT"
   OPEN=""
 }
-# sub "text" seconds: one subtitle for the next `seconds`, and wait them out.
 sub() {
   local start end
   endsub
@@ -114,11 +125,8 @@ sub() {
   fi
   sleep "$2"
 }
-# subo "text": held until the next subtitle starts, for a command whose length
-# nobody knows in advance.
 subo() { endsub; OPEN_START=$(now); OPEN="$1"; }
 stop_rec() { kill -INT "$REC" 2>/dev/null; wait "$REC" 2>/dev/null; }
-# must "what" test...: the step happened, or the take stops here.
 must() {
   local what=$1; shift
   if ! "$@" >/dev/null 2>&1; then
@@ -127,66 +135,75 @@ must() {
     exit 1
   fi
 }
-latest() {  # the newest record by $1 on $2, from the record itself
-  [ -x "$R" ] || return 0
-  "$R" list --json 2>/dev/null | python3 -c "
-import json,sys
-try: rs=json.load(sys.stdin)
-except Exception: rs=[]
-rs=[r for r in rs if r['subject']==sys.argv[1] and sys.argv[2] in (r.get('target') or '')]
-print(rs[-1]['id'] if rs else '')" "$1" "$2"
+
+# ask "request" check: open Claude, ask, answer its questions, leave.
+ask() {
+  local request=$1 check=$2 n=0
+  run_ "claude"
+  sleep 8
+  # The trust question in a folder Claude has not seen offers "No, exit"
+  # first: the rehearsal's Enter chose it, Claude left, and the request went
+  # to bash. Down to "Yes, I trust this folder", then Enter. Where there is no
+  # question, Down in an empty prompt does nothing.
+  wtype -k Down; sleep 0.6; wtype -k Return
+  sleep 4
+  # Typed, as a person does. A pasted request is one Claude may take for
+  # quoted text rather than an instruction, and ask back (take 10). The
+  # requests are words and a full stop: none of the characters wtype lost.
+  wtype -d 45 "$request"; sleep 1.5; wtype -k Return
+  until "$check"; do
+    sleep 3; n=$((n + 1))
+    [ $((n % 3)) -eq 0 ] && wtype -k Return    # its question before an edit
+    [ $n -gt 90 ] && must "Claude's change" false
+  done
+  sleep 6
+  paste_ "/exit"; sleep 1; wtype -k Return
+  idle
 }
+BEFORE=0
+new_hypr_record() { [ "$(count claude /.config/hypr/)" -gt "$BEFORE" ] && [ "$(state_of "$(latest claude /.config/hypr/)")" = applied ]; }
+repo_changed() { grep -q "x = 1" ~/code-demo/settings.py 2>/dev/null; }
 
 # ---------------------------------------------------------------- the take
 sub "A fix outlives its reason. You, a script or an agent change something, and a year later nobody knows why it is there." 7
-sub "podshl-repairs keeps a record of such changes, and looks at them again after every update. This is a clean Omarchy." 7
+sub "podshl-repairs keeps a record of such changes and looks at them again after every update. This is a clean Omarchy." 7
 
 # 1. install
-subo "One program from the release, checked against its sums."
-t "cd \"\$(mktemp -d)\""
-t "curl -fsSLO $REL/podshl-repairs-0.1.7-linux-x86_64"
-t "curl -fsSLO $REL/SHA256SUMS"
-t "sha256sum -c --ignore-missing SHA256SUMS"
-subo "Into your own ~/.local/bin. No root, and no package."
-t "install -Dm755 podshl-repairs-0.1.7-linux-x86_64 ~/.local/bin/podshl-repairs"
+subo "One line: the newest release, checked against its sums, into ~/.local/bin without root — with its hooks and its manual."
+t "curl -fsSL $INSTALL | bash"
 must "the install" test -x "$R"
-t "podshl-repairs review"
-sub "Nothing recorded yet." 3
-subo "A review after every Omarchy update."
-t "podshl-repairs install-hook"
 must "the update hook" test -f ~/.config/omarchy/hooks/post-update.d/podshl-repairs
-sub "" 1.5
-subo "And the agent Omarchy is set to use — Claude here — records what it writes, through its own hooks."
-t "podshl-repairs install-agent-hook"
 must "the agent hook" grep -q agent-hook ~/.claude/settings.json
-sub "Even this change to Claude's settings is in the record, with a copy to go back to." 6
-t "cd"
+sub "" 3
+subo "The manual is there too."
+run_ "man podshl-repairs"; sleep 6; wtype q; idle
 
 # 2. an agent changes a setting
 cls
-subo "Ask the agent for a change, the way anybody does."
-t "claude -p \"Make the gaps between windows smaller: in ~/.config/hypr/looknfeel.lua add an hl.config block with general.gaps_in = 2 and general.gaps_out = 4. Change nothing else and run no commands. Reply only with done.\" --permission-mode acceptEdits < /dev/null"
-R1=$(latest claude looknfeel.lua)
-must "Claude's change being recorded" test -n "$R1"
+subo "Now open Claude, Omarchy's default agent here, and ask for a change in your own words."
+BEFORE=$(count claude /.config/hypr/)
+ask "Make the gaps between my windows a bit smaller." new_hypr_record
+R1=$(latest claude /.config/hypr/)
 subo "Nobody typed anything for the record."
 t "podshl-repairs list"
-sub "It is there anyway: by claude, with a copy from before the change." 6
+sub "It is there anyway: by claude, with a copy of the file from before the change." 6
 
 # 3. undo it
 subo "You do not like it. Undo."
 t "podshl-repairs restore $R1"
-must "the undo" bash -c "! grep -qE '^[[:space:]]*gaps_in = 2' '$LF'"
+must "the undo" bash -c "[ \"\$('$R' list --json | python3 -c 'import json,sys; print(next(r[\"state\"] for r in json.load(sys.stdin) if r[\"id\"]==\"$R1\"))')\" = undone ]"
 sub "The file is back, byte for byte." 4
 
 # 4. a change you keep, overwritten
 cls
-subo "A change you keep: dim the windows you are not using."
-t "claude -p \"Dim unfocused windows: in ~/.config/hypr/looknfeel.lua add an hl.config block with decoration.dim_inactive = true and decoration.dim_strength = 0.15. Change nothing else and run no commands. Reply only with done.\" --permission-mode acceptEdits < /dev/null"
-R2=$(latest claude looknfeel.lua)
-must "the second change being recorded" test -n "$R2" -a "$R2" != "$R1"
+subo "A change you keep, asked for the same way."
+BEFORE=$(count claude /.config/hypr/)
+ask "Dim the windows I am not using." new_hypr_record
+R2=$(latest claude /.config/hypr/)
+must "the change being in looknfeel.lua" bash -c "'$R' list --json | python3 -c 'import json,sys; r=next(r for r in json.load(sys.stdin) if r[\"id\"]==\"$R2\"); sys.exit(0 if (r.get(\"target\") or \"\").endswith(\"/looknfeel.lua\") else 1)'"
 subo "Weeks later Omarchy puts its own default back: an update, a migration, a refresh."
 t "omarchy-refresh-config hypr/looknfeel.lua"
-must "Omarchy's reset" bash -c "! grep -qE '^[[:space:]]*dim_inactive = true' '$LF'"
+must "Omarchy's reset" bash -c "! grep -qE '^[[:space:]]*dim_inactive' '$LF'"
 sub "Your change is gone, and your rounded corners with it. Nothing tells you." 6
 cls
 subo "After every update, Omarchy runs the hook."
@@ -194,57 +211,50 @@ t "bash ~/.config/omarchy/hooks/post-update.d/podshl-repairs"
 must "the notice" bash -c "ls ~/.local/state/omarchy/notifications/*.json | xargs grep -l '\"PODSHL\"'"
 echo "$(now) right" >> "$PAN"
 sub "This time something does. The notice stays until you look at it." 6
-# The notice, top right: ydotool's coordinates are half the screen's pixels.
 ydotool mousemove --absolute -x 1800 -y 45; sleep 1.2
 ydotool click 0xC0
 sleep 1.8
 echo "$(now) centre" >> "$PAN"
 sub "One click: which change, and why it wants a look." 7
 wtype " "; sleep 1.5
-subo "Undo goes back to before Claude touched the file, so your rounded corners return. Ask again for the dimming, and it is recorded again."
+subo "Undo goes back to before Claude touched the file, so your rounded corners return."
 t "podshl-repairs restore $R2"
 must "the second undo" grep -qE "^[[:space:]]*rounding = 8" "$LF"
 sub "" 3
 
-# 5. the AUR case
+# 5. what a package declares
 cls
-subo "Now PODSHL's own client, built from its PKGBUILD."
+subo "Packages can say why they leave the ordinary path. PODSHL's own client is built from its PKGBUILD:"
 t "cd ~/podshl-pkg"
-t "curl -fsSLO $RAW/PKGBUILD && curl -fsSLO $RAW/podshl-client.desktop"
+t "for f in PKGBUILD podshl-client.desktop podshl-bin.repairs.json; do curl -fsSLO $RAW/\$f; done"
 t "makepkg -si --noconfirm"
 must "the client package" pacman -Q podshl-bin
 cls
 subo "The AUR step of every omarchy-update:"
 t "omarchy-update-aur-pkgs"
-sub "It asks the AUR about podshl-bin. It is not there, and the name is free: whoever registers it, the next update installs theirs." 8
-sub "The fix is a local repository, a workaround until the package is in the AUR. So it goes in the record, with its reason." 7
-t "podshl-repairs begin --kind file --by me --path /etc/pacman.conf --note \"Local repo for podshl-bin until it is in the AUR\""
-P=$(latest me /etc/pacman.conf)
-must "the record of the workaround" test -n "$P"
-t "cat local-repo.sh"
-sub "" 4
-t "sudo bash local-repo.sh"
-t "podshl-repairs done $P"
-must "the workaround" bash -c "[ -z \"\$(pacman -Qm)\" ]"
-subo "The same step again:"
-t "omarchy-update-aur-pkgs"
-sub "Nothing foreign left, so nothing is looked up." 5
+sub "It asks the AUR about podshl-bin. The package is not there, and the name is free for anybody to register." 7
+t "podshl-repairs list"
+P=$(latest "declared by podshl-bin" podshl-bin)
+must "the package's declaration" test -n "$P"
+subo "Nobody wrote that down on this machine. The package says it:"
+t "podshl-repairs show $P"
+sub "Its maintainer's reason, attributed by pacman. A later version withdraws it, and the record will say so." 8
+t "cd"
 
 # 6. a workaround waiting on upstream
 cls
-subo "An older workaround, for a Hyprland bug."
+subo "An older workaround, for a Hyprland bug, watched on GitHub."
 t "podshl-repairs add --kind package --by me --package hyprland --issue https://github.com/hyprwm/Hyprland/issues/7564 --watch"
 t "podshl-repairs review"
-must "the closed issue" bash -c "'$R' review --offline >/dev/null; grep -q 'upstream asked about https://github.com/hyprwm/Hyprland/issues/7564: closed' ~/.local/state/podshl/client.log"
-sub "Watched, it asks GitHub, and only because you said so. The issue is closed: time to see whether the workaround can go. It removes nothing by itself." 9
+must "the closed issue" bash -c "grep -q 'upstream asked about https://github.com/hyprwm/Hyprland/issues/7564: closed' ~/.local/state/podshl/client.log"
+sub "Asked only because you said so. The issue is closed: time to see whether the workaround can go. Nothing is removed by itself." 8
 
 # 7. inside a repository
 cls
-subo "Code in a repository has a history of its own."
+subo "Code in a git repository has a history of its own."
 t "mkdir ~/code-demo && cd ~/code-demo && git init -q && echo 'x = 0' > settings.py"
-t "claude -p \"In settings.py change x = 0 to x = 1. Change nothing else and run no commands. Reply only with done.\" --permission-mode acceptEdits < /dev/null"
+ask "Change x to 1 in settings.py." repo_changed
 t "cat settings.py; podshl-repairs list"
-must "Claude's edit in the repository" grep -q "x = 1" ~/code-demo/settings.py
 sub "Changed, and not recorded: git already has it. The record is for what has no history." 7
 t "cd"
 
@@ -252,10 +262,9 @@ t "cd"
 cls
 t "podshl-repairs list"
 sub "What was changed on this machine, by whom, and why, looked at again after every update." 7
-sub "podshl-repairs · github.com/dx111ge/podshl · docs/REPAIRS.md" 5
+sub "podshl-repairs · man podshl-repairs · github.com/dx111ge/podshl" 5
 endsub
 
 stop_rec
 echo "$(now)" > "$DIR/duration"
-hyprctl dispatch "hl.dsp.window.close({ window = \"address:$ADDR\" })" >/dev/null
 echo "take done: $(du -h "$DIR/screen.mp4" | cut -f1) over $(cat "$DIR/duration")s"

@@ -8,10 +8,15 @@
 # The binary is the bare one, not the one inside the release's .deb. The two
 # differ in exactly three bytes, Tauri's bundle-type marker (UNK against DEB),
 # and this package is not a .deb.
+#
+# It declares why it is not an ordinary AUR package in
+# /usr/share/podshl/repairs.d/podshl-bin.json (podshl-repairs.d(5)), so the
+# record of local fixes knows it without anybody writing it down — and a later
+# version, once the package is in the AUR, withdraws that entry there.
 
 pkgname=podshl-bin
 _bin=podshl-client
-pkgver=0.1.7
+pkgver=0.1.8
 pkgrel=1
 pkgdesc="Ask the projects you run what is wrong with your machine; every reading consented, nothing uploaded without asking"
 arch=('x86_64')
@@ -38,6 +43,7 @@ source=(
   "icon-128-$pkgver.png::$_raw/client-rs/icons/128x128.png"
   "icon-256-$pkgver.png::$_raw/client-rs/icons/128x128@2x.png"
   "$_bin.desktop"
+  "$pkgname.repairs.json"
 )
 sha256sums=('16e6b220c94878154a290605dc7410e38e689ce4ad184c7889c61cac1b0d92d3'
             '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0'
@@ -55,4 +61,5 @@ package() {
       "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$_bin.png"
   done
   install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$pkgname.repairs.json" "$pkgdir/usr/share/podshl/repairs.d/$pkgname.json"
 }

@@ -1,51 +1,137 @@
-# Recorded local fixes
+# The record of local fixes
 
 A local fix outlives its reason. The bug it works around gets fixed upstream, an
 update overwrites it, or a cloned plugin keeps running while the official one
-moves on, and a year later nobody knows why it is there. The client keeps a
-record of such fixes and looks at them again. It **never removes or undoes
-anything by itself**: a newer version is a reason to look, not proof that the
-fix can go, because a backport or a fix that did not hold looks the same from
-here.
+moves on, and a year later nobody knows why it is there.
+
+`podshl-repairs` keeps a record of such changes — made by you, by a script, by a
+coding agent, or declared by the packages and plugins that make them — and
+looks at them again after every update. It **never removes or undoes anything
+by itself**: a newer version is a reason to look, not proof that a fix can go,
+because a backport and a fix that did not hold look the same from here.
 
 **Watch it:** [`examples/repairs/podshl-repairs.mp4`](../examples/repairs/podshl-repairs.mp4)
-(3:54) — installed from the release on a clean Omarchy, an agent's change
-recorded and undone, a kept change overwritten and noticed, a workaround kept
-with its reason. What each part shows is in
+— installed with one line on a clean Omarchy, a change asked of Claude recorded
+without anybody writing it, undone, a kept change overwritten by Omarchy and
+noticed, and what a package declares about itself. What each part shows is in
 [`examples/repairs/README.md`](../examples/repairs/README.md).
 
-The record is `repairs.json` in the client's settings folder
-(`%APPDATA%\podshl` on Windows, `~/Library/Application Support/podshl` on
-macOS, `~/.config/podshl` on Linux; `VS_ROOT` overrides it). Every field a
-decision reads is written by code: versions come from the package manager,
-paths are resolved, digests are computed. A `note` is kept and shown, and
-nothing reads it.
+The same record is also part of the PODSHL client (`podshl-client repairs …`,
+and a panel in its window); everything here applies to both.
 
-## Getting it on its own (Linux, Omarchy first)
+---
 
-The record does not need the rest of PODSHL: no window, no WebKitGTK, no
-root. One program, into your own `~/.local/bin`:
+- [Install](#install)
+- [First steps](#first-steps)
+- [Where records come from](#where-records-come-from)
+  - [You, or a script](#you-or-a-script)
+  - [A coding agent](#a-coding-agent)
+  - [Packages and plugins](#packages-and-plugins)
+  - [The PODSHL client](#the-podshl-client)
+- [Looking again](#looking-again)
+- [What each finding means](#what-each-finding-means)
+- [Deciding](#deciding)
+- [After updates, or daily](#after-updates-or-daily)
+- [Watching an upstream issue](#watching-an-upstream-issue)
+- [What leaves this machine](#what-leaves-this-machine)
+- [Removing a record](#removing-a-record)
+- [Command reference](#command-reference)
+- [Files and environment](#files-and-environment)
+- [Troubleshooting](#troubleshooting)
+- [How this is tested](#how-this-is-tested)
+
+---
+
+## Install
+
+**Linux, Omarchy first.** One line installs the program and sets up its hooks:
+
+```
+curl -fsSL https://raw.githubusercontent.com/dx111ge/podshl/main/packaging/repairs/install.sh | bash
+```
+
+[`packaging/repairs/install.sh`](../packaging/repairs/install.sh):
+
+1. finds the newest release;
+2. downloads `podshl-repairs`, its man pages and the release's `SHA256SUMS`;
+3. **installs nothing unless each file matches its sum** (`RR23`);
+4. puts the program into `~/.local/bin` and the man pages into
+   `~/.local/share/man` — no root, no package, so no package manager and no AUR
+   helper is ever asked about it;
+5. sets up the review after every update (Omarchy) or once a day (elsewhere),
+   and on Omarchy the hook that records what your default agent writes.
+
+It says each step as it does it. Read it first if you would rather: it is
+short. Then `man podshl-repairs`.
+
+**By hand**, without piping anything into a shell:
 
 ```
 cd "$(mktemp -d)"
-curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.7/podshl-repairs-0.1.7-linux-x86_64
-curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.7/SHA256SUMS
+curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.8/podshl-repairs-0.1.8-linux-x86_64
+curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.8/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
-install -Dm755 podshl-repairs-0.1.7-linux-x86_64 ~/.local/bin/podshl-repairs
-podshl-repairs install-hook          # a review after every update (Omarchy), or daily
-podshl-repairs install-agent-hook    # Omarchy: record what your default agent writes
+install -Dm755 podshl-repairs-0.1.8-linux-x86_64 ~/.local/bin/podshl-repairs
+podshl-repairs install-hook
+podshl-repairs install-agent-hook    # Omarchy: your default agent
 ```
 
-It is not a package, so nothing asks the AUR about it. Removing it is
-`podshl-repairs remove-agent-hook`, `podshl-repairs remove-hook`, and deleting
-the file; the record itself is in `~/.config/podshl`.
+**Taking it out again:**
 
-## What gets recorded
+```
+podshl-repairs remove-agent-hook
+podshl-repairs remove-hook
+rm ~/.local/bin/podshl-repairs ~/.local/share/man/man1/podshl-repairs.1 ~/.local/share/man/man5/podshl-repairs.d.5
+```
 
-* **Changes the client makes itself.** Every change the window makes is written
-  down before it runs, or it does not run.
-* **Changes made by something else**, such as an agent, a script or you,
-  registered from the command line:
+The record itself stays in `~/.config/podshl` until you remove that too.
+
+**Other systems.** On Windows and macOS the record is part of the PODSHL
+client ([INSTALL.md](INSTALL.md)); `podshl-repairs` on its own is offered on
+Linux first. On Omarchy one agent is the defined one, so what it writes can be
+recorded through its hooks and walked end to end; Windows has no such default,
+and the standalone record comes there later, as a whole. The build already
+writes a console `podshl-repairs.exe` (`RR18` checks it is one); nothing
+installs it yet.
+
+## First steps
+
+```
+$ podshl-repairs review
+Nothing recorded wants another look.
+
+$ id=$(podshl-repairs begin --kind file --by me --path ~/.config/app/app.conf)
+$ $EDITOR ~/.config/app/app.conf
+$ podshl-repairs done "$id"
+
+$ podshl-repairs list
+[1789821805-2] file — ~/.config/app/app.conf (me) — applied
+
+$ podshl-repairs show "$id"
+[1789821805-2] file — ~/.config/app/app.conf (me)
+  state: applied
+  copy to go back to: ~/.config/podshl/backups/1789821805-2/app.conf
+  recorded: 2026-09-19
+
+$ podshl-repairs restore "$id"
+Put back: ~/.config/app/app.conf
+```
+
+`begin` keeps a copy before you change the file; `done` takes the file's digest
+afterwards; from then on every review compares the file with that digest.
+`restore` puts the copy back. Nothing is ever undone without you asking.
+
+## Where records come from
+
+### You, or a script
+
+A change you are about to make, or have made:
+
+```
+podshl-repairs begin --kind file --by me --path P [options]    # keeps a copy; prints the id
+podshl-repairs done ID
+podshl-repairs add --kind file|package|overlay --by NAME [options]   # already made; no copy
+```
 
 | Kind | What it is | What is kept | Flagged when |
 |---|---|---|---|
@@ -53,11 +139,34 @@ the file; the record itself is in `~/.config/podshl`.
 | `package` | a package built or pinned locally | the installed version, and the version the package manager offered then | the official package moved on (the local one is frozen), or it was updated |
 | `overlay` | a local copy standing in front of a component (a cloned plugin, a patched script) | digest of the copy; digest of the original path, or the original package's version | what the copy overrides has changed; the copy changed |
 
-Any record can name an upstream issue or pull request and the version that
-fixes it (`--fixed-in`). Once that version is installed, the record is flagged
-with "may no longer be needed, or the fix did not hold".
+Any record can name the upstream issue or pull request it works around
+(`--issue URL`) and the first version that fixes it (`--fixed-in V`). Once that
+version is installed, the record says the change may no longer be needed — or
+the fix did not hold.
 
-## What a coding agent changes
+```
+podshl-repairs add --kind package --by me --package hyprland \
+      --issue https://github.com/hyprwm/Hyprland/pull/1234 --watch
+podshl-repairs add --kind overlay --by my-agent --path ~/.local/share/app/plugins/foo \
+      --original /usr/share/app/plugins/foo --original-package app-plugin-foo
+```
+
+Package versions are read with `pacman` (Arch, Omarchy), `dpkg-query` and
+`apt-cache` (Debian, Ubuntu), `brew` (macOS), and on Windows from the programs'
+uninstall entries (the installed version only; Windows has no package manager
+to ask for a newer one).
+
+**For an agent or a script that changes a file**, the order is `begin`, the
+change, `done`:
+
+```
+id=$(podshl-repairs begin --kind file --by my-script --path ~/.config/app/app.conf \
+      --issue https://github.com/owner/app/issues/42)
+# ... change the file ...
+podshl-repairs done "$id"
+```
+
+### A coding agent
 
 An agent that fixes something on this machine does not write it down, and
 neither does the person at midnight. So the agent's own hooks do it:
@@ -69,63 +178,132 @@ podshl-repairs install-agent-hook --print    # what it would write, and nothing 
 podshl-repairs remove-agent-hook
 ```
 
-Before the agent writes a file, a copy is kept; after, the record is finished
-under the agent's name. **One record per file per session**: the copy is from
-before the agent first touched the file, so Undo goes back to before all of it.
-A file the agent creates is recorded without a copy — there was nothing before.
+Then you open the agent the way you always do and ask for a change in your own
+words. Before it writes a file, a copy is kept; after, the record is finished
+under the agent's name. Nobody types anything for the record.
 
-**Not recorded:** anything inside a git working tree (it has a better history
-already, and every edit to source code would bury the one change to
-`~/.config` that matters), temporary files, the agent's own directory, and this
-record itself. **Not seen:** a change the agent makes through a shell command
-(`sed -i`, `tee`, a script) — only its file tools pass through its hooks.
-
-The hook only writes down. It never stops the agent and never changes what it
-writes; anything that goes wrong is a line on stderr and exit 0.
-
-Installing it writes two entries into the agent's settings and changes nothing
-else there (the file's keys come back in alphabetical order); installing twice
-leaves one, and `remove-agent-hook` takes out only its own. That change to the
-settings file is itself recorded, with a copy, so it can be undone like any
-other.
+* **One record per file per session.** The copy is from before the agent first
+  touched the file, so Undo goes back to before all of it. A file the agent
+  creates is recorded without a copy — there was nothing before.
+* **Not recorded:** anything inside a git working tree (it has a better history
+  already, and every edit to source code would bury the one change to
+  `~/.config` that matters), temporary files, the agent's own directory, and
+  this record itself.
+* **Shell commands too.** Agents change config files with a shell command as
+  often as with their file tools (`cat >> file`, `sed -i`, `tee`), and
+  Omarchy's instructions for agents do it that way. Before the command runs,
+  every file it names is copied aside; afterwards each one that changed becomes
+  a record with that copy, and each one it created becomes a record without.
+  Files it only read leave nothing, and the copies are gone again.
+* **Not seen:** a file a command reaches without naming it — through a
+  variable other than `$HOME`, a glob, or a script it calls — and a new file
+  named by a bare word (`echo x > new.conf`; `./new.conf` is seen). Hand-made
+  copies next to a file (`file.bak.123`, `file.orig`, `file~`) are not
+  recorded as changes of their own.
+* **It never stops the agent** and never changes what it writes; anything that
+  goes wrong is a line on stderr and exit 0.
+* Installing writes two entries into the agent's settings and changes nothing
+  else there (the file's keys come back in alphabetical order); installing
+  twice leaves one, and `remove-agent-hook` takes out only its own. **That
+  change to the settings file is itself recorded**, with a copy, so it can be
+  undone like any other.
 
 **Measured for Claude Code only** (`~/.claude/settings.json`, or
 `CLAUDE_CONFIG_DIR`). Every agent has its own hook format; another agent is
 refused by name until its format has been walked, rather than written from
-documentation. Walked on Omarchy on 2026-09-19 with Claude Code 2.1.278: a real
-edit to a file in `~/.config` was recorded and then restored, and the same edit
-in a git repository left no record (`RR21`, `RR22`).
+documentation. Walked on Omarchy with Claude Code 2.1.278 as the default
+agent: a real edit to a file in `~/.config` was recorded and then restored, and
+the same edit in a git repository left no record (`RR21`, `RR22`).
 
-## Watching an upstream issue on GitHub
+### Packages and plugins
 
-**Off unless you switch it on, per record** (`--watch`, `repairs watch ID on`,
-or the button in the window). A lookup tells GitHub, from your address, which
-issue this computer follows, which is why it is opt-in. It goes straight to
-GitHub's public API, without an account or token, and never through the
-operator. A watched record is asked at most once a day, and never again once
-the answer is final (an issue closed, a fix found in a release).
+A package that deliberately leaves the ordinary path knows why — built outside
+the AUR, patching a system file until upstream fixes a bug, shipping a copy in
+front of a packaged component. It says so in a small file it installs, and the
+record takes it in on every review:
 
-* An issue: open or closed.
-* A pull request: open, closed or merged. If merged, the client finds **the
-  first release that contains the merge commit** by asking GitHub, for each
-  published release after the merge (at most eight, drafts and pre-releases
-  skipped), whether the commit is part of it. That release is then compared
-  with the installed version like `--fixed-in`.
+```
+$ podshl-repairs list
+[1789821805-2] package — podshl-bin (declared by podshl-bin) — applied
+```
 
-Only `https://github.com/<owner>/<repo>/issues/<n>` and `…/pull/<n>` links can
-be watched.
+| Declared by | The file is in |
+|---|---|
+| a package | `/usr/share/podshl/repairs.d/*.json` |
+| an Omarchy plugin | `~/.config/omarchy/plugins/<id>/repairs.d/*.json` |
+| an installer into the home directory | `~/.local/share/podshl/repairs.d/*.json` |
+
+* **Who declared it** is asked of the package manager (`pacman -Qo`,
+  `dpkg -S`) or taken from the plugin's directory — never from the file.
+* **An update** of the package follows the declaration: no second record, and
+  the package's own update is not news.
+* **The maintainer can withdraw it** in a later version, with a reason; the
+  record says so once. A package removed leaves its records saying so.
+* **A declaration never does anything**: it cannot undo, change or run
+  anything, and it cannot make the record ask GitHub.
+
+How to write one: [DECLARING.md](DECLARING.md), and the reference
+[`podshl-repairs.d(5)`](../packaging/repairs/podshl-repairs.d.5).
+
+### The PODSHL client
+
+Every change the PODSHL client's window makes is written down before it runs,
+or it does not run. Those records are in the same list, with the vendor or
+project the window was talking to as who proposed them.
 
 ## Looking again
 
-* **In the window**: at every start, a panel lists records that want another
-  look, with **Keep it**, **Undo** (where a copy exists) and **Watch the
-  upstream issue**. Keeping a record hides what you saw until something new
-  happens. The three buttons are reachable by keyboard, and walked that way on
-  Windows (WebView2) and on Omarchy (Wayland/WebKitGTK).
-* **After updates or daily**: `podshl-client repairs install-hook` sets up a
-  review that shows a desktop notification when something wants a look.
-  `--print` shows what it would do without doing it, and `remove-hook` undoes
-  it.
+```
+podshl-repairs review            # what wants another look, and why
+podshl-repairs review --offline  # the same, asking nobody
+podshl-repairs review --json     # for scripts
+```
+
+The review reads the machine — the files, the package manager, the
+declarations — and changes nothing on it. It asks the network about one thing
+only: an upstream issue you chose to watch, at most once a day. `--offline`
+asks nobody.
+
+A finding stays until you have looked at it (`keep`), and comes back when
+something new happens: a later update, or a finding you were not shown.
+
+## What each finding means
+
+| The review says | What happened | What you might do |
+|---|---|---|
+| the file changed since the fix | the file is not what it was after the change was made — an update, a migration, a tool or a person rewrote it | look at the file; `restore` puts back the copy from before the change, or make the change again |
+| the changed file is gone | the target no longer exists | `keep`, or `forget` a record that no longer means anything |
+| the copy to go back to is gone | the backup under `~/.config/podshl/backups` was removed | the change can no longer be undone from here |
+| the setting is no longer in the file | a setting the client wrote is not there any more | as above |
+| the setting is no longer what the fix set | a setting outside any file (a service, a variable) was changed back | as above |
+| updated from *A* to *B* since the fix | the package is at another version than when the change was made | check the fix still holds, then `keep` |
+| upstream says *V* has the fix, and *W* is installed | the version named as the fix is installed | try without the workaround; a backport and a fix that did not hold look the same from here |
+| held at *A*, the official package is now *B* | a package built or pinned locally has fallen behind | rebuild, or keep holding it |
+| what this copy overrides has changed | the component an overlay overrides was updated | check the copy is still needed |
+| the upstream issue is closed | a watched issue was closed | see whether the workaround can go |
+| the upstream fix is merged, not yet released | a watched pull request was merged | wait for the release |
+| the upstream fix is in release *T* | the merge was found in a release | compare with what is installed |
+| the package's maintainer withdrew this: *reason* | a package or plugin withdrew what it declared | follow the maintainer's reason — often it says what to clean up |
+| the package no longer declares this | the entry disappeared from a package that is still installed | as above, without a reason |
+| the package that declared this is no longer installed | the declaring package or plugin was removed | the workaround may still be on the machine; decide whether it goes |
+| The package manager does not know *P*, so its version cannot be compared. | the package is not installed any more, or never was | look by hand |
+| *V* is a build from a repository's head; no release number is before or after it. | a `-git` build or similar | look by hand |
+
+## Deciding
+
+| Command | What it does |
+|---|---|
+| `podshl-repairs show ID` | everything about one record first: why, who declared it, upstream, whether there is a copy to go back to (`RR27`) |
+| `podshl-repairs keep ID` | looked at, kept: what you were shown is not raised again until something changes |
+| `podshl-repairs restore ID` | puts back the copy `begin` kept; the record becomes `undone` |
+| `podshl-repairs watch ID on\|off` | ask GitHub about the record's issue |
+| `sudo podshl-repairs forget ID` | remove what the record said ([below](#removing-a-record)) |
+
+## After updates, or daily
+
+`podshl-repairs install-hook` sets up a review that shows a desktop
+notification when something wants a look. `--print` shows what it would do
+without doing it, and `remove-hook` undoes it.
 
 | System | What `install-hook` sets up | Tested |
 |---|---|---|
@@ -134,88 +312,61 @@ be watched.
 | Windows | scheduled task `PODSHL\Repairs review`, daily at 12:00, without administrator rights; Windows notification | **on Windows 11, 2026-09-18**: created, run (`schtasks /Run`, result 3), and the toast confirmed in the notification database under PODSHL's own name; removed, and removed again quietly |
 | macOS | `~/Library/LaunchAgents/de.podshl.repairs.plist`, at login and daily at 12:00; notification via `osascript` | **on a hosted macOS runner, 2026-09-18** (`.github/workflows/macos-walk.yml`): the client runs, a fix is recorded, flagged and restored, a package's version is read through `brew`, and the plist is written, accepted by `plutil`, loaded and listed by `launchctl`, started, and removed again. **Not shown there:** that a notification *banner appears* — `osascript` is invoked and returns 0, but a runner has no logged-in session |
 
-The review changes nothing, and only asks the network about issues you chose to
-watch.
+**On Omarchy the notice is one you can act on** (`RR20`). It goes through
+Omarchy's own notification sender, **stays until you dismiss it** — Omarchy
+shows an ordinary notice for eight seconds, and the hook runs in the middle of
+an update while you are watching the terminal — and **a click opens the review
+in a floating terminal**. The next notice replaces the last, so updates nobody
+looked after leave one notice rather than a pile. It names the program that
+raised it. Do-not-disturb still holds it back.
 
-The notification is PODSHL's own: on Windows it is raised under the identity
-`de.podshl.client`, so it says PODSHL in the notification and in your
-notification settings rather than the name of whatever raised it. Uninstalling
-removes that identity and the daily task along with the program, whether or not
-you ran `remove-hook` first.
-
-**What it did is written down.** Every command that changes something adds a
-line to the client log — what was recorded, what a review concluded and which
-flags it raised, what was restored, what the hook set up or took away. The one
-lookup that leaves your machine, the GitHub check for a watched issue, is
-logged with what it answered, so a check made while you were not at the window
-is not invisible afterwards. The log is anonymised the same way a report is,
-and `PODSHL_LOG=0` turns it off.
+On Windows the notification is raised under PODSHL's own identity
+(`de.podshl.client`), not PowerShell's. Uninstalling the client removes that
+identity and the daily task, whether or not you ran `remove-hook` first.
 
 On Linux without a systemd user session (a container, a plain SSH login),
-`install-hook` stops with the error `systemctl` gave and exit code 1; the unit
-files it wrote are removed by `remove-hook`.
+`install-hook` stops with the error `systemctl` gave and exit code 1.
 
-## Command line
+## Watching an upstream issue
 
-```
-podshl-client repairs review [--json] [--notify] [--offline]
-podshl-client repairs list [--json]
-podshl-client repairs add --kind file|package|overlay --by NAME [--path P]
-      [--package NAME] [--original P] [--original-package NAME]
-      [--issue URL] [--fixed-in V] [--watch] [--note TEXT]
-podshl-client repairs begin --kind file --by NAME --path P [same options]
-podshl-client repairs done ID
-podshl-client repairs keep ID
-podshl-client repairs watch ID on|off
-podshl-client repairs restore ID
-podshl-client repairs forget ID
-podshl-client repairs install-hook [--print]
-podshl-client repairs remove-hook [--print]
-```
+**Off unless you switch it on, per record** (`--watch`, `watch ID on`, or the
+button in the client's window). A lookup tells GitHub, from your address, which
+issue this computer follows — which is why it is opt-in, and why a declaration
+cannot switch it on. It goes straight to GitHub's public API, without an
+account or token, and never through anybody else. A watched record is asked at
+most once a day, and never again once the answer is final.
 
-Exit codes: `0` nothing to look at, `3` something to look at, `1` error. `review
---offline` never asks GitHub.
+* An issue: open or closed.
+* A pull request: open, closed or merged. If merged, **the first release that
+  contains the merge commit** is found by asking GitHub, for each published
+  release after the merge (at most eight, drafts and pre-releases skipped),
+  whether the commit is part of it. That release is then compared with the
+  installed version like `--fixed-in`.
 
-**`podshl-repairs` is the same thing without the rest of PODSHL.** It takes
-the same commands without the word `repairs` in front (`podshl-repairs review`,
-`podshl-repairs begin …`), runs the same code, and reads and writes the same
-`repairs.json` — a fix recorded by one program is seen by the other (`RR17`).
-What it leaves out is the window: no WebKitGTK (`RR18`). For a hook or an
-agent it is the one to call.
+Only `https://github.com/<owner>/<repo>/issues/<n>` and `…/pull/<n>` links can
+be watched.
 
-**`podshl-repairs` is offered on Linux, Omarchy first.** On Omarchy one agent
-is the defined one, so what it writes can be recorded through its hooks and
-walked end to end. Windows has no such default; the record on its own comes
-there later, as a whole. The code for it stays — the build still writes a
-console `podshl-repairs.exe`, and `RR18` checks it is one — but nothing
-installs it.
+## What leaves this machine
 
-On Windows the installed client is a window program. It prints into the
-terminal it was started from, but `cmd` and PowerShell do not wait for a window
-program, so a script that needs the exit code from the client starts it with
-`Start-Process podshl-client -ArgumentList 'repairs','review' -Wait -PassThru`
-and reads `ExitCode`.
+**Nothing, except the GitHub lookup for an issue you chose to watch.** The
+record, its copies, the declarations and the log stay in your home directory.
+There is no account, no telemetry, and no server of ours involved.
 
-**For an agent or a script that changes a file**, the order is:
-
-```
-id=$(podshl-client repairs begin --kind file --by my-agent --path ~/.config/app/app.conf \
-      --issue https://github.com/owner/app/issues/42)
-# ... change the file ...
-podshl-client repairs done "$id"
-```
-
-`begin` keeps a copy before the change, so `restore` (or Undo in the window)
-can put it back. A change already made is registered with `add`; it has no copy
-to go back to.
+**What it did is written down.** Every command that changes something adds a
+line to `~/.local/state/podshl/client.log` — what was recorded, what a review
+concluded and which flags it raised, what was restored, what a hook set up or
+took away, which declarations were taken or refused, and every GitHub lookup
+with what it answered, so a check made while you were not looking is not
+invisible afterwards. The log is anonymised the same way a PODSHL report is,
+and `PODSHL_LOG=0` turns it off.
 
 ## Removing a record
 
-`repairs forget ID` removes what a record said — the path, the digest, who made
-it, the note, the upstream issue — and deletes the copy it kept. What stays is a
-stub: that a record existed, when the change was recorded, what kind it was, and
-when it was forgotten. A ledger with a hole in it should not read like a ledger
-that never had the entry.
+`sudo podshl-repairs forget ID` removes what a record said — the path, the
+digest, who made it, the note, the upstream issue — and deletes the copy it
+kept. What stays is a stub: that a record existed, when the change was recorded,
+what kind it was, and when it was forgotten. A record with a hole in it should
+not read like one that never had the entry.
 
 It is deliberately awkward. **It needs administrator or root rights**, and that
 is not about file permissions — `repairs.json` is in your own configuration
@@ -224,21 +375,109 @@ skills and scripts this record exists to keep track of run as you, so a removal
 an ordinary process can perform is a removal the thing being recorded can
 perform. **And it needs you to type the record's id** at a real terminal; a
 pipe is not a person, and no option skips either gate. There is no way to
-remove a record from the window, because the window does not run as root.
-
-The removal is written to the client log. After it, that is the only place that
+remove a record from the client's window, because the window does not run as
+root. The removal is written to the log; after it, that is the only place that
 still says what the record held.
 
-A package pinned locally, and a cloned plugin in front of the packaged one:
+## Command reference
+
+The full reference is [`podshl-repairs(1)`](../packaging/repairs/podshl-repairs.1)
+(`man podshl-repairs`); every command also answers `--help` without running.
 
 ```
-podshl-client repairs add --kind package --by me --package hyprland \
-      --issue https://github.com/hyprwm/Hyprland/pull/1234 --watch
-podshl-client repairs add --kind overlay --by my-agent --path ~/.local/share/app/plugins/foo \
-      --original /usr/share/app/plugins/foo --original-package app-plugin-foo
+podshl-repairs review [--json] [--notify] [--offline]
+podshl-repairs list [--json]
+podshl-repairs show ID [--json]
+podshl-repairs add --kind file|package|overlay --by NAME [--path P]
+      [--package NAME] [--original P] [--original-package NAME]
+      [--issue URL] [--fixed-in V] [--watch] [--note TEXT]
+podshl-repairs begin --kind file --by NAME --path P [same options]
+podshl-repairs done ID
+podshl-repairs keep ID
+podshl-repairs watch ID on|off
+podshl-repairs restore ID
+podshl-repairs forget ID
+podshl-repairs install-hook [--print]
+podshl-repairs remove-hook [--print]
+podshl-repairs install-agent-hook [--agent NAME] [--print]
+podshl-repairs remove-agent-hook [--agent NAME] [--print]
+podshl-repairs --version
 ```
 
-Package versions are read with `pacman` (Arch, Omarchy), `dpkg-query` and
-`apt-cache` (Debian, Ubuntu), `brew` (macOS), and on Windows from the
-programs' uninstall entries (the installed version only; Windows has no
-package manager to ask for a newer one).
+| Exit code | Meaning |
+|---|---|
+| `0` | nothing to look at, or the command did what it was asked |
+| `3` | `review` found something to look at |
+| `1` | an error; the reason is on standard error |
+
+**`podshl-client repairs …`** takes the same commands with `repairs` in front,
+runs the same code, and reads and writes the same record: a fix recorded by one
+program is seen by the other (`RR17`). `podshl-repairs` also accepts the word
+`repairs` in front, so a hook written by either program runs with either
+(`RR19`).
+
+On Windows the installed client is a window program. It prints into the
+terminal it was started from, but `cmd` and PowerShell do not wait for a window
+program, so a script that needs the exit code starts it with
+`Start-Process podshl-client -ArgumentList 'repairs','review' -Wait -PassThru`
+and reads `ExitCode`.
+
+## Files and environment
+
+| Path | What it holds |
+|---|---|
+| `~/.config/podshl/repairs.json` | the record (`%APPDATA%\podshl` on Windows, `~/Library/Application Support/podshl` on macOS) |
+| `~/.config/podshl/backups/` | the copies `begin` and the agent hook keep |
+| `~/.config/podshl/agent-sessions.json` | which record belongs to which file in which agent session |
+| `~/.local/state/podshl/client.log` | what every command that changed something did |
+| `~/.config/omarchy/hooks/post-update.d/podshl-repairs` | the Omarchy update hook |
+| `/usr/share/podshl/repairs.d/`, `~/.local/share/podshl/repairs.d/`, `~/.config/omarchy/plugins/*/repairs.d/` | declarations |
+
+| Variable | Effect |
+|---|---|
+| `VS_ROOT` | keep the record somewhere else |
+| `PODSHL_LOG=0` | write no log |
+| `CLAUDE_CONFIG_DIR` | where Claude Code keeps its settings, when not `~/.claude` |
+
+Every field a decision reads is written by code: versions come from the
+package manager, paths are resolved, digests are computed. A note, or a
+maintainer's reason, is kept and shown, and nothing reads it.
+
+## Troubleshooting
+
+**The agent changed a file and nothing was recorded.** Was the file inside a
+git repository, in a temporary directory, or in the agent's own directory?
+Those are skipped on purpose. Did the agent change it through a shell command
+that did not name the file — a variable, a glob, a script? Those are not seen.
+Was the hook installed before 0.1.8? Then it only sees the file tools: run
+`podshl-repairs install-agent-hook` again. Is the hook installed at all —
+`grep agent-hook ~/.claude/settings.json`?
+
+**`install-agent-hook` says there is no measured hook for my agent.** Only
+Claude Code's hook format has been walked; other agents are refused rather than
+guessed at.
+
+**The update ran and no notice appeared.** Is do-not-disturb on? A silenced
+notice goes to Omarchy's notification history. Is the hook there —
+`ls ~/.config/omarchy/hooks/post-update.d/`? Did the review find anything —
+`podshl-repairs review`?
+
+**A package's declaration does not show up.** `grep 'repairs declared'
+~/.local/state/podshl/client.log` says what was taken or refused and why
+([DECLARING.md](DECLARING.md#testing-your-declaration)).
+
+**`review` exits with 3 in my script.** That is "something to look at", not
+an error; errors are 1.
+
+**`podshl-repairs: command not found` after installing.** `~/.local/bin` is not
+on your `PATH`; the installer says so when it is not. Add it, or call
+`~/.local/bin/podshl-repairs`.
+
+## How this is tested
+
+Every claim above is a case in [TESTCASES.md](TESTCASES.md) (`RR1`–`RR26`),
+run by the suite on every change, and the ones that need a real desktop were
+walked on one: Omarchy for the update hook, the notice and its click, the
+agent hook with a real Claude, the installer, and a package declaration
+installed, withdrawn and removed with a real `pacman`; Windows 11 for the
+scheduled task and its toast; a live systemd session; a hosted macOS runner.
