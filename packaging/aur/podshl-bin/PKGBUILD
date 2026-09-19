@@ -39,7 +39,7 @@ source=(
   "icon-256-$pkgver.png::$_raw/client-rs/icons/128x128@2x.png"
   "$_bin.desktop"
 )
-sha256sums=('053cc74eaa68547b53ad598709a32513081747013affdec43ecb71c8d97222df'
+sha256sums=('16e6b220c94878154a290605dc7410e38e689ce4ad184c7889c61cac1b0d92d3'
             '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0'
             '4633d1d532bcf4719ce173d420f649d9fc60abe788a329bf51b4f76951b190f8'
             '0ded5f06da14c6700741dc4fa3bcdde8ea53c8b1410c11f4504c023d94955c7a'
