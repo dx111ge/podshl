@@ -28,9 +28,12 @@ const API: &str = "https://api.github.com";
 const MAX_CANDIDATES: usize = 8;
 
 fn ident_ok(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 100
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-        && s != "." && s != ".."
+    !s.is_empty()
+        && s.len() <= 100
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        && s != "."
+        && s != ".."
 }
 
 /// `https://github.com/<owner>/<repo>/issues/<n>` or `…/pull/<n>`: the owner,
@@ -40,7 +43,9 @@ pub fn parse(url: &str) -> Option<(String, String, u64, bool)> {
     let rest = url.strip_prefix("https://github.com/")?;
     let rest = rest.split(['#', '?']).next()?;
     let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
-    let [owner, repo, kind, number] = parts.as_slice() else { return None };
+    let [owner, repo, kind, number] = parts.as_slice() else {
+        return None;
+    };
     let is_pull = match *kind {
         "issues" => false,
         "pull" => true,
@@ -51,7 +56,12 @@ pub fn parse(url: &str) -> Option<(String, String, u64, bool)> {
 }
 
 fn failed(why: impl Into<String>, is_pull: bool) -> IssueState {
-    IssueState { state: "unknown".into(), is_pull, error: Some(why.into()), ..IssueState::default() }
+    IssueState {
+        state: "unknown".into(),
+        is_pull,
+        error: Some(why.into()),
+        ..IssueState::default()
+    }
 }
 
 /// Ask GitHub, through `get` (a path under the API, answered as JSON).
@@ -69,14 +79,22 @@ pub fn check(url: &str, get: &dyn Fn(&str) -> Result<Value, String>) -> IssueSta
     let is_pull = issue.get("pull_request").is_some_and(|p| !p.is_null()) || pull_hint;
     let state = issue["state"].as_str().unwrap_or("unknown").to_string();
     if !is_pull {
-        return IssueState { state, is_pull, ..IssueState::default() };
+        return IssueState {
+            state,
+            is_pull,
+            ..IssueState::default()
+        };
     }
     let pr = match get(&format!("{base}/pulls/{n}")) {
         Ok(v) => v,
         Err(e) => return failed(e, true),
     };
     if pr["merged"].as_bool() != Some(true) {
-        return IssueState { state, is_pull, ..IssueState::default() };
+        return IssueState {
+            state,
+            is_pull,
+            ..IssueState::default()
+        };
     }
     let (Some(sha), Some(merged_at)) = (pr["merge_commit_sha"].as_str(), pr["merged_at"].as_str())
     else {
@@ -108,7 +126,12 @@ fn first_release_containing(
         .into_iter()
         .flatten()
         .filter(|r| r["draft"].as_bool() != Some(true) && r["prerelease"].as_bool() != Some(true))
-        .filter_map(|r| Some((r["published_at"].as_str()?.to_string(), r["tag_name"].as_str()?.to_string())))
+        .filter_map(|r| {
+            Some((
+                r["published_at"].as_str()?.to_string(),
+                r["tag_name"].as_str()?.to_string(),
+            ))
+        })
         // RFC 3339 in UTC, as GitHub writes it, orders as text.
         .filter(|(at, _)| at.as_str() >= merged_at)
         .filter(|(_, tag)| tag_ok(tag))
@@ -134,8 +157,11 @@ fn first_release_containing(
 
 /// A tag is put into a URL path, so it is held to the characters tags use.
 fn tag_ok(tag: &str) -> bool {
-    !tag.is_empty() && tag.len() <= 100
-        && tag.chars().all(|c| c.is_ascii_alphanumeric() || "-_.+".contains(c))
+    !tag.is_empty()
+        && tag.len() <= 100
+        && tag
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.+".contains(c))
 }
 
 /// The real `get`: GitHub's public API, no credentials, bounded like every
@@ -146,7 +172,10 @@ pub fn github_get(path: &str) -> Result<Value, String> {
         let resp = crate::http::client()
             .get(&url)
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", concat!("podshl-client/", env!("CARGO_PKG_VERSION")))
+            .header(
+                "User-Agent",
+                concat!("podshl-client/", env!("CARGO_PKG_VERSION")),
+            )
             .send()
             .await
             .map_err(|e| m!("unreachable", e = e))?;
@@ -173,16 +202,28 @@ mod tests {
 
     #[test]
     fn only_a_github_issue_or_pull_link_is_looked_up() {
-        assert_eq!(parse("https://github.com/hyprwm/Hyprland/issues/1234"),
-                   Some(("hyprwm".into(), "Hyprland".into(), 1234, false)));
-        assert_eq!(parse("https://github.com/basecamp/omarchy/pull/7/files#diff"), None,
-                   "a sub-page is not the pull request");
-        assert_eq!(parse("https://github.com/basecamp/omarchy/pull/7#issuecomment-1"),
-                   Some(("basecamp".into(), "omarchy".into(), 7, true)));
-        for bad in ["http://github.com/a/b/issues/1", "https://gitlab.com/a/b/issues/1",
-                    "https://github.com/a/b/issues/0", "https://github.com/a/b/issues/x",
-                    "https://github.com/../b/issues/1", "https://github.com/a/b%2F/issues/1",
-                    "https://github.com/a/b/commit/1"] {
+        assert_eq!(
+            parse("https://github.com/hyprwm/Hyprland/issues/1234"),
+            Some(("hyprwm".into(), "Hyprland".into(), 1234, false))
+        );
+        assert_eq!(
+            parse("https://github.com/basecamp/omarchy/pull/7/files#diff"),
+            None,
+            "a sub-page is not the pull request"
+        );
+        assert_eq!(
+            parse("https://github.com/basecamp/omarchy/pull/7#issuecomment-1"),
+            Some(("basecamp".into(), "omarchy".into(), 7, true))
+        );
+        for bad in [
+            "http://github.com/a/b/issues/1",
+            "https://gitlab.com/a/b/issues/1",
+            "https://github.com/a/b/issues/0",
+            "https://github.com/a/b/issues/x",
+            "https://github.com/../b/issues/1",
+            "https://github.com/a/b%2F/issues/1",
+            "https://github.com/a/b/commit/1",
+        ] {
             assert_eq!(parse(bad), None, "{bad}");
         }
     }
@@ -221,8 +262,12 @@ mod tests {
         assert_eq!(st.released_in.as_deref(), Some("v2.1.0"), "{st:?}");
         assert_eq!(st.error, None);
         let asked = asked.borrow();
-        assert!(!asked.iter().any(|p| p.contains("v2.0.0") || p.contains("rc1") || p.contains("v9")),
-                "a release before the merge, a pre-release or a draft was asked: {asked:?}");
+        assert!(
+            !asked
+                .iter()
+                .any(|p| p.contains("v2.0.0") || p.contains("rc1") || p.contains("v9")),
+            "a release before the merge, a pre-release or a draft was asked: {asked:?}"
+        );
     }
 
     #[test]
@@ -232,7 +277,10 @@ mod tests {
             Ok(json!({"state": "closed"}))
         };
         let st = check("https://github.com/o/r/issues/9", &issue);
-        assert_eq!((st.state.as_str(), st.is_pull, st.released_in.as_deref()), ("closed", false, None));
+        assert_eq!(
+            (st.state.as_str(), st.is_pull, st.released_in.as_deref()),
+            ("closed", false, None)
+        );
 
         let down = |_: &str| -> Result<Value, String> { Err("unreachable".into()) };
         let st = check("https://github.com/o/r/issues/9", &down);
@@ -246,6 +294,10 @@ mod tests {
             })
         };
         let st = check("https://github.com/o/r/issues/3", &open_pr);
-        assert_eq!((st.state.as_str(), st.is_pull), ("open", true), "a pull request linked as an issue");
+        assert_eq!(
+            (st.state.as_str(), st.is_pull),
+            ("open", true),
+            "a pull request linked as an issue"
+        );
     }
 }

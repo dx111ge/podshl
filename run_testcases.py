@@ -373,7 +373,7 @@ def _():
 
 @case("A10", "Dry-run text matches the actual effect [rust]")
 def _():
-    cargo("actions::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")
+    cargo("report::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")
 
 
 @case("RR1", "A change is on record before it is made, written by code [rust]")
@@ -465,9 +465,43 @@ def _():
     cargo("restore_says_which_file_it_put_back", target="cli")
 
 
+@case("RR17", "A fix recorded by podshl-repairs is the client's record too [rust]")
+def _():
+    # Each step by the program that did not take the last one.
+    cargo("a_fix_recorded_by_one_program_is_seen_by_the_other", target="cli")
+
+
+@case("RR18", "podshl-repairs carries no window [rust]")
+def _():
+    # The built file: the libraries it needs on Linux, its subsystem on Windows.
+    cargo("the_standalone_record_carries_no_window", target="cli")
+
+
+@case("RR19", "The hook podshl-repairs writes is one it can run [rust]")
+def _():
+    # The printed line taken apart and run, not compared with a string.
+    cargo("the_hook_podshl_repairs_writes_is_one_it_can_run", target="cli")
+
+
+@case("RR20", "The notification names the program that raised it, and a click opens the review [rust]")
+def _():
+    cargo("repairs_cli::tests::the_notification_names_the_program_that_raised_it")
+
+
+@case("RR21", "What a coding agent writes outside a repository is recorded, once per session [rust]")
+def _():
+    cargo("agent_hook::tests::an_agents_edit_outside_a_repository_is_recorded_once_per_session")
+    cargo("agent_hook::tests::a_hook_call_it_cannot_read_is_an_error_not_a_stop")
+
+
+@case("RR22", "Installing the agent hook keeps everything else in the agent's settings [rust]")
+def _():
+    cargo("agent_hook::tests::the_agents_settings_keep_everything_that_is_not_ours")
+
+
 @case("A12", "The agent fixes it, the fix holds, and the undo puts it back [rust]")
 def _():
-    cargo("actions::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")
+    cargo("report::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")
 
 
 @case("A11", "A sibling of the sandbox root is not inside it [rust]")
@@ -642,20 +676,35 @@ _RESULT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)", re.M)
 
 
 def rust_results(target=None):
-    """Every test in one target, by name, with what happened to it."""
+    """Every test in one target, by name, with what happened to it.
+
+    With no target, "the client": its binary **and** its library. Since
+    2026-09-19 the record of local fixes and what it stands on (`src/lib.rs`)
+    is a library the client and `podshl-repairs` share, and a library's tests
+    are a target of their own — `--bin podshl-client` alone would find
+    `repair::tests::…` missing and fail every case that names one. The two are
+    read into one table, because to a case they are one client; a name in both
+    would make that table lie, so it is refused.
+    """
     key = target or "bin"
     if key in _RUST:
         return _RUST[key]
-    cmd = ["cargo", "test"]
-    cmd += ["--test", target] if target else ["--bin", "podshl-client"]
-    out = subprocess.run(cmd, cwd="client-rs", capture_output=True, text=True, timeout=1800)
-    found = {name: how for name, how in _RESULT.findall(out.stdout)}
-    assert found, (
-        f"the Rust target {key} reported no test at all. That is a build failure or a "
-        f"changed output format, and either way nothing below has been checked:\n"
-        + (out.stdout[-2000:] + out.stderr[-2000:]))
+    runs = [["--test", target]] if target else [["--lib"], ["--bin", "podshl-client"]]
+    found, raw = {}, []
+    for which in runs:
+        out = subprocess.run(["cargo", "test", *which], cwd="client-rs",
+                             capture_output=True, text=True, timeout=1800)
+        these = {name: how for name, how in _RESULT.findall(out.stdout)}
+        assert these, (
+            f"the Rust target {' '.join(which)} reported no test at all. That is a build "
+            f"failure or a changed output format, and either way nothing below has been "
+            f"checked:\n" + (out.stdout[-2000:] + out.stderr[-2000:]))
+        both = sorted(set(these) & set(found))
+        assert not both, f"a test name is in the library and in the binary: {both}"
+        found.update(these)
+        raw.append(_rust_detail(out))
     _RUST[key] = found
-    _RUST[key + ":raw"] = _rust_detail(out)
+    _RUST[key + ":raw"] = "\n".join(raw)
     return found
 
 
@@ -693,7 +742,8 @@ def cargo(test_name, target=None):
     how = results.get(test_name)
     assert how is not None, (
         f"{test_name} is named by a case and does not exist in the "
-        f"{target or 'podshl-client'} target. A renamed test is an unrun case.")
+        f"{target or 'podshl-client (library and binary)'} target. A renamed test "
+        f"is an unrun case.")
     assert how == "ok", f"{test_name} {how}\n" + _RUST[(target or 'bin') + ':raw']
 
 

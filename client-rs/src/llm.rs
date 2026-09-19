@@ -52,7 +52,9 @@ impl Config {
         // table rather than assumed here, so adding a local agent later does not
         // leave this sentence quietly wrong.
         if self.provider == "omarchy_agent" {
-            return crate::omarchy::headless(&self.model, "").map(|h| h.cloud).unwrap_or(true);
+            return crate::omarchy::headless(&self.model, "")
+                .map(|h| h.cloud)
+                .unwrap_or(true);
         }
         self.provider == "anthropic" || self.provider == "openai_compatible"
     }
@@ -135,8 +137,11 @@ fn resolve(saved: Option<&str>, desktop_agent: Option<(String, bool)>) -> Config
 pub fn save(c: &Config) -> Result<(), String> {
     let p = path().ok_or_else(|| m!("no_config_dir"))?;
     std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(&p, serde_json::to_string_pretty(c).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    std::fs::write(
+        &p,
+        serde_json::to_string_pretty(c).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 // ------------------------------------------------------------------ secrets
@@ -155,7 +160,9 @@ pub fn set_key(provider: &str, key: &str) -> Result<(), String> {
 }
 
 pub fn has_key(provider: &str) -> bool {
-    entry(provider).and_then(|e| e.get_password().map_err(|e| e.to_string())).is_ok()
+    entry(provider)
+        .and_then(|e| e.get_password().map_err(|e| e.to_string()))
+        .is_ok()
 }
 
 fn get_key(provider: &str) -> Option<String> {
@@ -190,20 +197,26 @@ fn get_key(provider: &str) -> Option<String> {
 /// works?" for an arbitrary problem far better than any fixed string, and it
 /// cannot be relied on to remember to ask.
 const DIMENSIONS: &[(&str, &str)] = &[
-    ("boundary",
-     "WHAT IT IS AND IS NOT. Ask what else the user would expect to be affected \
+    (
+        "boundary",
+        "WHAT IT IS AND IS NOT. Ask what else the user would expect to be affected \
       and is not - another file, another program, another account, another \
       machine, the same thing yesterday. A fault with no boundary has not been \
-      described yet, and the boundary is where the cause lives."),
-    ("when",
-     "WHEN. Ask since when, and whether it is every time or only under some \
+      described yet, and the boundary is where the cause lives.",
+    ),
+    (
+        "when",
+        "WHEN. Ask since when, and whether it is every time or only under some \
       condition - after a while, under load, after waking, only on the first \
       try. 'Always' and 'sometimes' have different causes and the difference \
-      is free to obtain."),
-    ("extent",
-     "HOW MUCH. Ask whether all of it is affected or only part, and whether it \
+      is free to obtain.",
+    ),
+    (
+        "extent",
+        "HOW MUCH. Ask whether all of it is affected or only part, and whether it \
       is steady, getting worse, or comes and goes. A trend dates the cause; a \
-      partial effect locates it."),
+      partial effect locates it.",
+    ),
 ];
 
 /// One `ASK:` line, as the separate questions it actually contains.
@@ -333,14 +346,26 @@ fn project_context(ctx: &Value) -> String {
     // said something about them: either none fitted, or one did and the rules
     // behind it produced nothing. Both are evidence about where the answer is
     // not.
-    let shown = if ctx.get("rejected").and_then(|v| v.as_bool()).unwrap_or(false) {
+    let shown = if ctx
+        .get("rejected")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         "The problems it says it can answer. The person has been shown these and          says none of them is what they are seeing, so the cause is most likely          outside this list:"
     } else {
         "The problems it says it can answer, and which the person has already been shown:"
     };
     list("classes", shown, &mut out);
-    list("means", "What the values above mean, in the maintainer's words:", &mut out);
-    list("keep", "Terms that are this project's own. Use them exactly as written:", &mut out);
+    list(
+        "means",
+        "What the values above mean, in the maintainer's words:",
+        &mut out,
+    );
+    list(
+        "keep",
+        "Terms that are this project's own. Use them exactly as written:",
+        &mut out,
+    );
     out
 }
 
@@ -406,7 +431,10 @@ pub struct Answer {
 /// anything: the person could have been mistaken, and the answer says so
 /// rather than looking identical to one a reading decided.
 pub fn parse_answer(raw: &str, known: &Value, typed: &[String]) -> Answer {
-    let mut a = Answer { raw: raw.to_string(), ..Default::default() };
+    let mut a = Answer {
+        raw: raw.to_string(),
+        ..Default::default()
+    };
     let keys = [CAUSE, WHY_NOT, RESTS_ON, NEXT, IF_WRONG, ABSTAIN];
     let mut current: Option<&str> = None;
     for line in raw.lines() {
@@ -429,11 +457,21 @@ pub fn parse_answer(raw: &str, known: &Value, typed: &[String]) -> Answer {
     if !a.structured {
         a.cause = raw.trim().to_string();
     }
-    let ids: Vec<String> = known.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
-    a.rests_on_ids = ids.into_iter().filter(|id| names_id(&a.rests_on, id)).collect();
+    let ids: Vec<String> = known
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    a.rests_on_ids = ids
+        .into_iter()
+        .filter(|id| names_id(&a.rests_on, id))
+        .collect();
     a.confidence = if a.rests_on_ids.is_empty() {
         "unstated".into()
-    } else if a.rests_on_ids.iter().any(|id| typed.iter().any(|t| t == id)) {
+    } else if a
+        .rests_on_ids
+        .iter()
+        .any(|id| typed.iter().any(|t| t == id))
+    {
         "rests_on_supplied".into()
     } else {
         "measured".into()
@@ -505,27 +543,40 @@ fn names_id(text: &str, id: &str) -> bool {
 }
 
 pub fn parse_round(raw: &str, catalogue: &Value) -> Round {
-    let read = raw.lines()
+    let read = raw
+        .lines()
         .find(|l| l.trim().to_uppercase().starts_with("READ:"))
         .map(|l| l.split(':').nth(1).unwrap_or("").to_string())
         .unwrap_or_else(|| raw.to_string());
-    let ids: Vec<String> = catalogue.as_array().into_iter().flatten()
+    let ids: Vec<String> = catalogue
+        .as_array()
+        .into_iter()
+        .flatten()
         .filter_map(|c| c.get("id").and_then(|v| v.as_str()))
         .filter(|id| names_id(&read, id))
         .map(String::from)
         .collect();
-    let questions: Vec<String> = raw.lines()
+    let questions: Vec<String> = raw
+        .lines()
         .filter_map(|l| {
             let t = l.trim();
-            if t.to_uppercase().starts_with("ASK:") { t.splitn(2, ':').nth(1) } else { None }
+            if t.to_uppercase().starts_with("ASK:") {
+                t.split_once(':').map(|x| x.1)
+            } else {
+                None
+            }
         })
-        .flat_map(|q| split_questions(q))
+        .flat_map(split_questions)
         .filter(|q| !q.is_empty())
         .take(3)
         .collect();
     let done = ids.is_empty()
         && (read.to_lowercase().contains("done") || read.to_lowercase().contains("none"));
-    Round { read_ids: ids, questions, done }
+    Round {
+        read_ids: ids,
+        questions,
+        done,
+    }
 }
 
 #[cfg(test)]
@@ -539,7 +590,10 @@ mod round_tests {
 
     #[test]
     fn extracts_ids_and_questions() {
-        let r = parse_round("READ: gpu.name, gpu.driver_version\nASK: Is the card overclocked?\nASK: Since when?", &cat());
+        let r = parse_round(
+            "READ: gpu.name, gpu.driver_version\nASK: Is the card overclocked?\nASK: Since when?",
+            &cat(),
+        );
         assert_eq!(r.read_ids, ["gpu.name", "gpu.driver_version"]);
         assert_eq!(r.questions.len(), 2);
         assert!(!r.done);
@@ -580,19 +634,32 @@ mod round_tests {
         let facts = json!({"gpu.name": "RTX 5070"});
         let prompts = [
             ("answer", prompt("flicker", &facts, "de", &Value::Null)),
-            ("round", round_prompt("flicker", &cat(), &facts, "de", 1, &Value::Null)),
+            (
+                "round",
+                round_prompt("flicker", &cat(), &facts, "de", 1, &Value::Null),
+            ),
         ];
         for (which, p) in prompts {
-            assert!(p.contains("German"),
-                    "the {which} prompt asks for a language code rather than a language");
-            assert!(!p.contains("code 'de'"), "the {which} prompt still passes a bare code");
+            assert!(
+                p.contains("German"),
+                "the {which} prompt asks for a language code rather than a language"
+            );
+            assert!(
+                !p.contains("code 'de'"),
+                "the {which} prompt still passes a bare code"
+            );
             // After the English keywords, not only before them.
-            let last_keyword = ["ASK:", CAUSE, IF_WRONG].iter()
-                .filter_map(|k| p.rfind(k)).max().expect("no keyword in the prompt");
+            let last_keyword = ["ASK:", CAUSE, IF_WRONG]
+                .iter()
+                .filter_map(|k| p.rfind(k))
+                .max()
+                .expect("no keyword in the prompt");
             let last_language = p.rfind("German").unwrap();
-            assert!(last_language > last_keyword,
-                    "the {which} prompt names the language only before the English \
-                     keywords, which is the half a small model forgets");
+            assert!(
+                last_language > last_keyword,
+                "the {which} prompt names the language only before the English \
+                     keywords, which is the half a small model forgets"
+            );
         }
         // The code travels when the language is not one of the four, rather
         // than the instruction being dropped.
@@ -615,25 +682,39 @@ mod round_tests {
     #[test]
     fn a_short_id_is_not_dragged_in_by_a_longer_one() {
         assert!(names_id("os.version, gpu.name", "os.version"));
-        assert!(!names_id("os.version", "os"), "`os` matched inside `os.version`");
+        assert!(
+            !names_id("os.version", "os"),
+            "`os` matched inside `os.version`"
+        );
         assert!(!names_id("gpu.name_long", "gpu.name"));
         assert!(!names_id("prefix_os", "os"));
         assert!(names_id("os", "os"), "an id alone does not name itself");
-        assert!(names_id("READ: os, gpu.name", "os"), "a listed id is not recognised");
+        assert!(
+            names_id("READ: os, gpu.name", "os"),
+            "a listed id is not recognised"
+        );
         assert!(names_id("the value os.version told us", "os.version"));
 
         // Through the read parser, where the consequence is a reading nobody
         // asked for reaching a consent panel.
         let catalogue = json!([{"id": "os"}, {"id": "os.version"}, {"id": "gpu.name"}]);
         let r = parse_round("READ: os.version\nASK: since when?", &catalogue);
-        assert_eq!(r.read_ids, vec!["os.version"],
-                   "a read nobody asked for was added: {:?}", r.read_ids);
+        assert_eq!(
+            r.read_ids,
+            vec!["os.version"],
+            "a read nobody asked for was added: {:?}",
+            r.read_ids
+        );
 
         // And through the answer parser, where it inflates what a cause rests on.
         let known = json!({"os": "windows", "os.version": "25H2", "gpu.name": "RTX 5070"});
         let a = parse_answer("CAUSE: the driver.\nRESTS ON: os.version", &known, &[]);
-        assert_eq!(a.rests_on_ids, vec!["os.version"],
-                   "the answer claims to rest on a fact nobody named: {:?}", a.rests_on_ids);
+        assert_eq!(
+            a.rests_on_ids,
+            vec!["os.version"],
+            "the answer claims to rest on a fact nobody named: {:?}",
+            a.rests_on_ids
+        );
     }
 
     /// MD1: the client walks the method; the model fills in the domain.
@@ -653,20 +734,30 @@ mod round_tests {
 
         for (i, (key, _)) in DIMENSIONS.iter().enumerate() {
             let p = &seen[i];
-            assert!(p.contains("one of your questions must cover"),
-                    "round {} carries no dimension of the method", i + 1);
+            assert!(
+                p.contains("one of your questions must cover"),
+                "round {} carries no dimension of the method",
+                i + 1
+            );
             // Exactly one: two in a prompt is the thing this exists to avoid.
-            let carried: Vec<&str> = DIMENSIONS.iter()
+            let carried: Vec<&str> = DIMENSIONS
+                .iter()
                 .filter(|(_, text)| p.contains(text.split(". ").next().unwrap_or(text)))
                 .map(|(k, _)| *k)
                 .collect();
-            assert_eq!(carried, vec![*key],
-                       "round {} carries {:?} rather than only {key}", i + 1, carried);
+            assert_eq!(
+                carried,
+                vec![*key],
+                "round {} carries {:?} rather than only {key}",
+                i + 1,
+                carried
+            );
         }
         // Past the ladder it stops repeating the last one forever rather than
         // running off the end: there is no fourth dimension to invent.
         assert_eq!(
-            seen[DIMENSIONS.len()], seen[DIMENSIONS.len() + 1],
+            seen[DIMENSIONS.len()],
+            seen[DIMENSIONS.len() + 1],
             "the rounds past the method are not all the same"
         );
         // And what the window already asked is not asked again by the model.
@@ -694,8 +785,11 @@ mod round_tests {
                    IF WRONG: Rolling back changes nothing.";
         let a = parse_answer(raw, &known, &typed);
         assert!(a.structured);
-        assert!(a.cause.contains("colour pipeline") && a.cause.contains("only shows"),
-                "a continuation line was dropped: {:?}", a.cause);
+        assert!(
+            a.cause.contains("colour pipeline") && a.cause.contains("only shows"),
+            "a continuation line was dropped: {:?}",
+            a.cause
+        );
         assert!(a.why_not.contains("60 Hz"));
         assert_eq!(a.next, "Roll back the driver.");
         assert_eq!(a.if_wrong, "Rolling back changes nothing.");
@@ -703,8 +797,10 @@ mod round_tests {
         // Matched against what is known, not taken from the text: the same rule
         // `parse_round` applies to read ids, and for the same reason.
         assert_eq!(a.rests_on_ids, vec!["change.last", "gpu.driver_version"]);
-        assert_eq!(a.confidence, "rests_on_supplied",
-                   "a cause resting on a typed value was graded as measured");
+        assert_eq!(
+            a.confidence, "rests_on_supplied",
+            "a cause resting on a typed value was graded as measured"
+        );
 
         // The same answer resting only on readings.
         let m = parse_answer(&raw.replace(", change.last", ""), &known, &typed);
@@ -717,8 +813,11 @@ mod round_tests {
         assert!(u.structured && u.rests_on_ids.is_empty());
 
         // Abstaining is a first-class answer, and it replaces the cause.
-        let ab = parse_answer("ABSTAIN: Nothing here says which monitor is attached.",
-                              &known, &typed);
+        let ab = parse_answer(
+            "ABSTAIN: Nothing here says which monitor is attached.",
+            &known,
+            &typed,
+        );
         assert!(ab.abstained.contains("which monitor") && ab.cause.is_empty());
 
         // And a model that ignored the format is carried whole rather than
@@ -739,13 +838,23 @@ mod round_tests {
     /// it reads exactly like one that has.
     #[test]
     fn the_answer_must_explain_what_it_does_not_affect() {
-        let p = prompt("flicker", &json!({"gpu.name": "RTX 5070"}), "de", &Value::Null);
+        let p = prompt(
+            "flicker",
+            &json!({"gpu.name": "RTX 5070"}),
+            "de",
+            &Value::Null,
+        );
         for key in [CAUSE, WHY_NOT, RESTS_ON, NEXT, IF_WRONG, ABSTAIN] {
             assert!(p.contains(key), "the answer is not asked for {key}");
         }
-        assert!(p.contains("is not the cause yet"),
-                "nothing tells the model an unexplained boundary is not an answer");
-        assert!(p.contains("German"), "the answer is not asked for in the user's language");
+        assert!(
+            p.contains("is not the cause yet"),
+            "nothing tells the model an unexplained boundary is not an answer"
+        );
+        assert!(
+            p.contains("German"),
+            "the answer is not asked for in the user's language"
+        );
         // The keywords stay English so they can be parsed; the content does not.
         assert!(p.contains("keyword in English"), "{p}");
     }
@@ -756,10 +865,16 @@ mod round_tests {
         let known = json!({"os": "windows", "arch": "x86_64"});
         let first = round_prompt("flicker", &cat(), &known, "en", 1, &Value::Null);
         assert!(first.contains("first round"), "{first}");
-        assert!(!first.contains("READ: done\n\n"), "the first round is invited to stop: {first}");
+        assert!(
+            !first.contains("READ: done\n\n"),
+            "the first round is invited to stop: {first}"
+        );
         assert!(first.contains("\"windows\""), "what is known is not said");
         let later = round_prompt("flicker", &cat(), &known, "en", 2, &Value::Null);
-        assert!(!later.contains("first round") && later.contains("write: READ: done"), "{later}");
+        assert!(
+            !later.contains("first round") && later.contains("write: READ: done"),
+            "{later}"
+        );
     }
 
     #[test]
@@ -785,23 +900,31 @@ mod question_tests {
     fn one_ask_line_holding_three_questions_becomes_three() {
         let qs = split_questions(AS_MEASURED);
         assert_eq!(qs.len(), 3, "still one wall of text: {qs:?}");
-        assert!(qs[0].ends_with('?') && qs[1].ends_with('?') && qs[2].ends_with('?'),
-                "a piece without its question mark: {qs:?}");
+        assert!(
+            qs[0].ends_with('?') && qs[1].ends_with('?') && qs[2].ends_with('?'),
+            "a piece without its question mark: {qs:?}"
+        );
         assert!(qs[1].contains("Has Engram ever"), "{qs:?}");
         // Nothing is lost on the way: every word the model wrote is still there.
         let rejoined: String = qs.join(" ");
-        assert_eq!(rejoined.split_whitespace().collect::<Vec<_>>(),
-                   AS_MEASURED.split_whitespace().collect::<Vec<_>>(),
-                   "splitting dropped or changed words");
+        assert_eq!(
+            rejoined.split_whitespace().collect::<Vec<_>>(),
+            AS_MEASURED.split_whitespace().collect::<Vec<_>>(),
+            "splitting dropped or changed words"
+        );
     }
 
     #[test]
     fn one_question_stays_one() {
-        assert_eq!(split_questions("Since when does it happen?"),
-                   vec!["Since when does it happen?"]);
+        assert_eq!(
+            split_questions("Since when does it happen?"),
+            vec!["Since when does it happen?"]
+        );
         // A line with no question mark is still something to ask.
-        assert_eq!(split_questions("Tell me what the terminal prints"),
-                   vec!["Tell me what the terminal prints"]);
+        assert_eq!(
+            split_questions("Tell me what the terminal prints"),
+            vec!["Tell me what the terminal prints"]
+        );
         assert!(split_questions("   ").is_empty());
     }
 
@@ -813,9 +936,12 @@ mod question_tests {
     #[test]
     fn a_compound_question_in_one_sentence_is_not_split() {
         let one = "Which download did you install and how do you start it?";
-        assert_eq!(split_questions(one).len(), 1,
-                   "this test exists to record a limit, and the limit moved — which is good \
-                    news, but the comment above is now wrong");
+        assert_eq!(
+            split_questions(one).len(),
+            1,
+            "this test exists to record a limit, and the limit moved — which is good \
+                    news, but the comment above is now wrong"
+        );
     }
 }
 
@@ -851,26 +977,45 @@ mod project_context_tests {
         let mut c = ctx();
         c["rejected"] = json!(true);
         let p = prompt("x", &json!({}), "en", &c);
-        assert!(p.contains("says none of them is what they are seeing"),
-                "the model is not told the list was refused:
-{p}");
+        assert!(
+            p.contains("says none of them is what they are seeing"),
+            "the model is not told the list was refused:
+{p}"
+        );
         assert!(p.contains("outside this list"), "{p}");
 
         let q = prompt("x", &json!({}), "en", &ctx());
-        assert!(!q.contains("says none of them"),
-                "a list nobody rejected was described as rejected:
-{q}");
+        assert!(
+            !q.contains("says none of them"),
+            "a list nobody rejected was described as rejected:
+{q}"
+        );
     }
 
     #[test]
     fn the_model_is_told_whose_project_this_is_and_what_the_fields_mean() {
-        let p = prompt("chat never answers", &json!({"engram.embedding_changed": "yes"}), "en", &ctx());
-        assert!(p.contains("dx111ge/engram"), "the model is not told which project this is:\n{p}");
-        assert!(p.contains("Whether the embedding model was changed"),
-                "the maintainer wrote what the field means and it did not reach the model:\n{p}");
-        assert!(p.contains("Debate and Chat fail"),
-                "the classes the person was already shown are not in the prompt:\n{p}");
-        assert!(p.contains("brain"), "the project's own terms did not reach the model:\n{p}");
+        let p = prompt(
+            "chat never answers",
+            &json!({"engram.embedding_changed": "yes"}),
+            "en",
+            &ctx(),
+        );
+        assert!(
+            p.contains("dx111ge/engram"),
+            "the model is not told which project this is:\n{p}"
+        );
+        assert!(
+            p.contains("Whether the embedding model was changed"),
+            "the maintainer wrote what the field means and it did not reach the model:\n{p}"
+        );
+        assert!(
+            p.contains("Debate and Chat fail"),
+            "the classes the person was already shown are not in the prompt:\n{p}"
+        );
+        assert!(
+            p.contains("brain"),
+            "the project's own terms did not reach the model:\n{p}"
+        );
     }
 
     /// **And told that this is all it knows.**
@@ -883,10 +1028,14 @@ mod project_context_tests {
     #[test]
     fn the_model_is_told_it_has_not_read_the_project() {
         let p = prompt("x", &json!({}), "en", &ctx());
-        assert!(p.contains("only thing you know about it"),
-                "nothing stops the model drawing on what it thinks it remembers:\n{p}");
-        assert!(p.contains("must not draw on anything you"),
-                "the instruction against recall is gone:\n{p}");
+        assert!(
+            p.contains("only thing you know about it"),
+            "nothing stops the model drawing on what it thinks it remembers:\n{p}"
+        );
+        assert!(
+            p.contains("must not draw on anything you"),
+            "the instruction against recall is gone:\n{p}"
+        );
     }
 
     /// **Every prompt that reaches a person, not just the last one.**
@@ -912,11 +1061,19 @@ mod project_context_tests {
             project_context(&c)
         };
 
-        for (name, text) in [("prompt", &one), ("round_prompt", &two), ("follow_up context", &three)] {
-            assert!(text.contains("dx111ge/engram"),
-                    "{name} does not name the project:\n{text}");
-            assert!(text.contains("only thing you know about it"),
-                    "{name} does not stop the model drawing on what it remembers:\n{text}");
+        for (name, text) in [
+            ("prompt", &one),
+            ("round_prompt", &two),
+            ("follow_up context", &three),
+        ] {
+            assert!(
+                text.contains("dx111ge/engram"),
+                "{name} does not name the project:\n{text}"
+            );
+            assert!(
+                text.contains("only thing you know about it"),
+                "{name} does not stop the model drawing on what it remembers:\n{text}"
+            );
         }
     }
 
@@ -926,8 +1083,14 @@ mod project_context_tests {
     #[test]
     fn without_a_project_the_prompt_says_nothing_about_one() {
         let p = prompt("x", &json!({}), "en", &Value::Null);
-        assert!(!p.contains("This is about"), "a project appeared out of nowhere:\n{p}");
-        assert!(!p.contains("only thing you know"), "an instruction about a project that is not there:\n{p}");
+        assert!(
+            !p.contains("This is about"),
+            "a project appeared out of nowhere:\n{p}"
+        );
+        assert!(
+            !p.contains("only thing you know"),
+            "an instruction about a project that is not there:\n{p}"
+        );
         // The rest of the prompt is unchanged by its absence.
         assert!(p.contains("A user has this problem"), "{p}");
     }
@@ -940,13 +1103,29 @@ mod project_context_tests {
 /// asking follow-up questions about a project nobody had named to it. "Claude
 /// butts in with nonsense" described the rounds, and the fix had been aimed at
 /// the answer nobody had reached yet.
-fn round_prompt(problem: &str, catalogue: &Value, known: &Value, lang: &str,
-                round: usize, context: &Value) -> String {
-    let list = catalogue.as_array().map(|a| a.iter().map(|c| format!(
-        "- {}: {}",
-        c.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-        c.get("describes").and_then(|v| v.as_str()).unwrap_or("")
-    )).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+fn round_prompt(
+    problem: &str,
+    catalogue: &Value,
+    known: &Value,
+    lang: &str,
+    round: usize,
+    context: &Value,
+) -> String {
+    let list = catalogue
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|c| {
+                    format!(
+                        "- {}: {}",
+                        c.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                        c.get("describes").and_then(|v| v.as_str()).unwrap_or("")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
     let project = project_context(context);
 
     // Diagnosis proceeds in rounds. Asking for everything at once forces the
@@ -976,11 +1155,13 @@ fn round_prompt(problem: &str, catalogue: &Value, known: &Value, lang: &str,
     // `known_block`, not `context`: the parameter of that name is the project's
     // published words, and two different things sharing one name in one
     // function is how the wrong one gets used.
-    let known_block = if known.as_object().map_or(true, |o| o.is_empty()) {
+    let known_block = if known.as_object().is_none_or(|o| o.is_empty()) {
         String::new()
     } else {
-        format!("You already know this about the device:\n{}\n\n",
-                serde_json::to_string_pretty(known).unwrap_or_default())
+        format!(
+            "You already know this about the device:\n{}\n\n",
+            serde_json::to_string_pretty(known).unwrap_or_default()
+        )
     };
     format!(
         "A user's problem: {problem}\n{project}\n\
@@ -1012,9 +1193,15 @@ fn round_prompt(problem: &str, catalogue: &Value, known: &Value, lang: &str,
 /// `round` is 1-based and the client's, not the model's: it decides both what
 /// stage the diagnosis is at and which dimension of the method this round must
 /// cover. A model asked to remember where it is in a method does not.
-pub async fn choose_reads(cfg: &Config, problem: &str, catalogue: &Value, known: &Value,
-                         context: &Value,
-                          lang: &str, round: usize) -> Result<Round, String> {
+pub async fn choose_reads(
+    cfg: &Config,
+    problem: &str,
+    catalogue: &Value,
+    known: &Value,
+    context: &Value,
+    lang: &str,
+    round: usize,
+) -> Result<Round, String> {
     let p = round_prompt(problem, catalogue, known, lang, round, context);
     let raw = match cfg.provider.as_str() {
         // The desktop's agent answers the prompt itself, with every tool
@@ -1034,8 +1221,15 @@ pub async fn choose_reads(cfg: &Config, problem: &str, catalogue: &Value, known:
 /// Continue a diagnosis with what has been gathered since. Answering once and
 /// stopping is not a diagnosis — "the values are not enough" has to be able
 /// to lead somewhere.
-pub async fn follow_up(cfg: &Config, problem: &str, facts: &Value, previous: &str,
-                       added: &str, lang: &str, context: &Value) -> Result<String, String> {
+pub async fn follow_up(
+    cfg: &Config,
+    problem: &str,
+    facts: &Value,
+    previous: &str,
+    added: &str,
+    lang: &str,
+    context: &Value,
+) -> Result<String, String> {
     // The same sections as the first answer, and for the same reason. A
     // follow-up that dropped back to a paragraph would undo the method one
     // question in - which is exactly when a person is most likely to act on
@@ -1095,11 +1289,12 @@ fn term_at(chars: &[char], at: usize, term: &[char]) -> bool {
     if term.is_empty() || at + term.len() > chars.len() {
         return false;
     }
-    let same = chars[at..at + term.len()].iter().zip(term)
+    let same = chars[at..at + term.len()]
+        .iter()
+        .zip(term)
         .all(|(a, b)| a.to_lowercase().eq(b.to_lowercase()));
-    let open = |c: Option<&char>| c.map_or(true, |c| !c.is_alphanumeric());
-    same
-        && (!term[0].is_alphanumeric() || at == 0 || open(chars.get(at - 1)))
+    let open = |c: Option<&char>| c.is_none_or(|c| !c.is_alphanumeric());
+    same && (!term[0].is_alphanumeric() || at == 0 || open(chars.get(at - 1)))
         && (!term[term.len() - 1].is_alphanumeric() || open(chars.get(at + term.len())))
 }
 
@@ -1110,7 +1305,10 @@ fn spans(text: &[char], keep: &[Vec<char>]) -> Vec<(usize, usize)> {
     let mut i = 0;
     while i < text.len() {
         match keep.iter().find(|t| term_at(text, i, t)) {
-            Some(t) => { out.push((i, t.len())); i += t.len(); }
+            Some(t) => {
+                out.push((i, t.len()));
+                i += t.len();
+            }
             None => i += 1,
         }
     }
@@ -1119,7 +1317,7 @@ fn spans(text: &[char], keep: &[Vec<char>]) -> Vec<(usize, usize)> {
 
 fn by_length(keep: &[String]) -> Vec<Vec<char>> {
     let mut terms: Vec<Vec<char>> = keep.iter().map(|t| t.chars().collect()).collect();
-    terms.sort_by(|a, b| b.len().cmp(&a.len()));
+    terms.sort_by_key(|t| std::cmp::Reverse(t.len()));
     terms
 }
 
@@ -1130,9 +1328,13 @@ fn occurrences(text: &str, term: &str) -> usize {
 }
 
 fn strings(v: &Value) -> Vec<(String, String)> {
-    v.as_object().map(|m| m.iter()
-        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-        .collect()).unwrap_or_default()
+    v.as_object()
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The code in a Markdown text, as byte ranges: fenced blocks, indented blocks
@@ -1164,10 +1366,14 @@ fn code_spans(text: &str) -> Vec<(usize, usize)> {
 
     let fence = |line: &str| {
         let trimmed = line.trim_start_matches(' ');
-        if line.len() - trimmed.len() > 3 { return None; }
+        if line.len() - trimmed.len() > 3 {
+            return None;
+        }
         ["```", "~~~"].into_iter().find(|m| trimmed.starts_with(m))
     };
-    let indented = |line: &str| (line.starts_with("    ") || line.starts_with('\t')) && !line.trim().is_empty();
+    let indented = |line: &str| {
+        (line.starts_with("    ") || line.starts_with('\t')) && !line.trim().is_empty()
+    };
 
     let mut blocks = Vec::new();
     let mut i = 0;
@@ -1177,7 +1383,11 @@ fn code_spans(text: &str) -> Vec<(usize, usize)> {
         let line = &text[s..e];
         if let Some(marker) = fence(line) {
             let mut j = i + 1;
-            while j < lines.len() && !text[lines[j].0..lines[j].1].trim_start().starts_with(marker) {
+            while j < lines.len()
+                && !text[lines[j].0..lines[j].1]
+                    .trim_start()
+                    .starts_with(marker)
+            {
                 j += 1;
             }
             let last = j.min(lines.len() - 1);
@@ -1203,33 +1413,49 @@ fn code_spans(text: &str) -> Vec<(usize, usize)> {
     // Inline spans, in the prose between blocks.
     let mut out = Vec::new();
     let mut from = 0;
-    for &(bs, be) in blocks.iter().chain(std::iter::once(&(text.len(), text.len()))) {
+    for &(bs, be) in blocks
+        .iter()
+        .chain(std::iter::once(&(text.len(), text.len())))
+    {
         let prose = &text[from..bs];
         let bytes = prose.as_bytes();
         let mut k = 0;
         while k < bytes.len() {
-            if bytes[k] != b'`' { k += 1; continue; }
+            if bytes[k] != b'`' {
+                k += 1;
+                continue;
+            }
             let run = bytes[k..].iter().take_while(|&&b| b == b'`').count();
             let mut m = k + run;
             let mut found = None;
             while m < bytes.len() {
                 // Bytes, not a slice of the string: `m` steps one byte at a time
                 // and may sit inside a multi-byte character.
-                if bytes[m..].starts_with(b"\n\n") { break; }
+                if bytes[m..].starts_with(b"\n\n") {
+                    break;
+                }
                 if bytes[m] == b'`' {
                     let r = bytes[m..].iter().take_while(|&&b| b == b'`').count();
-                    if r == run { found = Some(m + r); break; }
+                    if r == run {
+                        found = Some(m + r);
+                        break;
+                    }
                     m += r;
                 } else {
                     m += 1;
                 }
             }
             match found {
-                Some(end) => { out.push((from + k, from + end)); k = end; }
+                Some(end) => {
+                    out.push((from + k, from + end));
+                    k = end;
+                }
                 None => k += run,
             }
         }
-        if bs < text.len() { out.push((bs, be)); }
+        if bs < text.len() {
+            out.push((bs, be));
+        }
         from = be;
     }
     out.sort();
@@ -1249,7 +1475,9 @@ pub struct Shielded {
 
 pub fn shield(texts: &Value, keep: &[String]) -> Shielded {
     let all = strings(texts);
-    let form = PLACEHOLDERS.iter().copied()
+    let form = PLACEHOLDERS
+        .iter()
+        .copied()
         .find(|(open, _)| !all.iter().any(|(_, s)| s.contains(open)))
         .unwrap_or(PLACEHOLDERS[1]);
     let terms = by_length(keep);
@@ -1260,13 +1488,18 @@ pub fn shield(texts: &Value, keep: &[String]) -> Shielded {
         for (k, s) in all {
             let mut shielded = String::new();
             let mut hide = |shielded: &mut String, original: &str, is_code: bool| {
-                if is_code { code.push(originals.len()); }
+                if is_code {
+                    code.push(originals.len());
+                }
                 shielded.push_str(&format!("{}{}{}", form.0, originals.len(), form.1));
                 originals.push(original.to_string());
             };
             // Prose between pieces of code has its terms hidden; code is hidden whole.
             let mut at = 0;
-            for (cs, ce) in code_spans(&s).into_iter().chain(std::iter::once((s.len(), s.len()))) {
+            for (cs, ce) in code_spans(&s)
+                .into_iter()
+                .chain(std::iter::once((s.len(), s.len())))
+            {
                 let chars: Vec<char> = s[at..cs].chars().collect();
                 let mut c = 0;
                 for (start, len) in spans(&chars, &terms) {
@@ -1284,19 +1517,40 @@ pub fn shield(texts: &Value, keep: &[String]) -> Shielded {
             map.insert(k, Value::String(shielded));
         }
     }
-    Shielded { texts: out, originals, code, form }
+    Shielded {
+        texts: out,
+        originals,
+        code,
+        form,
+    }
 }
 
 /// The code the model's answer no longer carries a placeholder for — named, so
 /// the window can say which command the translation lost.
 pub fn lost_code(translated: &Value, s: &Shielded) -> Vec<String> {
-    let all: String = strings(translated).into_iter().map(|(_, v)| v).collect::<Vec<_>>().join("\n");
-    s.code.iter()
+    let all: String = strings(translated)
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect::<Vec<_>>()
+        .join("\n");
+    s.code
+        .iter()
         .filter(|&&i| !all.contains(&format!("{}{}{}", s.form.0, i, s.form.1)))
         .map(|&i| {
-            let one_line = s.originals[i].trim().trim_matches('`').lines().next().unwrap_or("").trim().to_string();
+            let one_line = s.originals[i]
+                .trim()
+                .trim_matches('`')
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
             let short: String = one_line.chars().take(48).collect();
-            if short.len() < one_line.len() { format!("{short}…") } else { short }
+            if short.len() < one_line.len() {
+                format!("{short}…")
+            } else {
+                short
+            }
         })
         .collect()
 }
@@ -1311,7 +1565,8 @@ pub fn unshield(translated: &Value, s: &Shielded) -> Value {
                 let mut restored = text.to_string();
                 // Highest first, so `[[1]]` is never read inside `[[12]]`.
                 for (i, original) in s.originals.iter().enumerate().rev() {
-                    restored = restored.replace(&format!("{}{}{}", s.form.0, i, s.form.1), original);
+                    restored =
+                        restored.replace(&format!("{}{}{}", s.form.0, i, s.form.1), original);
                 }
                 *v = Value::String(restored);
             }
@@ -1326,10 +1581,15 @@ pub fn unshield(translated: &Value, s: &Shielded) -> Value {
 pub fn lost_terms(source: &Value, translated: &Value, keep: &[String]) -> Vec<String> {
     let out = translated.as_object();
     keep.iter()
-        .filter(|term| strings(source).iter().any(|(k, s)| {
-            let theirs = out.and_then(|o| o.get(k)).and_then(|v| v.as_str()).unwrap_or("");
-            occurrences(theirs, term) < occurrences(s, term)
-        }))
+        .filter(|term| {
+            strings(source).iter().any(|(k, s)| {
+                let theirs = out
+                    .and_then(|o| o.get(k))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                occurrences(theirs, term) < occurrences(s, term)
+            })
+        })
         .cloned()
         .collect()
 }
@@ -1359,15 +1619,22 @@ pub fn translate_prompt(texts: &Value, to: &str, placeholder: Option<&str>) -> S
 ///
 /// `keep` is the project's glossary. What comes back is the translated object
 /// and the terms it lost — the second is empty when there was no glossary.
-pub async fn translate(cfg: &Config, texts: &Value, to: &str, keep: &[String])
-    -> Result<Value, String> {
+pub async fn translate(
+    cfg: &Config,
+    texts: &Value,
+    to: &str,
+    keep: &[String],
+) -> Result<Value, String> {
     if !cfg.configured() {
         return Err(m!("no_model"));
     }
     let shielded = shield(texts, keep);
     let example = format!("{}0{}", shielded.form.0, shielded.form.1);
-    let p = translate_prompt(&shielded.texts, to,
-                             (!shielded.originals.is_empty()).then_some(example.as_str()));
+    let p = translate_prompt(
+        &shielded.texts,
+        to,
+        (!shielded.originals.is_empty()).then_some(example.as_str()),
+    );
     let raw = match cfg.provider.as_str() {
         // The desktop's agent answers the prompt itself, with every tool
         // denied and from an empty directory — see `omarchy.rs` for what was
@@ -1378,8 +1645,8 @@ pub async fn translate(cfg: &Config, texts: &Value, to: &str, keep: &[String])
     };
     let start = raw.find('{').ok_or_else(|| m!("translation_no_json"))?;
     let end = raw.rfind('}').ok_or_else(|| m!("translation_no_json"))? + 1;
-    let out: Value = serde_json::from_str(&raw[start..end])
-        .map_err(|e| m!("translation_unreadable", e = e))?;
+    let out: Value =
+        serde_json::from_str(&raw[start..end]).map_err(|e| m!("translation_unreadable", e = e))?;
     let dropped = lost_code(&out, &shielded);
     let out = unshield(&out, &shielded);
     let mut lost = lost_terms(texts, &out, keep);
@@ -1403,20 +1670,39 @@ mod glossary_tests {
     fn the_projects_terms_are_hidden_from_the_model_and_put_back() {
         let texts = json!({"w0": "Brain files: a brain in my.brain, not a brainstorm.", "p0": "Which version?"});
         let s = shield(&texts, &keep());
-        assert_eq!(s.texts["w0"], "[[0]] files: a [[1]] in my[[2]], not a brainstorm.");
+        assert_eq!(
+            s.texts["w0"],
+            "[[0]] files: a [[1]] in my[[2]], not a brainstorm."
+        );
         let p = translate_prompt(&s.texts, "fr", Some("[[0]]"));
-        assert_eq!(occurrences(&p, "brain"), 0, "a kept term reached the model: {p}");
-        assert!(p.contains("Keep every placeholder like [[0]] exactly as it is."), "{p}");
+        assert_eq!(
+            occurrences(&p, "brain"),
+            0,
+            "a kept term reached the model: {p}"
+        );
+        assert!(
+            p.contains("Keep every placeholder like [[0]] exactly as it is."),
+            "{p}"
+        );
 
         let from_model = json!({"w0": "Fichiers [[0]] : un [[1]] dans my[[2]], pas un brainstorming.", "p0": "Quelle version ?"});
         let back = unshield(&from_model, &s);
-        assert_eq!(back["w0"], "Fichiers Brain : un brain dans my.brain, pas un brainstorming.");
+        assert_eq!(
+            back["w0"],
+            "Fichiers Brain : un brain dans my.brain, pas un brainstorming."
+        );
         assert!(lost_terms(&texts, &back, &keep()).is_empty(), "{back}");
 
         let plain = shield(&texts, &[]);
-        assert_eq!(plain.texts, texts, "a project without a glossary had its text changed");
+        assert_eq!(
+            plain.texts, texts,
+            "a project without a glossary had its text changed"
+        );
         let bare = translate_prompt(&plain.texts, "fr", None);
-        assert!(!bare.contains("placeholder"), "a project without a glossary got a different prompt");
+        assert!(
+            !bare.contains("placeholder"),
+            "a project without a glossary got a different prompt"
+        );
 
         // A text that already uses double brackets gets the other form, so a
         // placeholder is never confused with the project's own markup.
@@ -1436,15 +1722,30 @@ mod glossary_tests {
                     Back up first: `cp my.brain\n  my.brain.bak`. Or:\n\n\
                     ```sh\nengram search --bm25 \"x\"\n```\n\
                     Done.";
-        let texts = json!({"text": text, "w0": "Run `engram --version` to see which brain you have"});
+        let texts =
+            json!({"text": text, "w0": "Run `engram --version` to see which brain you have"});
         let s = shield(&texts, &keep());
         let shown = s.texts["text"].as_str().unwrap();
         for code in ["engram reindex", "engram serve", "cp my.brain", "--bm25"] {
-            assert!(!shown.contains(code), "code reached the model: {code} in {shown}");
+            assert!(
+                !shown.contains(code),
+                "code reached the model: {code} in {shown}"
+            );
         }
-        assert!(shown.contains("Semantic search"), "prose was hidden as if it were code: {shown}");
-        assert_eq!(occurrences(shown, "brain"), 0, "a kept term in prose reached the model: {shown}");
-        assert!(!s.texts["w0"].as_str().unwrap().contains("--version"), "{}", s.texts["w0"]);
+        assert!(
+            shown.contains("Semantic search"),
+            "prose was hidden as if it were code: {shown}"
+        );
+        assert_eq!(
+            occurrences(shown, "brain"),
+            0,
+            "a kept term in prose reached the model: {shown}"
+        );
+        assert!(
+            !s.texts["w0"].as_str().unwrap().contains("--version"),
+            "{}",
+            s.texts["w0"]
+        );
 
         // A model that kept every placeholder gets every byte of code back.
         let back = unshield(&s.texts, &s);
@@ -1453,13 +1754,20 @@ mod glossary_tests {
 
         // One that dropped the indented block is caught, and the command named.
         let placeholder = |original: &str| {
-            let i = s.originals.iter().position(|o| o.contains(original)).unwrap();
+            let i = s
+                .originals
+                .iter()
+                .position(|o| o.contains(original))
+                .unwrap();
             format!("{}{}{}", s.form.0, i, s.form.1)
         };
         let dropped = json!({
             "text": shown.replace(&placeholder("engram reindex"), "reindexer mon.brain"),
             "w0": s.texts["w0"]});
-        assert_eq!(lost_code(&dropped, &s), vec!["engram reindex my.brain".to_string()]);
+        assert_eq!(
+            lost_code(&dropped, &s),
+            vec!["engram reindex my.brain".to_string()]
+        );
 
         // Without code or a glossary nothing changes, as before.
         let plain = json!({"p0": "Which version?"});
@@ -1473,16 +1781,31 @@ mod glossary_tests {
     fn a_term_the_translation_lost_is_found() {
         let src = json!({"text": "Build the brain elsewhere and copy my.brain across.", "p0": "Which version?"});
         let kept = json!({"text": "Erstelle das Brain woanders und kopiere my.brain hinüber.", "p0": "Welche Version?"});
-        assert!(lost_terms(&src, &kept, &keep()).is_empty(), "a kept, capitalised term was called lost");
+        assert!(
+            lost_terms(&src, &kept, &keep()).is_empty(),
+            "a kept, capitalised term was called lost"
+        );
         let organ = json!({"text": "Construisez le cerveau ailleurs et copiez my.brain.", "p0": "Quelle version ?"});
         assert_eq!(lost_terms(&src, &organ, &keep()), vec!["brain".to_string()]);
         // A placeholder the model dropped is a term lost, not a silent gap.
         let s = shield(&src, &keep());
-        let dropped = unshield(&json!({"text": "Construisez-le ailleurs et copiez my[[1]].", "p0": "?"}), &s);
-        assert_eq!(lost_terms(&src, &dropped, &keep()), vec!["brain".to_string()]);
-        assert!(lost_terms(&src, &json!({"p0": "x"}), &keep()).contains(&"brain".to_string()),
-                "a text the model left out entirely did not count as losing its terms");
-        assert_eq!(occurrences("brainstorm a brain", "brain"), 1, "a term inside a longer word counted");
+        let dropped = unshield(
+            &json!({"text": "Construisez-le ailleurs et copiez my[[1]].", "p0": "?"}),
+            &s,
+        );
+        assert_eq!(
+            lost_terms(&src, &dropped, &keep()),
+            vec!["brain".to_string()]
+        );
+        assert!(
+            lost_terms(&src, &json!({"p0": "x"}), &keep()).contains(&"brain".to_string()),
+            "a text the model left out entirely did not count as losing its terms"
+        );
+        assert_eq!(
+            occurrences("brainstorm a brain", "brain"),
+            1,
+            "a term inside a longer word counted"
+        );
     }
 
     /// The glossary against a real model. Not run by the suite, because it
@@ -1492,9 +1815,16 @@ mod glossary_tests {
     #[tokio::test]
     #[ignore]
     async fn live_a_small_model_keeps_the_projects_terms() {
-        let Ok(model) = std::env::var("PODSHL_LIVE_MODEL") else { return };
-        let cfg = Config { provider: "ollama".into(), model, endpoint: String::new(),
-                           model_class: "local_small".into(), uses_key: false };
+        let Ok(model) = std::env::var("PODSHL_LIVE_MODEL") else {
+            return;
+        };
+        let cfg = Config {
+            provider: "ollama".into(),
+            model,
+            endpoint: String::new(),
+            model_class: "local_small".into(),
+            uses_key: false,
+        };
         let texts = json!({
             "w0": "The .brain format and the embedding defaults changed between releases, \
                    and a brain written by one is not always read the same way by the next",
@@ -1505,16 +1835,30 @@ mod glossary_tests {
         for to in ["de", "fr", "es"] {
             let bare = translate(&cfg, &texts, to, &[]).await.unwrap();
             let lost_bare = lost_terms(&texts, &bare["texts"], &["brain".into()]);
-            let kept = translate(&cfg, &texts, to, &["brain".into()]).await.unwrap();
-            eprintln!("{to}: without a glossary lost {lost_bare:?}; with one lost {} — {}",
-                      kept["lost"], kept["texts"]["text"]);
-            assert_eq!(kept["lost"], json!([]), "{to}: the model dropped a kept term: {kept}");
+            let kept = translate(&cfg, &texts, to, &["brain".into()])
+                .await
+                .unwrap();
+            eprintln!(
+                "{to}: without a glossary lost {lost_bare:?}; with one lost {} — {}",
+                kept["lost"], kept["texts"]["text"]
+            );
+            assert_eq!(
+                kept["lost"],
+                json!([]),
+                "{to}: the model dropped a kept term: {kept}"
+            );
         }
     }
 }
 
-pub async fn solve(cfg: &Config, problem: &str, facts: &Value, lang: &str,
-                   typed: &[String], context: &Value) -> Result<Answer, String> {
+pub async fn solve(
+    cfg: &Config,
+    problem: &str,
+    facts: &Value,
+    lang: &str,
+    typed: &[String],
+    context: &Value,
+) -> Result<Answer, String> {
     if !cfg.configured() {
         return Err(m!("no_model"));
     }
@@ -1550,21 +1894,33 @@ async fn anthropic(cfg: &Config, prompt: &str) -> Result<String, String> {
         .header("anthropic-version", ANTHROPIC_VERSION)
         .json(&body)
         .timeout(std::time::Duration::from_secs(180))
-        .send().await.map_err(|e| m!("unreachable", e = e))?;
+        .send()
+        .await
+        .map_err(|e| m!("unreachable", e = e))?;
     let v: Value = crate::http::json_capped(resp, crate::http::MAX_BODY).await?;
 
     if let Some(err) = v.get("error") {
-        return Err(m!("provider_says",
-            e = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown error")));
+        return Err(m!(
+            "provider_says",
+            e = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error")
+        ));
     }
     // A refusal is a valid response, not a transport failure — say so plainly.
     if v.get("stop_reason").and_then(|s| s.as_str()) == Some("refusal") {
         return Err(m!("model_refused"));
     }
-    v.get("content").and_then(|c| c.as_array())
-        .and_then(|blocks| blocks.iter()
-            .find(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
-            .and_then(|b| b.get("text")).and_then(|t| t.as_str()))
+    v.get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|blocks| {
+            blocks
+                .iter()
+                .find(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+                .and_then(|b| b.get("text"))
+                .and_then(|t| t.as_str())
+        })
         .map(|s| s.trim().to_string())
         .ok_or_else(|| m!("unexpected_answer", v = v))
 }
@@ -1573,7 +1929,11 @@ async fn anthropic(cfg: &Config, prompt: &str) -> Result<String, String> {
 /// and Ollama all serve this shape.
 async fn openai_compatible(cfg: &Config, prompt: &str) -> Result<String, String> {
     let mut req = crate::http::client()
-        .post(format!("{}{}/chat/completions", cfg.base(), api_prefix(&cfg.provider)))
+        .post(format!(
+            "{}{}/chat/completions",
+            cfg.base(),
+            api_prefix(&cfg.provider)
+        ))
         .timeout(std::time::Duration::from_secs(180));
     if cfg.uses_key {
         let key = get_key(&cfg.provider).ok_or_else(|| m!("no_api_key"))?;
@@ -1586,14 +1946,22 @@ async fn openai_compatible(cfg: &Config, prompt: &str) -> Result<String, String>
             "stream": false,
             "temperature": 0.2
         }))
-        .send().await.map_err(|e| m!("unreachable", e = e))?;
+        .send()
+        .await
+        .map_err(|e| m!("unreachable", e = e))?;
     let v: Value = crate::http::json_capped(resp, crate::http::MAX_BODY).await?;
 
     if let Some(err) = v.get("error") {
-        return Err(m!("provider_says",
-            e = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown error")));
+        return Err(m!(
+            "provider_says",
+            e = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error")
+        ));
     }
-    v.pointer("/choices/0/message/content").and_then(|c| c.as_str())
+    v.pointer("/choices/0/message/content")
+        .and_then(|c| c.as_str())
         .map(|s| s.trim().to_string())
         .ok_or_else(|| m!("unexpected_answer", v = v))
 }
@@ -1608,32 +1976,126 @@ async fn openai_compatible(cfg: &Config, prompt: &str) -> Result<String, String>
 /// API; everything else here serves the OpenAI chat-completions shape.
 pub const PROVIDERS: &[(&str, &str, &str, &str, bool, &str)] = &[
     // id, display, base, protocol, needs_key, model hint
-    ("anthropic", "Anthropic", "https://api.anthropic.com", "anthropic", true,
-     "claude-opus-5"),
-    ("openai", "OpenAI", "https://api.openai.com", "openai", true, ""),
-    ("openrouter", "OpenRouter", "https://openrouter.ai/api", "openai", true,
-     "anthropic/claude-opus-5"),
-    ("mistral", "Mistral", "https://api.mistral.ai", "openai", true, ""),
-    ("groq", "Groq", "https://api.groq.com/openai", "openai", true, ""),
+    (
+        "anthropic",
+        "Anthropic",
+        "https://api.anthropic.com",
+        "anthropic",
+        true,
+        "claude-opus-5",
+    ),
+    (
+        "openai",
+        "OpenAI",
+        "https://api.openai.com",
+        "openai",
+        true,
+        "",
+    ),
+    (
+        "openrouter",
+        "OpenRouter",
+        "https://openrouter.ai/api",
+        "openai",
+        true,
+        "anthropic/claude-opus-5",
+    ),
+    (
+        "mistral",
+        "Mistral",
+        "https://api.mistral.ai",
+        "openai",
+        true,
+        "",
+    ),
+    (
+        "groq",
+        "Groq",
+        "https://api.groq.com/openai",
+        "openai",
+        true,
+        "",
+    ),
     // The free layer, which is the one that matters for open source: a vendor
     // that publishes needs no model at all, and a user who falls back to one
     // should not have to pay to be able to. `openai_flat` is not a different
     // protocol — it is the same bodies without the `/v1` segment, which these
     // two put in the base or omit entirely.
-    ("github", "GitHub Models", "https://models.github.ai/inference",
-     "openai_flat", true, ""),
-    ("google", "Google AI Studio",
-     "https://generativelanguage.googleapis.com/v1beta/openai", "openai_flat", true, ""),
-    ("cerebras", "Cerebras", "https://api.cerebras.ai", "openai", true, ""),
-    ("together", "Together AI", "https://api.together.xyz", "openai", true, ""),
-    ("deepseek", "DeepSeek", "https://api.deepseek.com", "openai", true, ""),
-    ("ollama", "Ollama", "http://localhost:11434", "openai", false, ""),
-    ("lmstudio", "LM Studio", "http://localhost:1234", "openai", false, ""),
-    ("llamacpp", "llama.cpp", "http://localhost:8080", "openai", false, ""),
+    (
+        "github",
+        "GitHub Models",
+        "https://models.github.ai/inference",
+        "openai_flat",
+        true,
+        "",
+    ),
+    (
+        "google",
+        "Google AI Studio",
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+        "openai_flat",
+        true,
+        "",
+    ),
+    (
+        "cerebras",
+        "Cerebras",
+        "https://api.cerebras.ai",
+        "openai",
+        true,
+        "",
+    ),
+    (
+        "together",
+        "Together AI",
+        "https://api.together.xyz",
+        "openai",
+        true,
+        "",
+    ),
+    (
+        "deepseek",
+        "DeepSeek",
+        "https://api.deepseek.com",
+        "openai",
+        true,
+        "",
+    ),
+    (
+        "ollama",
+        "Ollama",
+        "http://localhost:11434",
+        "openai",
+        false,
+        "",
+    ),
+    (
+        "lmstudio",
+        "LM Studio",
+        "http://localhost:1234",
+        "openai",
+        false,
+        "",
+    ),
+    (
+        "llamacpp",
+        "llama.cpp",
+        "http://localhost:8080",
+        "openai",
+        false,
+        "",
+    ),
     // Not an endpoint and not a key: the name of the agent this desktop already
     // has. Offered only where Omarchy names one, it is installed, and somebody
     // has measured how to call it without its tools.
-    ("omarchy_agent", "Omarchy default agent", "", "agent", false, ""),
+    (
+        "omarchy_agent",
+        "Omarchy default agent",
+        "",
+        "agent",
+        false,
+        "",
+    ),
     ("custom", "", "", "openai", true, ""),
 ];
 
@@ -1658,7 +2120,16 @@ fn models_url(cfg: &Config) -> String {
     format!("{}{}/models", cfg.base(), api_prefix(&cfg.provider))
 }
 
-pub fn preset(id: &str) -> Option<&'static (&'static str, &'static str, &'static str, &'static str, bool, &'static str)> {
+pub fn preset(
+    id: &str,
+) -> Option<&'static (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    bool,
+    &'static str,
+)> {
     PROVIDERS.iter().find(|p| p.0 == id)
 }
 
@@ -1675,13 +2146,16 @@ fn display_name(id: &str, name: &str, base: &str, needs_key: bool) -> String {
 }
 
 pub fn providers_json() -> Value {
-    json!(PROVIDERS.iter().map(|(id, name, base, proto, key, hint)| json!({
-        "id": id, "name": display_name(id, name, base, *key), "base": base, "protocol": proto,
-        "needs_key": key, "hint": hint,
-        // Local providers are the only ones where the question truly stays on
-        // the device; that distinction has to reach the user.
-        "local": !*key && base.contains("localhost")
-    })).collect::<Vec<_>>())
+    json!(PROVIDERS
+        .iter()
+        .map(|(id, name, base, proto, key, hint)| json!({
+            "id": id, "name": display_name(id, name, base, *key), "base": base, "protocol": proto,
+            "needs_key": key, "hint": hint,
+            // Local providers are the only ones where the question truly stays on
+            // the device; that distinction has to reach the user.
+            "local": !*key && base.contains("localhost")
+        }))
+        .collect::<Vec<_>>())
 }
 
 /// Ask the provider which models it serves. Most OpenAI-compatible endpoints
@@ -1689,10 +2163,14 @@ pub fn providers_json() -> Value {
 /// identifier they have to look up elsewhere.
 pub async fn list_models(cfg: &Config) -> Result<Vec<String>, String> {
     let url = models_url(cfg);
-    let mut req = crate::http::client().get(&url).timeout(std::time::Duration::from_secs(30));
+    let mut req = crate::http::client()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(30));
     if cfg.provider == "anthropic" {
         let key = get_key("anthropic").ok_or_else(|| m!("no_api_key"))?;
-        req = req.header("x-api-key", key).header("anthropic-version", ANTHROPIC_VERSION);
+        req = req
+            .header("x-api-key", key)
+            .header("anthropic-version", ANTHROPIC_VERSION);
     } else if cfg.uses_key {
         if let Some(k) = get_key(&cfg.provider) {
             req = req.bearer_auth(k);
@@ -1702,17 +2180,33 @@ pub async fn list_models(cfg: &Config) -> Result<Vec<String>, String> {
     // A catalogue of model names, not a catalogue of projects: the ordinary cap.
     let v: Value = crate::http::json_capped(resp, crate::http::MAX_BODY).await?;
     if let Some(err) = v.get("error") {
-        return Err(m!("provider_says",
-            e = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown error")));
+        return Err(m!(
+            "provider_says",
+            e = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error")
+        ));
     }
     // `{"data": [...]}` is the common shape; GitHub's catalogue answers with a
     // bare array. Both are the same list, and refusing one of them would look
     // to the user like the provider is unreachable.
-    let mut out: Vec<String> = v.get("data").and_then(|d| d.as_array()).or_else(|| v.as_array())
-        .map(|a| a.iter().filter_map(|m| m.get("id").and_then(|i| i.as_str()).map(String::from)).collect())
+    let mut out: Vec<String> = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .or_else(|| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| m.get("id").and_then(|i| i.as_str()).map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     out.sort();
-    if out.is_empty() { Err(m!("no_models")) } else { Ok(out) }
+    if out.is_empty() {
+        Err(m!("no_models"))
+    } else {
+        Ok(out)
+    }
 }
 
 /// Cheap reachability check — does the endpoint answer and is the credential
@@ -1745,8 +2239,19 @@ pub async fn probe(cfg: &Config) -> Result<usize, String> {
 /// the user asks for it.
 pub async fn test(cfg: &Config) -> Result<(String, u128), String> {
     let started = std::time::Instant::now();
-    let answer = solve(cfg, "Answer with the single word: ready.", &json!({}), "en", &[], &Value::Null).await?;
-    Ok((answer.raw.chars().take(120).collect(), started.elapsed().as_millis()))
+    let answer = solve(
+        cfg,
+        "Answer with the single word: ready.",
+        &json!({}),
+        "en",
+        &[],
+        &Value::Null,
+    )
+    .await?;
+    Ok((
+        answer.raw.chars().take(120).collect(),
+        started.elapsed().as_millis(),
+    ))
 }
 
 #[cfg(test)]
@@ -1754,8 +2259,13 @@ mod tests {
     use super::*;
 
     fn cfg(provider: &str) -> Config {
-        Config { provider: provider.into(), model: "m".into(), endpoint: String::new(),
-                 model_class: "cloud".into(), uses_key: true }
+        Config {
+            provider: provider.into(),
+            model: "m".into(),
+            endpoint: String::new(),
+            model_class: "cloud".into(),
+            uses_key: true,
+        }
     }
 
     /// Every preset has to compose the URL its provider actually serves. A
@@ -1766,29 +2276,51 @@ mod tests {
     #[test]
     fn every_preset_composes_the_path_its_provider_serves() {
         for (provider, chat, models) in [
-            ("openai", "https://api.openai.com/v1/chat/completions",
-                       "https://api.openai.com/v1/models"),
-            ("groq", "https://api.groq.com/openai/v1/chat/completions",
-                     "https://api.groq.com/openai/v1/models"),
-            ("cerebras", "https://api.cerebras.ai/v1/chat/completions",
-                         "https://api.cerebras.ai/v1/models"),
+            (
+                "openai",
+                "https://api.openai.com/v1/chat/completions",
+                "https://api.openai.com/v1/models",
+            ),
+            (
+                "groq",
+                "https://api.groq.com/openai/v1/chat/completions",
+                "https://api.groq.com/openai/v1/models",
+            ),
+            (
+                "cerebras",
+                "https://api.cerebras.ai/v1/chat/completions",
+                "https://api.cerebras.ai/v1/models",
+            ),
             // Version already in the base, so no second `/v1`.
-            ("google", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                       "https://generativelanguage.googleapis.com/v1beta/openai/models"),
+            (
+                "google",
+                "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                "https://generativelanguage.googleapis.com/v1beta/openai/models",
+            ),
             // Completions at the inference root; the catalogue is elsewhere.
-            ("github", "https://models.github.ai/inference/chat/completions",
-                       "https://models.github.ai/catalog/models"),
+            (
+                "github",
+                "https://models.github.ai/inference/chat/completions",
+                "https://models.github.ai/catalog/models",
+            ),
         ] {
             let c = cfg(provider);
             let base = PROVIDERS.iter().find(|p| p.0 == provider).unwrap().2;
-            assert_eq!(format!("{}{}/chat/completions", base, api_prefix(provider)), chat,
-                       "{provider}: completions path");
+            assert_eq!(
+                format!("{}{}/chat/completions", base, api_prefix(provider)),
+                chat,
+                "{provider}: completions path"
+            );
             let mut c2 = c.clone();
             c2.endpoint = String::new();
             // `base()` falls back to OpenAI for unknown ids, so drive it from
             // the table the settings screen actually offers.
             c2.endpoint = base.to_string();
-            let got = if provider == "github" { models_url(&cfg(provider)) } else { models_url(&c2) };
+            let got = if provider == "github" {
+                models_url(&cfg(provider))
+            } else {
+                models_url(&c2)
+            };
             assert_eq!(got, models, "{provider}: model listing path");
         }
     }
@@ -1800,22 +2332,35 @@ mod tests {
         let fresh = resolve(None, agent());
         assert_eq!(fresh.provider, "omarchy_agent");
         assert_eq!(fresh.model, "claude");
-        assert!(fresh.configured(), "a fresh Omarchy install still says No own model");
-        assert!(fresh.is_cloud(), "the one measured agent sends the prompt away and must say so");
+        assert!(
+            fresh.configured(),
+            "a fresh Omarchy install still says No own model"
+        );
+        assert!(
+            fresh.is_cloud(),
+            "the one measured agent sends the prompt away and must say so"
+        );
         assert_eq!(fresh.model_class, "cloud");
         assert!(!fresh.uses_key);
 
         let chosen = r#"{"provider":"ollama","model":"qwen3:4b","endpoint":"",
                          "model_class":"local_small","uses_key":false}"#;
-        assert_eq!(resolve(Some(chosen), agent()).provider, "ollama",
-                   "the desktop default overrode a saved choice");
+        assert_eq!(
+            resolve(Some(chosen), agent()).provider,
+            "ollama",
+            "the desktop default overrode a saved choice"
+        );
 
         let none = r#"{"provider":"","model":"","endpoint":"","model_class":"","uses_key":false}"#;
-        assert!(!resolve(Some(none), agent()).configured(),
-                "a saved choice of no model was replaced by the desktop agent");
+        assert!(
+            !resolve(Some(none), agent()).configured(),
+            "a saved choice of no model was replaced by the desktop agent"
+        );
 
-        assert!(!resolve(None, None).configured(),
-                "a model appeared where the desktop names none");
+        assert!(
+            !resolve(None, None).configured(),
+            "a model appeared where the desktop names none"
+        );
     }
 
     /// The free layer is the answer to "an open-source project will not run a
@@ -1823,8 +2368,18 @@ mod tests {
     /// paid account. If a preset is dropped the docs stop being true.
     #[test]
     fn the_free_tier_providers_are_offered() {
-        for id in ["github", "google", "cerebras", "groq", "mistral", "openrouter"] {
-            assert!(preset(id).is_some(), "{id} is documented as a free option but not offered");
+        for id in [
+            "github",
+            "google",
+            "cerebras",
+            "groq",
+            "mistral",
+            "openrouter",
+        ] {
+            assert!(
+                preset(id).is_some(),
+                "{id} is documented as a free option but not offered"
+            );
         }
     }
 }

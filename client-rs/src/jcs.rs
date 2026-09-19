@@ -64,7 +64,7 @@ fn write_value(v: &Value, out: &mut String) -> Result<(), String> {
         }
         Value::Object(m) => {
             let mut keys: Vec<&String> = m.keys().collect();
-            keys.sort_by(|a, b| utf16_key(a).cmp(&utf16_key(b)));
+            keys.sort_by_key(|a| utf16_key(a));
             out.push('{');
             for (i, k) in keys.iter().enumerate() {
                 if i > 0 {

@@ -49,7 +49,10 @@ mod tests {
     fn a_skill_for_another_os_is_refused_before_probing() {
         let (ok, why) = applicability(&json!({"os": "plan9"}));
         assert!(!ok, "a skill for plan9 was accepted on {}", os_id());
-        assert!(why.contains("plan9"), "the refusal does not name the system: {why}");
+        assert!(
+            why.contains("plan9"),
+            "the refusal does not name the system: {why}"
+        );
     }
 
     /// The skill for *this* system is not refused, or the gate would be a wall.
@@ -77,7 +80,10 @@ mod tests {
             json!({"os": os_id(), "product": "accounting-suite"}),
         ] {
             let (ok, why) = applicability(&required);
-            assert!(ok, "{required} was refused without the client being able to check it: {why}");
+            assert!(
+                ok,
+                "{required} was refused without the client being able to check it: {why}"
+            );
         }
     }
 

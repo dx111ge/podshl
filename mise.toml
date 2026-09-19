@@ -145,6 +145,11 @@ mkdir -p "$OUT"
 TARGET="${CARGO_TARGET_DIR:-client-rs/target}"
 (cd client-rs && cargo tauri build --bundles deb)
 cp "$TARGET/release/podshl-client" "$OUT/podshl-client-$V-linux-x86_64"
+# The record of local fixes on its own: no window, no WebKitGTK, nothing to
+# install as root (REPAIRS.md). Built by name, because the Tauri build is
+# about the window and nothing guarantees it builds the other programs.
+(cd client-rs && cargo build --release --bin podshl-repairs)
+cp "$TARGET/release/podshl-repairs" "$OUT/podshl-repairs-$V-linux-x86_64"
 # **This version's .deb, not every .deb ever built there.** The bundle
 # directory keeps what previous builds left, so a bare `*.deb` copied 0.1.0 and
 # 0.1.1 into the 0.1.2 release — twice, caught by hand both times, and the
@@ -162,6 +167,12 @@ cat > "$OUT/PLATFORM.md" <<'EOF'
 The customer-side agent. It verifies a vendor, collects locally under per-item
 consent, and returns a conclusion. It never signs anything, and it can only
 perform operations it already implements.
+
+## Also here
+
+`podshl-repairs-<version>-linux-x86_64`: the record of local fixes without the
+rest of PODSHL. No window, no WebKitGTK; it runs from `~/.local/bin` and needs
+no root to install. See docs/REPAIRS.md.
 
 ## What it needs
 

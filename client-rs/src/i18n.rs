@@ -34,7 +34,9 @@ use std::path::{Path, PathBuf};
 
 /// Where the language files live, relative to the crate.
 pub fn dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("ui").join("i18n")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("ui")
+        .join("i18n")
 }
 
 /// The index beside them: every code, and the name that language calls itself.
@@ -59,7 +61,8 @@ pub const INDEX: &str = "languages.json";
 pub fn tables() -> BTreeMap<String, Value> {
     let d = dir();
     let mut out = BTreeMap::new();
-    let entries = std::fs::read_dir(&d).unwrap_or_else(|e| panic!("cannot read {}: {e}", d.display()));
+    let entries =
+        std::fs::read_dir(&d).unwrap_or_else(|e| panic!("cannot read {}: {e}", d.display()));
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
@@ -88,8 +91,8 @@ pub fn tables() -> BTreeMap<String, Value> {
 /// The index, parsed.
 pub fn index() -> BTreeMap<String, String> {
     let p = dir().join(INDEX);
-    let raw = std::fs::read_to_string(&p)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()));
+    let raw =
+        std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display()));
     serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", p.display()))
 }
 
@@ -122,8 +125,11 @@ mod tests {
         // values at all.
         let bare = regex::Regex::new(RE_BARE).unwrap();
         let keys: Vec<String> = bare.captures_iter(&ui).map(|c| c[1].to_string()).collect();
-        assert!(keys.len() > 50,
-                "only {} valueless sentences found - the pattern no longer matches", keys.len());
+        assert!(
+            keys.len() > 50,
+            "only {} valueless sentences found - the pattern no longer matches",
+            keys.len()
+        );
 
         let placeholder = regex::Regex::new(RE_HOLE).unwrap();
         let mut holes = vec![];
@@ -136,8 +142,10 @@ mod tests {
                 }
             }
         }
-        assert!(holes.is_empty(),
-                "sentences shown with nothing to put in them: {holes:?}");
+        assert!(
+            holes.is_empty(),
+            "sentences shown with nothing to put in them: {holes:?}"
+        );
     }
 
     use super::*;
@@ -154,9 +162,14 @@ mod tests {
     #[test]
     fn every_language_defines_the_same_keys() {
         let tables = tables();
-        let english = tables.get("en").expect("there is no English table to fall back to");
+        let english = tables
+            .get("en")
+            .expect("there is no English table to fall back to");
         let expected = keys(english);
-        assert!(expected.len() > 50, "the English table is suspiciously small");
+        assert!(
+            expected.len() > 50,
+            "the English table is suspiciously small"
+        );
 
         for (code, table) in &tables {
             let got = keys(table);
@@ -167,7 +180,10 @@ mod tests {
                 "{code} is missing {missing:?} — those would silently fall back to English, \
 which in a consent dialogue reads as a design choice rather than a gap"
             );
-            assert!(extra.is_empty(), "{code} defines {extra:?}, which English does not");
+            assert!(
+                extra.is_empty(),
+                "{code} defines {extra:?}, which English does not"
+            );
         }
     }
 
@@ -176,7 +192,10 @@ which in a consent dialogue reads as a design choice rather than a gap"
     #[test]
     fn every_language_names_itself() {
         for (code, table) in tables() {
-            let name = table.get("_name").and_then(|v| v.as_str()).unwrap_or_default();
+            let name = table
+                .get("_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
             assert!(!name.is_empty(), "{code} does not name itself");
         }
     }
@@ -205,7 +224,10 @@ which in a consent dialogue reads as a design choice rather than a gap"
         );
 
         for (code, table) in &tables {
-            let own = table.get("_name").and_then(|v| v.as_str()).unwrap_or_default();
+            let own = table
+                .get("_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
             assert_eq!(
                 index.get(code).map(String::as_str),
                 Some(own),
@@ -238,7 +260,8 @@ which in a consent dialogue reads as a design choice rather than a gap"
                 continue;
             }
             for (key, value) in table.as_object().unwrap() {
-                let (Some(theirs), Some(ours)) = (value.as_str(), english.get(key).and_then(|v| v.as_str()))
+                let (Some(theirs), Some(ours)) =
+                    (value.as_str(), english.get(key).and_then(|v| v.as_str()))
                 else {
                     continue;
                 };
@@ -268,8 +291,9 @@ which in a consent dialogue reads as a design choice rather than a gap"
     /// one way the index could stop being the truth.
     #[test]
     fn the_window_takes_its_languages_from_the_index() {
-        let ui = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/index.html"))
-            .expect("cannot read index.html");
+        let ui =
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/index.html"))
+                .expect("cannot read index.html");
         assert!(
             ui.contains("i18n/languages.json"),
             "the window no longer reads the index, so nothing says which languages exist"

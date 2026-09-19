@@ -140,8 +140,17 @@ const GPU_FIELD_DENY: &str = r"(?i)uuid|pci|vbios|gsp";
 /// below reads that file and compares: two lists that can drift are a gate
 /// that refuses on one side and admits on the other.
 const ENV_ALLOW: &[&str] = &[
-    "OLLAMA_HOST", "OLLAMA_MODELS", "CUDA_VISIBLE_DEVICES", "HF_HOME", "XDG_SESSION_TYPE",
-    "WAYLAND_DISPLAY", "__GLX_VENDOR_LIBRARY_NAME", "DISPLAY", "LANG", "SHELL", "TERM",
+    "OLLAMA_HOST",
+    "OLLAMA_MODELS",
+    "CUDA_VISIBLE_DEVICES",
+    "HF_HOME",
+    "XDG_SESSION_TYPE",
+    "WAYLAND_DISPLAY",
+    "__GLX_VENDOR_LIBRARY_NAME",
+    "DISPLAY",
+    "LANG",
+    "SHELL",
+    "TERM",
     "VIRTUAL_ENV",
 ];
 
@@ -149,7 +158,8 @@ const ENV_ALLOW: &[&str] = &[
 /// software on it. The deny list catches most of these by word; this catches
 /// the rest, and it is checked on the value name alone so that a harmless key
 /// path cannot be made to carry one of them past the gate.
-const REGISTRY_NAME_DENY: &str = r"(?i)machineguid|productid|registeredowner|computername|hostname|username|serial|uuid";
+const REGISTRY_NAME_DENY: &str =
+    r"(?i)machineguid|productid|registeredowner|computername|hostname|username|serial|uuid";
 
 /// Programs that are never run for their version, whoever names them and
 /// whatever the user clicks.
@@ -163,37 +173,117 @@ const REGISTRY_NAME_DENY: &str = r"(?i)machineguid|productid|registeredowner|com
 /// of GUI programs that ignore arguments and open a window.
 const PROGRAM_DENY: &[&str] = &[
     // shells and command runners
-    "sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "nu", "cmd", "command",
-    "powershell", "pwsh", "wsl", "env", "xargs", "nohup", "nice", "timeout", "time",
-    "watch", "chroot", "setsid", "script", "expect", "busybox",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "dash",
+    "ksh",
+    "csh",
+    "tcsh",
+    "nu",
+    "cmd",
+    "command",
+    "powershell",
+    "pwsh",
+    "wsl",
+    "env",
+    "xargs",
+    "nohup",
+    "nice",
+    "timeout",
+    "time",
+    "watch",
+    "chroot",
+    "setsid",
+    "script",
+    "expect",
+    "busybox",
     // privilege
-    "sudo", "su", "doas", "runas", "pkexec", "gsudo",
+    "sudo",
+    "su",
+    "doas",
+    "runas",
+    "pkexec",
+    "gsudo",
     // power, session and service state
-    "shutdown", "reboot", "halt", "poweroff", "init", "telinit", "logoff", "logout",
-    "systemctl", "launchctl", "service", "sc",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    "init",
+    "telinit",
+    "logoff",
+    "logout",
+    "systemctl",
+    "launchctl",
+    "service",
+    "sc",
     // destructive
-    "rm", "rmdir", "del", "erase", "dd", "mkfs", "format", "diskpart", "fdisk",
-    "parted", "wipefs", "shred", "kill", "killall", "pkill", "taskkill",
+    "rm",
+    "rmdir",
+    "del",
+    "erase",
+    "dd",
+    "mkfs",
+    "format",
+    "diskpart",
+    "fdisk",
+    "parted",
+    "wipefs",
+    "shred",
+    "kill",
+    "killall",
+    "pkill",
+    "taskkill",
     // launchers and script hosts
-    "open", "xdg-open", "start", "explorer", "rundll32", "regsvr32", "mshta",
-    "cscript", "wscript", "msiexec", "schtasks", "at", "crontab", "osascript",
+    "open",
+    "xdg-open",
+    "start",
+    "explorer",
+    "rundll32",
+    "regsvr32",
+    "mshta",
+    "cscript",
+    "wscript",
+    "msiexec",
+    "schtasks",
+    "at",
+    "crontab",
+    "osascript",
     // package runners and build tools: each one runs whatever the directory
     // it is started in says — a `package.json` script, a `Makefile`, a
     // `justfile`, a `Rakefile` — and `--version` is no protection against a
     // tool that reads its configuration before it reads its arguments.
-    "npx", "uvx", "bunx", "pipx", "pnpm", "yarn", "npm", "make", "just", "rake", "task",
-    "gradle", "mvn",
+    "npx",
+    "uvx",
+    "bunx",
+    "pipx",
+    "pnpm",
+    "yarn",
+    "npm",
+    "make",
+    "just",
+    "rake",
+    "task",
+    "gradle",
+    "mvn",
     // language runtimes: an interpreter is a shell by another name, and the
     // ones a diagnosis needs are on the `run_tool` list with their own
     // closed patterns.
-    "node", "python", "python3", "perl", "ruby", "php",
+    "node",
+    "python",
+    "python3",
+    "perl",
+    "ruby",
+    "php",
 ];
 
 /// A Docker image repository as a publisher may name it: lower case, the
 /// registry host and path segments Docker itself accepts, no tag and no digest.
 /// The tag is what is being read, so a publisher naming one would be asserting
 /// the answer.
-pub(crate) const IMAGE_NAME: &str = r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*){0,3}";
+pub const IMAGE_NAME: &str = r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*){0,3}";
 
 /// How long a program gets to say its version. A program that is still busy
 /// after this is not answering the question it was asked.
@@ -204,11 +294,32 @@ const OUTPUT_LIMIT: u64 = 64 * 1024;
 /// Refused regardless of consent. These are not judgement calls a user can make
 /// under time pressure while something is broken.
 const DENY: &[&str] = &[
-    ".ssh", ".gnupg", "id_rsa", "id_ed25519", ".aws", ".kube",
-    "credentials", "keychain", "Login Data", "cookies", "wallet", ".netrc",
-    "shadow", ".env", "token", "secret", "password", "passwd", "api_key",
-    "apikey", "access_key", "private_key", "privatekey", ".pem",
-    "authorization", "bearer",
+    ".ssh",
+    ".gnupg",
+    "id_rsa",
+    "id_ed25519",
+    ".aws",
+    ".kube",
+    "credentials",
+    "keychain",
+    "Login Data",
+    "cookies",
+    "wallet",
+    ".netrc",
+    "shadow",
+    ".env",
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "api_key",
+    "apikey",
+    "access_key",
+    "private_key",
+    "privatekey",
+    ".pem",
+    "authorization",
+    "bearer",
     // Shell and REPL histories: `.bash_history`, `.zsh_history`,
     // `.python_history`, PowerShell's `ConsoleHost_history.txt`. Every command
     // somebody typed, passwords given on a command line included. A manifest
@@ -220,8 +331,22 @@ const DENY: &[&str] = &[
     // short forms, the login and session state a browser or a tool keeps,
     // the credential stores by name — and the values that identify a machine
     // or its owner rather than describe it, which no report may carry.
-    "pass", "pwd", "passphrase", "auth", "login", "logins", "oauth", "session", "keyring",
-    "pgpass", "machineguid", "productid", "uuid", "serial", "hostname", "computername",
+    "pass",
+    "pwd",
+    "passphrase",
+    "auth",
+    "login",
+    "logins",
+    "oauth",
+    "session",
+    "keyring",
+    "pgpass",
+    "machineguid",
+    "productid",
+    "uuid",
+    "serial",
+    "hostname",
+    "computername",
     "username",
 ];
 
@@ -268,7 +393,9 @@ fn program_file_names(program: &str) -> Vec<String> {
 }
 
 fn is_runnable_file(p: &Path) -> bool {
-    let Ok(meta) = std::fs::metadata(p) else { return false };
+    let Ok(meta) = std::fs::metadata(p) else {
+        return false;
+    };
     if !meta.is_file() {
         return false;
     }
@@ -290,7 +417,7 @@ fn is_runnable_file(p: &Path) -> bool {
 /// program by scanning directories would be reading the machine far beyond
 /// what the user was asked about. If it is not on the path, the user is asked
 /// where it is — they know, and pointing at it is itself the consent.
-pub(crate) fn find_on_path(program: &str) -> Option<PathBuf> {
+pub fn find_on_path(program: &str) -> Option<PathBuf> {
     if let Some(hit) = PATH_CACHE.lock().ok().and_then(|c| c.get(program).cloned()) {
         return hit;
     }
@@ -374,7 +501,13 @@ fn in_system_directory(p: &Path) -> bool {
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
         system.push(root);
     } else {
-        for d in ["/sbin", "/usr/sbin", "/usr/local/sbin", "/System", "/usr/libexec"] {
+        for d in [
+            "/sbin",
+            "/usr/sbin",
+            "/usr/local/sbin",
+            "/System",
+            "/usr/libexec",
+        ] {
             system.push(PathBuf::from(d));
         }
     }
@@ -391,7 +524,7 @@ fn program_denied(program: &str) -> Option<String> {
         .strip_suffix(".exe")
         .or_else(|| low.strip_suffix(".com"))
         .unwrap_or(&low);
-    if PROGRAM_DENY.iter().any(|d| *d == stem) {
+    if PROGRAM_DENY.contains(&stem) {
         return Some(m!("program_never_run", p = program));
     }
     deny_hit(program).map(|d| m!("denied", d = d))
@@ -444,7 +577,10 @@ pub fn grant_program_path(program: &str, given: &str) -> Result<PathBuf, String>
     };
 
     let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if !program_file_names(program).iter().any(|n| n.eq_ignore_ascii_case(name)) {
+    if !program_file_names(program)
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(name))
+    {
         return Err(m!("wrong_program_name", name = name, p = program));
     }
     if let Some(d) = deny_hit(&file.to_string_lossy()) {
@@ -486,8 +622,11 @@ pub fn display_path(p: &Path) -> String {
 fn profile_prefixes() -> Vec<(String, &'static str)> {
     let mut out = vec![];
     if cfg!(windows) {
-        for (var, label) in [("LOCALAPPDATA", "%LOCALAPPDATA%"), ("APPDATA", "%APPDATA%"),
-                             ("USERPROFILE", "%USERPROFILE%")] {
+        for (var, label) in [
+            ("LOCALAPPDATA", "%LOCALAPPDATA%"),
+            ("APPDATA", "%APPDATA%"),
+            ("USERPROFILE", "%USERPROFILE%"),
+        ] {
             if let Some(v) = std::env::var_os(var) {
                 out.push((v.to_string_lossy().into_owned(), label));
             }
@@ -503,7 +642,13 @@ fn profile_prefixes() -> Vec<(String, &'static str)> {
 /// Windows compares without case, as Windows does — ASCII only, so a byte
 /// offset in the folded string is the same offset in the original.
 fn shorten_profile(path: &str, prefixes: &[(String, &'static str)]) -> String {
-    let fold = |s: &str| if cfg!(windows) { s.to_ascii_lowercase() } else { s.to_string() };
+    let fold = |s: &str| {
+        if cfg!(windows) {
+            s.to_ascii_lowercase()
+        } else {
+            s.to_string()
+        }
+    };
     let lower = fold(path);
     let best = prefixes
         .iter()
@@ -512,7 +657,10 @@ fn shorten_profile(path: &str, prefixes: &[(String, &'static str)]) -> String {
         .filter(|(p, _)| {
             let p = fold(p);
             lower.starts_with(&p)
-                && matches!(path[p.len()..].chars().next(), None | Some('\\') | Some('/'))
+                && matches!(
+                    path[p.len()..].chars().next(),
+                    None | Some('\\') | Some('/')
+                )
         })
         .max_by_key(|(p, _)| p.len());
     match best {
@@ -576,7 +724,7 @@ pub fn end_incident() {
 /// cannot find the program it stands for. The reading would then be "no
 /// version", about a program that is plainly installed. Nothing of the
 /// environment leaves: only the version token comes back from here.
-pub(crate) fn run_bounded(exe: &Path, args: &[&str]) -> Option<(bool, String)> {
+pub fn run_bounded(exe: &Path, args: &[&str]) -> Option<(bool, String)> {
     let (ok, out, err) = run_bounded_split(exe, args)?;
     let mut text = out;
     if !err.is_empty() {
@@ -597,7 +745,8 @@ pub(crate) fn run_bounded(exe: &Path, args: &[&str]) -> Option<(bool, String)> {
 fn scratch_dir() -> Option<PathBuf> {
     for _ in 0..3 {
         let nonce: u64 = rand::random();
-        let dir = std::env::temp_dir().join(format!("podshl-run-{}-{nonce:016x}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("podshl-run-{}-{nonce:016x}", std::process::id()));
         // `create_dir`, not `create_dir_all`: a directory that already exists
         // is one somebody else made, and its contents are theirs.
         if std::fs::create_dir(&dir).is_ok() {
@@ -671,8 +820,18 @@ fn run_in(exe: &Path, args: &[&str], cwd: &Path) -> Option<(bool, String, String
         });
         rx
     }
-    let out = drain(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
-    let err = drain(child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
+    let out = drain(
+        child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+    );
+    let err = drain(
+        child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+    );
 
     let began = Instant::now();
     let deadline = began + RUN_LIMIT;
@@ -691,8 +850,12 @@ fn run_in(exe: &Path, args: &[&str], cwd: &Path) -> Option<(bool, String, String
     // Exited, but its output is still not complete by the deadline: something
     // it started is still writing, and a reading from a program that did not
     // finish is not a reading.
-    let Ok(o) = out.recv_timeout(remaining(deadline)) else { return None };
-    let Ok(e) = err.recv_timeout(remaining(deadline)) else { return None };
+    let Ok(o) = out.recv_timeout(remaining(deadline)) else {
+        return None;
+    };
+    let Ok(e) = err.recv_timeout(remaining(deadline)) else {
+        return None;
+    };
     Some((
         status.success(),
         String::from_utf8_lossy(&o).to_string(),
@@ -734,7 +897,12 @@ pub fn version_token(text: &str, program: &str, clean_exit: bool) -> Option<Stri
         .trim_end_matches(".exe")
         .trim_end_matches(".com")
         .to_string();
-    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()).take(5) {
+    for line in text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .take(5)
+    {
         if !clean_exit && !line.to_ascii_lowercase().contains(&stem) {
             continue;
         }
@@ -762,7 +930,9 @@ fn program_version(program: &str, flag: &str) -> Option<String> {
 fn split_image(reference: &str) -> (String, Option<String>) {
     let no_digest = reference.split('@').next().unwrap_or(reference);
     let (repo, tag) = match no_digest.rfind(':') {
-        Some(i) if !no_digest[i..].contains('/') => (&no_digest[..i], Some(no_digest[i + 1..].to_string())),
+        Some(i) if !no_digest[i..].contains('/') => {
+            (&no_digest[..i], Some(no_digest[i + 1..].to_string()))
+        }
         _ => (no_digest, None),
     };
     let mut repo = repo.to_ascii_lowercase();
@@ -787,8 +957,13 @@ fn normalise_image(image: &str) -> String {
 /// nothing run inside a container, no container named by the publisher. They
 /// name an image; which containers run it is Docker's answer.
 pub fn containers_of(image: &str) -> Vec<(String, String)> {
-    let Some(docker) = find_on_path("docker") else { return vec![] };
-    let Some((true, text)) = run_bounded(&docker, &["ps", "--no-trunc", "--format", "{{.ID}}\t{{.Image}}"]) else {
+    let Some(docker) = find_on_path("docker") else {
+        return vec![];
+    };
+    let Some((true, text)) = run_bounded(
+        &docker,
+        &["ps", "--no-trunc", "--format", "{{.ID}}\t{{.Image}}"],
+    ) else {
         return vec![];
     };
     let want = normalise_image(image);
@@ -822,8 +997,12 @@ fn container_image_version(image: &str) -> Option<String> {
     // — `latest`, `rocm` — and a bounded one. A reference with no tag at all
     // *is* `latest` to Docker, and saying so still says the thing a publisher
     // cannot otherwise learn: that it runs in a container here at all.
-    tag.or_else(|| Some("latest".into()))
-        .filter(|t| !t.is_empty() && t.len() <= 64 && t.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)))
+    tag.or_else(|| Some("latest".into())).filter(|t| {
+        !t.is_empty()
+            && t.len() <= 64
+            && t.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+    })
 }
 
 /// The path with every symlink in it resolved, as far as it exists.
@@ -858,9 +1037,11 @@ fn resolved_for_check(p: &Path) -> PathBuf {
     p.to_path_buf()
 }
 
-pub(crate) fn deny_hit(s: &str) -> Option<&'static str> {
+pub fn deny_hit(s: &str) -> Option<&'static str> {
     let low = s.to_lowercase();
-    DENY.iter().find(|d| low.contains(&d.to_lowercase())).copied()
+    DENY.iter()
+        .find(|d| low.contains(&d.to_lowercase()))
+        .copied()
 }
 
 /// The file, whole, if it is a file a settings read should open at all.
@@ -893,7 +1074,9 @@ fn scalar(v: &Value) -> Option<Value> {
 #[cfg(target_os = "windows")]
 fn reg_exe() -> Option<PathBuf> {
     find_on_path("reg").or_else(|| {
-        let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        let root = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
         let p = root.join("System32").join("reg.exe");
         is_runnable_file(&p).then_some(p)
     })
@@ -993,8 +1176,12 @@ fn container_runtime() -> String {
         return "podman".into();
     }
     if let Ok(cg) = std::fs::read_to_string("/proc/1/cgroup") {
-        for (marker, name) in [("docker", "docker"), ("containerd", "containerd"),
-                               ("kubepods", "kubernetes"), ("lxc", "lxc")] {
+        for (marker, name) in [
+            ("docker", "docker"),
+            ("containerd", "containerd"),
+            ("kubepods", "kubernetes"),
+            ("lxc", "lxc"),
+        ] {
             if cg.contains(marker) {
                 return name.into();
             }
@@ -1080,8 +1267,16 @@ pub fn interpreter_conflict(facts: &Value) -> Option<Value> {
 /// A human sentence for the consent screen. This is what the user actually
 /// decides on, so it names the concrete target rather than the capability.
 pub fn describe(read: &Value) -> Result<(String, Risk), String> {
-    let op = read.get("op").and_then(|v| v.as_str()).ok_or_else(|| m!("read_no_op"))?;
-    let g = |k: &str| read.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let op = read
+        .get("op")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| m!("read_no_op"))?;
+    let g = |k: &str| {
+        read.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
     Ok(match op {
         "os_fact" => (m!("what_os_fact", name = g("name")), Risk::Low),
         "env_var" => (m!("what_env_var", name = g("name")), Risk::Low),
@@ -1094,7 +1289,11 @@ pub fn describe(read: &Value) -> Result<(String, Risk), String> {
             let args: Vec<String> = read
                 .get("args")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let what = if args.is_empty() {
                 m!("what_run_tool_bare", tool = g("tool"))
@@ -1123,14 +1322,25 @@ pub fn describe(read: &Value) -> Result<(String, Risk), String> {
         // being started, and which file that is on their machine is the thing
         // they can check — a name on its own could be anything on the path.
         "program_version" => {
-            let flag = if g("flag").is_empty() { "--version".to_string() } else { g("flag") };
+            let flag = if g("flag").is_empty() {
+                "--version".to_string()
+            } else {
+                g("flag")
+            };
             let what = match locate_program(&g("program")) {
                 Some(p) => m!("what_program_version", path = display_path(&p), flag = flag),
-                None => m!("what_program_version_absent", program = g("program"), flag = flag),
+                None => m!(
+                    "what_program_version_absent",
+                    program = g("program"),
+                    flag = flag
+                ),
             };
             (what, Risk::Medium)
         }
-        "container_image_version" => (m!("what_container_image_version", image = g("image")), Risk::Low),
+        "container_image_version" => (
+            m!("what_container_image_version", image = g("image")),
+            Risk::Low,
+        ),
         // The version-tree case: a traversal, but a bounded and fully
         // enumerable one — the client can state exactly what will be touched
         // before anything runs, which arbitrary code never permits.
@@ -1139,8 +1349,14 @@ pub fn describe(read: &Value) -> Result<(String, Risk), String> {
                 "what_enumerate_read",
                 root = g("root"),
                 glob = g("glob"),
-                keys = read.get("keys").and_then(|k| k.as_array())
-                    .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
+                keys = read
+                    .get("keys")
+                    .and_then(|k| k.as_array())
+                    .map(|a| a
+                        .iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "))
                     .unwrap_or_default(),
                 max = MAX_ENTRIES
             ),
@@ -1153,7 +1369,10 @@ pub fn describe(read: &Value) -> Result<(String, Risk), String> {
 /// Reject before the consent screen is even shown, so a user is never asked to
 /// approve something that would be refused anyway.
 pub fn precheck(read: &Value) -> Result<(), String> {
-    let op = read.get("op").and_then(|v| v.as_str()).ok_or_else(|| m!("read_no_op"))?;
+    let op = read
+        .get("op")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| m!("read_no_op"))?;
     let g = |k: &str| read.get(k).and_then(|v| v.as_str()).unwrap_or("");
 
     // ASCII only, in every field the deny list screens. `deny_hit` folds case
@@ -1169,7 +1388,12 @@ pub fn precheck(read: &Value) -> Result<(), String> {
             return Err(m!("not_ascii", field = field, v = format!("{value:?}")));
         }
     }
-    for k in read.get("keys").and_then(|v| v.as_array()).into_iter().flatten() {
+    for k in read
+        .get("keys")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
         let value = k.as_str().unwrap_or("");
         if !value.is_ascii() {
             return Err(m!("key_not_ascii", v = format!("{value:?}")));
@@ -1190,25 +1414,34 @@ pub fn precheck(read: &Value) -> Result<(), String> {
         "env_var" => {
             let name = g("name");
             if !ENV_ALLOW.contains(&name) {
-                return Err(m!("env_var_not_allowed", name = format!("{name:?}"),
-                              allowed = ENV_ALLOW.join(", ")));
+                return Err(m!(
+                    "env_var_not_allowed",
+                    name = format!("{name:?}"),
+                    allowed = ENV_ALLOW.join(", ")
+                ));
             }
         }
         "run_tool" => {
             let tool = g("tool");
-            let (_, pat) = TOOLS
-                .iter()
-                .find(|(t, _)| *t == tool)
-                .ok_or_else(|| {
-                    let known: Vec<&str> = TOOLS.iter().map(|(t, _)| *t).collect();
-                    m!("tool_not_allowed", tool = format!("{tool:?}"), known = format!("{known:?}"))
-                })?;
+            let (_, pat) = TOOLS.iter().find(|(t, _)| *t == tool).ok_or_else(|| {
+                let known: Vec<&str> = TOOLS.iter().map(|(t, _)| *t).collect();
+                m!(
+                    "tool_not_allowed",
+                    tool = format!("{tool:?}"),
+                    known = format!("{known:?}")
+                )
+            })?;
             if !tool_available(tool) {
                 return Err(m!("tool_absent", tool = tool));
             }
             let re = regex::Regex::new(&format!("^(?:{pat})$")).map_err(|e| e.to_string())?;
             let identifying = regex::Regex::new(GPU_FIELD_DENY).map_err(|e| e.to_string())?;
-            for a in read.get("args").and_then(|v| v.as_array()).into_iter().flatten() {
+            for a in read
+                .get("args")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+            {
                 let a = a.as_str().unwrap_or("");
                 if !re.is_match(a) {
                     return Err(m!("arg_not_allowed", a = format!("{a:?}"), tool = tool));
@@ -1239,16 +1472,20 @@ pub fn precheck(read: &Value) -> Result<(), String> {
                 // but a path that cannot hold a quote, a semicolon or a newline
                 // stays harmless if some later reader reaches for a shell again.
                 for (field, pat) in [("path", REGISTRY_PATH), ("name", REGISTRY_NAME)] {
-                    let re = regex::Regex::new(&format!("^(?:{pat})$"))
-                        .map_err(|e| e.to_string())?;
+                    let re =
+                        regex::Regex::new(&format!("^(?:{pat})$")).map_err(|e| e.to_string())?;
                     if !re.is_match(g(field)) {
-                        return Err(m!("registry_field_not_allowed", field = field,
-                                      v = format!("{:?}", g(field))));
+                        return Err(m!(
+                            "registry_field_not_allowed",
+                            field = field,
+                            v = format!("{:?}", g(field))
+                        ));
                     }
                 }
                 // `MachineGuid`, `ProductId`, `RegisteredOwner`: values that
                 // say which machine this is, not what is installed on it.
-                let identifying = regex::Regex::new(REGISTRY_NAME_DENY).map_err(|e| e.to_string())?;
+                let identifying =
+                    regex::Regex::new(REGISTRY_NAME_DENY).map_err(|e| e.to_string())?;
                 if identifying.is_match(g("name")) {
                     return Err(m!("registry_name_identifying", name = g("name")));
                 }
@@ -1288,7 +1525,8 @@ pub fn precheck(read: &Value) -> Result<(), String> {
         }
         "program_version" => {
             let program = g("program");
-            let re = regex::Regex::new(&format!("^(?:{PROGRAM_NAME})$")).map_err(|e| e.to_string())?;
+            let re =
+                regex::Regex::new(&format!("^(?:{PROGRAM_NAME})$")).map_err(|e| e.to_string())?;
             if !re.is_match(program) {
                 return Err(m!("program_not_allowed", p = format!("{program:?}")));
             }
@@ -1297,8 +1535,11 @@ pub fn precheck(read: &Value) -> Result<(), String> {
             }
             let flag = g("flag");
             if !flag.is_empty() && !VERSION_FLAGS.contains(&flag) {
-                return Err(m!("flag_not_allowed", flag = format!("{flag:?}"),
-                              allowed = format!("{VERSION_FLAGS:?}")));
+                return Err(m!(
+                    "flag_not_allowed",
+                    flag = format!("{flag:?}"),
+                    allowed = format!("{VERSION_FLAGS:?}")
+                ));
             }
             // Absent is not refused: that is the case the user is asked about.
             // Present in a system directory is.
@@ -1310,7 +1551,8 @@ pub fn precheck(read: &Value) -> Result<(), String> {
         }
         "container_image_version" => {
             let image = g("image");
-            let re = regex::Regex::new(&format!("^(?:{IMAGE_NAME})$")).map_err(|e| e.to_string())?;
+            let re =
+                regex::Regex::new(&format!("^(?:{IMAGE_NAME})$")).map_err(|e| e.to_string())?;
             if image.len() > 128 || !re.is_match(image) {
                 return Err(m!("image_not_allowed", image = format!("{image:?}")));
             }
@@ -1329,7 +1571,12 @@ pub fn precheck(read: &Value) -> Result<(), String> {
             if resolve_root(g("root")).is_none() {
                 return Err(m!("root_unknown", root = format!("{:?}", g("root"))));
             }
-            for k in read.get("keys").and_then(|v| v.as_array()).into_iter().flatten() {
+            for k in read
+                .get("keys")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+            {
                 if let Some(d) = deny_hit(k.as_str().unwrap_or("")) {
                     return Err(m!("key_denied", d = d));
                 }
@@ -1372,8 +1619,14 @@ fn enumerate_read(read: &Value) -> Option<Value> {
     let mut segments: Vec<String> = glob.split('/').map(String::from).collect();
     let file_pat = segments.pop()?;
     let dir_pats: Vec<String> = segments.into_iter().filter(|s| !s.is_empty()).collect();
-    let keys: Vec<String> = read.get("keys").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+    let keys: Vec<String> = read
+        .get("keys")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let mut out = Vec::new();
@@ -1390,7 +1643,9 @@ fn enumerate_read(read: &Value) -> Option<Value> {
         if out.len() >= MAX_ENTRIES {
             break;
         }
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         // Sorted. `read_dir` yields whatever order the filesystem feels like,
         // so the same machine could return the same readings in a different
         // order on two runs, and — worse — a case about *which* branch the walk
@@ -1406,7 +1661,7 @@ fn enumerate_read(read: &Value) -> Option<Value> {
             let path = e.path();
             let name = e.file_name().to_string_lossy().to_string();
             if deny_hit(&name).is_some() {
-                continue;                     // never descend into denied areas
+                continue; // never descend into denied areas
             }
             // `is_dir()` follows symlinks, so a link inside a granted root led
             // the walk anywhere the link pointed — a dotfile manager pointing
@@ -1470,7 +1725,10 @@ fn matches_simple(name: &str, pat: &str) -> bool {
             None => return false,
         }
     }
-    parts.last().map(|l| l.is_empty() || name.ends_with(l)).unwrap_or(true)
+    parts
+        .last()
+        .map(|l| l.is_empty() || name.ends_with(l))
+        .unwrap_or(true)
 }
 
 /// Only ever called after `precheck` passed *and* the user consented.
@@ -1492,13 +1750,19 @@ pub fn perform(read: &Value) -> Option<Value> {
         // The gate holds here as well: `perform` is its own command, and a
         // value that `precheck` would refuse must not be readable by calling
         // this directly.
-        "env_var" if ENV_ALLOW.contains(&g("name")) => std::env::var(g("name")).ok().map(Value::String),
+        "env_var" if ENV_ALLOW.contains(&g("name")) => {
+            std::env::var(g("name")).ok().map(Value::String)
+        }
         "env_var" => None,
         "run_tool" => {
             let args: Vec<String> = read
                 .get("args")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             // The file the gate resolved, run the way every other program is
             // run here: bounded in time and output, from an empty directory.
@@ -1595,7 +1859,11 @@ pub fn perform(read: &Value) -> Option<Value> {
         "read_registry" => None,
         "enumerate_read" => enumerate_read(read),
         "program_version" => {
-            let flag = if g("flag").is_empty() { "--version" } else { g("flag") };
+            let flag = if g("flag").is_empty() {
+                "--version"
+            } else {
+                g("flag")
+            };
             program_version(g("program"), flag).map(Value::String)
         }
         "container_image_version" => container_image_version(g("image")).map(Value::String),
@@ -1628,7 +1896,8 @@ pub fn perform(read: &Value) -> Option<Value> {
 pub(crate) fn shape_tool_output_for(tool: &str, args: &[&str], text: &str) -> Option<String> {
     let shaped = shape_tool_output(tool, text)?;
     if tool == "nvidia-smi" {
-        let queried: Vec<&str> = args.iter()
+        let queried: Vec<&str> = args
+            .iter()
             .filter_map(|a| a.strip_prefix("--query-gpu="))
             .flat_map(|f| f.split(','))
             .collect();
@@ -1642,7 +1911,11 @@ pub(crate) fn shape_tool_output_for(tool: &str, args: &[&str], text: &str) -> Op
 }
 
 pub(crate) fn shape_tool_output(tool: &str, text: &str) -> Option<String> {
-    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
     let picked: Vec<String> = match tool {
         "lspci" => {
             let re = regex::Regex::new(
@@ -1653,16 +1926,27 @@ pub(crate) fn shape_tool_output(tool: &str, text: &str) -> Option<String> {
                 .iter()
                 .filter(|l| re.is_match(l))
                 // The bus address says where the card sits, not what it is.
-                .map(|l| l.split_once(' ').map(|(slot, rest)| if slot.contains(':') { rest } else { l }).unwrap_or(l).to_string())
+                .map(|l| {
+                    l.split_once(' ')
+                        .map(|(slot, rest)| if slot.contains(':') { rest } else { l })
+                        .unwrap_or(l)
+                        .to_string()
+                })
                 .take(8)
                 .collect()
         }
         "system_profiler" => lines
             .iter()
             .filter(|l| {
-                ["Chipset Model:", "Resolution:", "Vendor:", "Metal Support:", "Metal Family:"]
-                    .iter()
-                    .any(|k| l.starts_with(k))
+                [
+                    "Chipset Model:",
+                    "Resolution:",
+                    "Vendor:",
+                    "Metal Support:",
+                    "Metal Family:",
+                ]
+                .iter()
+                .any(|k| l.starts_with(k))
             })
             .map(|l| l.to_string())
             .take(12)
@@ -1687,9 +1971,9 @@ fn os_version() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         let text = std::fs::read_to_string("/etc/os-release").ok()?;
-        return text.lines()
+        text.lines()
             .find_map(|l| l.strip_prefix("PRETTY_NAME="))
-            .map(|v| v.trim_matches('"').to_string());
+            .map(|v| v.trim_matches('"').to_string())
     }
     #[cfg(target_os = "macos")]
     {
@@ -1738,9 +2022,9 @@ fn os_version() -> Option<String> {
             }
             None
         };
-        return read("DisplayVersion")
+        read("DisplayVersion")
             .map(|v| format!("Windows {v}"))
-            .or_else(|| read("CurrentBuild").map(|b| format!("Windows build {b}")));
+            .or_else(|| read("CurrentBuild").map(|b| format!("Windows build {b}")))
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
@@ -1797,7 +2081,11 @@ pub fn catalogue() -> Value {
     // on an AMD or Apple machine would have the model pick it, the user consent
     // to it, and nothing come back — a dead end dressed as a diagnosis.
     let all = catalogue_all();
-    let usable: Vec<Value> = all.as_array().cloned().unwrap_or_default().into_iter()
+    let usable: Vec<Value> = all
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
         .filter(|c| c.get("read").map(|r| precheck(r).is_ok()).unwrap_or(false))
         .collect();
     json!(usable)
@@ -1806,12 +2094,12 @@ pub fn catalogue() -> Value {
 /// How many readings the catalogue knows about at all, regardless of this
 /// machine. Used to check that the available and unavailable halves account for
 /// the whole of it — a reading in neither has been dropped silently.
-#[cfg(test)]
+#[doc(hidden)]
 pub fn catalogue_all_len() -> usize {
     catalogue_all().as_array().map(|a| a.len()).unwrap_or(0)
 }
 
-pub(crate) fn catalogue_all() -> Value {
+pub fn catalogue_all() -> Value {
     json!([
       { "id": "gpu.name", "describes": m!("cat_gpu_name"),
         "read": {"op":"run_tool","tool":"nvidia-smi","args":["--query-gpu=name","--format=csv,noheader"]} },
@@ -1853,11 +2141,21 @@ pub(crate) fn catalogue_all() -> Value {
 /// What the catalogue would offer on a machine with every tool present —
 /// used to explain what is *missing* here, rather than hiding it.
 pub fn catalogue_unavailable() -> Value {
-    let usable: Vec<String> = catalogue().as_array().cloned().unwrap_or_default().into_iter()
+    let usable: Vec<String> = catalogue()
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
         .filter_map(|c| c.get("id").and_then(|v| v.as_str()).map(String::from))
         .collect();
-    json!(catalogue_all().as_array().cloned().unwrap_or_default().into_iter()
-        .filter(|c| !usable.iter().any(|u| c.get("id").and_then(|v| v.as_str()) == Some(u)))
+    json!(catalogue_all()
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| !usable
+            .iter()
+            .any(|u| c.get("id").and_then(|v| v.as_str()) == Some(u)))
         .map(|c| json!({
             "id": c.get("id"), "describes": c.get("describes"),
             "why": c.get("read").map(|r| precheck(r).err().unwrap_or_default())
@@ -1870,11 +2168,14 @@ pub fn catalogue_unavailable() -> Value {
 /// grant makes readable — the catalogue included, since a relative reading is
 /// offered only while a project is granted — holds this, or one case's grant
 /// becomes another's reading and the failure looks like the bug.
-#[cfg(test)]
+///
+/// Not `#[cfg(test)]`: the client's tests hold it too, and they build this
+/// library as an ordinary dependency, where `cfg(test)` is off. An unused
+/// mutex in a release build costs nothing.
 static TEST_GRANTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-#[cfg(test)]
-pub(crate) fn grants_held() -> std::sync::MutexGuard<'static, ()> {
+#[doc(hidden)]
+pub fn grants_held() -> std::sync::MutexGuard<'static, ()> {
     TEST_GRANTS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -1892,28 +2193,47 @@ mod tests {
             (r"C:\Users\ann".to_string(), "%USERPROFILE%"),
         ];
         let cases = [
-            (r"C:\Users\ann\AppData\Local\Programs\Ollama\ollama.exe",
-             r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
-            (r"C:\Users\ann\AppData\Roaming\tool\x.exe", r"%APPDATA%\tool\x.exe"),
-            (r"C:\Users\ann\bin\engram.exe", r"%USERPROFILE%\bin\engram.exe"),
+            (
+                r"C:\Users\ann\AppData\Local\Programs\Ollama\ollama.exe",
+                r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe",
+            ),
+            (
+                r"C:\Users\ann\AppData\Roaming\tool\x.exe",
+                r"%APPDATA%\tool\x.exe",
+            ),
+            (
+                r"C:\Users\ann\bin\engram.exe",
+                r"%USERPROFILE%\bin\engram.exe",
+            ),
             (r"C:\Users\ann", "%USERPROFILE%"),
-            (r"C:\Users\anna\bin\engram.exe", r"C:\Users\anna\bin\engram.exe"),
+            (
+                r"C:\Users\anna\bin\engram.exe",
+                r"C:\Users\anna\bin\engram.exe",
+            ),
             (r"G:\Tools\engram.exe", r"G:\Tools\engram.exe"),
         ];
         for (given, shown) in cases {
             assert_eq!(super::shorten_profile(given, &win), shown, "{given}");
         }
         let unix = vec![("/home/ann".to_string(), "~")];
-        assert_eq!(super::shorten_profile("/home/ann/.local/bin/engram", &unix), "~/.local/bin/engram");
-        assert_eq!(super::shorten_profile("/home/anna/bin/engram", &unix), "/home/anna/bin/engram");
-        assert_eq!(super::shorten_profile("/usr/bin/engram", &unix), "/usr/bin/engram");
+        assert_eq!(
+            super::shorten_profile("/home/ann/.local/bin/engram", &unix),
+            "~/.local/bin/engram"
+        );
+        assert_eq!(
+            super::shorten_profile("/home/anna/bin/engram", &unix),
+            "/home/anna/bin/engram"
+        );
+        assert_eq!(
+            super::shorten_profile("/usr/bin/engram", &unix),
+            "/usr/bin/engram"
+        );
         // And what the window is given goes through it.
         if let Some((prefix, label)) = super::profile_prefixes().into_iter().next() {
             let shown = super::display_path(&Path::new(&prefix).join("x"));
             assert!(shown.starts_with(label), "{shown}");
         }
     }
-
 
     /// `VS_EXTRA_ROOT` is process-wide and several cases set it. Run them one
     /// at a time, or one case's root becomes another's and the failure looks
@@ -2070,7 +2390,12 @@ mod tests {
         // is the whole construction: at the moment the over-deep directory is
         // popped, a perfectly reachable sibling is still queued behind it.
         let base = std::env::temp_dir().join(format!("vs-depth-{}", std::process::id()));
-        let deep = base.join("zz-deep").join("x1").join("x2").join("x3").join("x4");
+        let deep = base
+            .join("zz-deep")
+            .join("x1")
+            .join("x2")
+            .join("x3")
+            .join("x4");
         let shallow = base.join("aa-shallow").join("mod");
         std::fs::create_dir_all(&deep).unwrap();
         std::fs::create_dir_all(&shallow).unwrap();
@@ -2114,7 +2439,10 @@ mod tests {
         drop(guard);
         let _ = std::fs::remove_dir_all(&base);
 
-        assert!(walked.contains("asked-for"), "the named directory was not read: {walked}");
+        assert!(
+            walked.contains("asked-for"),
+            "the named directory was not read: {walked}"
+        );
         assert!(
             !walked.contains("not-asked-for"),
             "the walk read another application's directory, which the pattern did              not name and the consent text did not offer: {walked}"
@@ -2149,11 +2477,17 @@ mod tests {
             r"..\..\etc",
         ] {
             let r = json!({"op": "read_registry", "path": bad, "name": "Version"});
-            assert!(precheck(&r).is_err(), "a registry path carrying a command was allowed: {bad}");
+            assert!(
+                precheck(&r).is_err(),
+                "a registry path carrying a command was allowed: {bad}"
+            );
         }
         for bad in ["a'; calc", "a;b", "a\nb"] {
             let r = json!({"op": "read_registry", "path": r"HKCU:\Software\X", "name": bad});
-            assert!(precheck(&r).is_err(), "a registry value name carrying a command was allowed: {bad}");
+            assert!(
+                precheck(&r).is_err(),
+                "a registry value name carrying a command was allowed: {bad}"
+            );
         }
         // And an ordinary one still passes, or the guard is just an outage.
         let good = json!({"op": "read_registry", "path": r"HKCU:\Software\Engram",
@@ -2168,7 +2502,13 @@ mod tests {
     #[test]
     fn the_deny_list_names_the_common_credential_words() {
         let root = dirs::config_dir().expect("no config dir on this machine");
-        for key in ["password", "api_key", "apikey", "private_key", "authorization"] {
+        for key in [
+            "password",
+            "api_key",
+            "apikey",
+            "private_key",
+            "authorization",
+        ] {
             let r = json!({"op": "read_file_key",
                            "path": root.join("app.json").to_string_lossy(),
                            "key": key});
@@ -2176,7 +2516,10 @@ mod tests {
         }
         for name in ["OPENAI_API_KEY", "AWS_ACCESS_KEY_ID", "DB_PASSWORD"] {
             let r = json!({"op": "env_var", "name": name});
-            assert!(precheck(&r).is_err(), "the environment variable {name:?} was permitted");
+            assert!(
+                precheck(&r).is_err(),
+                "the environment variable {name:?} was permitted"
+            );
         }
         // Not so broad that ordinary readings stop working.
         precheck(&json!({"op": "env_var", "name": "XDG_SESSION_TYPE"}))
@@ -2193,11 +2536,15 @@ mod tests {
             let r = json!({"op": "read_file_key",
                            "path": root.join("app.json").to_string_lossy(),
                            "key": key});
-            assert!(precheck(&r).is_err(),
-                    "a homoglyph spelling of a denied word was permitted: {key:?}");
+            assert!(
+                precheck(&r).is_err(),
+                "a homoglyph spelling of a denied word was permitted: {key:?}"
+            );
         }
-        assert!(precheck(&json!({"op": "env_var", "name": "АPI_KEY"})).is_err(),
-                "a homoglyph environment variable name was permitted");
+        assert!(
+            precheck(&json!({"op": "env_var", "name": "АPI_KEY"})).is_err(),
+            "a homoglyph environment variable name was permitted"
+        );
     }
 
     /// A granted root is a prefix test, and a prefix test cannot see a way out
@@ -2219,7 +2566,10 @@ mod tests {
         );
         let r = json!({"op":"read_ini_key","path":escape.to_string_lossy(),"key":"registry"});
         let e = precheck(&r).unwrap_err();
-        assert!(crate::msg::is("path_backstep", &e), "refused for the wrong reason: {e}");
+        assert!(
+            crate::msg::is("path_backstep", &e),
+            "refused for the wrong reason: {e}"
+        );
 
         // A directory whose name merely begins with two dots is not a way out.
         // Inside a root this case grants itself rather than the real config
@@ -2253,8 +2603,16 @@ mod tests {
         let b = root.join("mod-b");
         std::fs::create_dir_all(&a).unwrap();
         std::fs::create_dir_all(&b).unwrap();
-        std::fs::write(a.join("manifest.json"), r#"{"name":"alpha","version":"1.2.3"}"#).unwrap();
-        std::fs::write(b.join("manifest.json"), r#"{"name":"beta","version":"4.5"}"#).unwrap();
+        std::fs::write(
+            a.join("manifest.json"),
+            r#"{"name":"alpha","version":"1.2.3"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            b.join("manifest.json"),
+            r#"{"name":"beta","version":"4.5"}"#,
+        )
+        .unwrap();
         let _guard = with_extra_root(&root);
 
         let r = json!({"op":"enumerate_read","root":"dev","glob":"*/manifest.json",
@@ -2263,7 +2621,10 @@ mod tests {
         let arr = out.as_array().unwrap();
         assert_eq!(arr.len(), 2, "expected both manifests, got {arr:?}");
         let names: Vec<&str> = arr.iter().filter_map(|e| e["name"].as_str()).collect();
-        assert!(names.contains(&"alpha") && names.contains(&"beta"), "{names:?}");
+        assert!(
+            names.contains(&"alpha") && names.contains(&"beta"),
+            "{names:?}"
+        );
     }
 
     /// The point of part two: the environment a project actually uses is
@@ -2300,23 +2661,46 @@ version = 3.11.9
         // directory instead, so this reading — the one this case exists for —
         // looked for a virtualenv wherever the client had been started, found
         // none, and was dropped from the menu as not readable here.
-        let catalogued = catalogue_all().as_array().unwrap().iter()
-            .find(|e| e["id"] == "python.venv.version").unwrap()["read"].clone();
-        assert!(catalogued["path"].as_str().unwrap().starts_with(".venv"),
-                "the catalogue entry is no longer relative — this half proves nothing");
-        precheck(&catalogued).expect("the catalogue's own venv reading was refused inside a granted project");
-        assert_eq!(perform(&catalogued), Some(json!("3.11.9")),
-                   "the relative reading did not read the granted project's virtualenv");
-        assert!(catalogue().as_array().unwrap().iter().any(|e| e["id"] == "python.venv.version"),
-                "a granted project does not make its virtualenv readable from the menu");
+        let catalogued = catalogue_all()
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == "python.venv.version")
+            .unwrap()["read"]
+            .clone();
+        assert!(
+            catalogued["path"].as_str().unwrap().starts_with(".venv"),
+            "the catalogue entry is no longer relative — this half proves nothing"
+        );
+        precheck(&catalogued)
+            .expect("the catalogue's own venv reading was refused inside a granted project");
+        assert_eq!(
+            perform(&catalogued),
+            Some(json!("3.11.9")),
+            "the relative reading did not read the granted project's virtualenv"
+        );
+        assert!(
+            catalogue()
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["id"] == "python.venv.version"),
+            "a granted project does not make its virtualenv readable from the menu"
+        );
 
         // The grant is per incident. Withdrawn, the same read is out of bounds
         // again — a project directory is not a new default root — and the
         // relative one names nothing at all.
         set_project_root(None);
-        assert!(precheck(&r).is_err(), "the project root outlived the incident");
+        assert!(
+            precheck(&r).is_err(),
+            "the project root outlived the incident"
+        );
         let e = precheck(&catalogued).unwrap_err();
-        assert!(crate::msg::is("path_relative_no_project", &e), "a relative path without a project was refused for the wrong reason: {e}");
+        assert!(
+            crate::msg::is("path_relative_no_project", &e),
+            "a relative path without a project was refused for the wrong reason: {e}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2330,15 +2714,24 @@ version = 3.11.9
         let q = interpreter_conflict(&clash).expect("a real disagreement was resolved silently");
         assert_eq!(q["host"], "Python 3.12.14");
         assert_eq!(q["project"], "3.11.9");
-        assert!(q["choices"].as_array().unwrap().len() >= 2, "a question with nothing to answer");
+        assert!(
+            q["choices"].as_array().unwrap().len() >= 2,
+            "a question with nothing to answer"
+        );
         // The patch level is not a disagreement: 3.11.9 and 3.11.2 are the same
         // minor, and wheels are published per minor.
-        assert!(interpreter_conflict(&json!({"python.version": "Python 3.11.2",
-                                             "python.venv.version": "3.11.9"})).is_none());
+        assert!(
+            interpreter_conflict(&json!({"python.version": "Python 3.11.2",
+                                             "python.venv.version": "3.11.9"}))
+            .is_none()
+        );
         // Agreement is silent, and so is knowing only one of them — a single
         // reading cannot contradict anything.
-        assert!(interpreter_conflict(&json!({"python.version": "Python 3.11.9",
-                                             "python.venv.version": "3.11.9"})).is_none());
+        assert!(
+            interpreter_conflict(&json!({"python.version": "Python 3.11.9",
+                                             "python.venv.version": "3.11.9"}))
+            .is_none()
+        );
         assert!(interpreter_conflict(&json!({"python.version": "Python 3.12.1"})).is_none());
         assert!(interpreter_conflict(&json!({})).is_none());
     }
@@ -2353,7 +2746,15 @@ version = 3.11.9
         let v = perform(&r).expect("no answer about containerisation");
         let s = v.as_str().unwrap_or("");
         assert!(
-            ["none", "docker", "podman", "containerd", "kubernetes", "lxc"].contains(&s),
+            [
+                "none",
+                "docker",
+                "podman",
+                "containerd",
+                "kubernetes",
+                "lxc"
+            ]
+            .contains(&s),
             "unexpected container answer: {s:?}"
         );
     }
@@ -2362,11 +2763,14 @@ version = 3.11.9
     #[test]
     fn enumerate_read_refuses_traversal_and_denied_names() {
         assert!(precheck(&json!({"op":"enumerate_read","root":"config",
-                                 "glob":"../../*/manifest.json","keys":[]})).is_err());
+                                 "glob":"../../*/manifest.json","keys":[]}))
+        .is_err());
         assert!(precheck(&json!({"op":"enumerate_read","root":"config",
-                                 "glob":".ssh/*.json","keys":[]})).is_err());
+                                 "glob":".ssh/*.json","keys":[]}))
+        .is_err());
         assert!(precheck(&json!({"op":"enumerate_read","root":"nowhere",
-                                 "glob":"*.json","keys":[]})).is_err());
+                                 "glob":"*.json","keys":[]}))
+        .is_err());
     }
 
     #[test]
@@ -2406,18 +2810,34 @@ version = 3.11.9
                 .iter()
                 .find(|(name, _)| *name == t["tool"].as_str().unwrap())
                 .unwrap();
-            assert_eq!(t["args"].as_str().unwrap(), *pat, "argument pattern for {}", t["tool"]);
+            assert_eq!(
+                t["args"].as_str().unwrap(),
+                *pat,
+                "argument pattern for {}",
+                t["tool"]
+            );
         }
 
         // The names `os_fact` answers, held to the spec like the tool list: a
         // publisher writes against this line, and a name outside it is a probe
         // that can never read anything.
-        let facts = spec["ops"].as_array().unwrap().iter()
-            .find(|o| o["op"] == "os_fact").expect("the spec has no os_fact op");
-        let listed_facts: Vec<&str> = facts["params"]["name"].as_str().unwrap()
-            .split('|').map(str::trim).collect();
-        assert_eq!(listed_facts, OS_FACTS.to_vec(),
-                   "the facts os_fact answers differ from the spec");
+        let facts = spec["ops"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["op"] == "os_fact")
+            .expect("the spec has no os_fact op");
+        let listed_facts: Vec<&str> = facts["params"]["name"]
+            .as_str()
+            .unwrap()
+            .split('|')
+            .map(str::trim)
+            .collect();
+        assert_eq!(
+            listed_facts,
+            OS_FACTS.to_vec(),
+            "the facts os_fact answers differ from the spec"
+        );
 
         let denied: Vec<&str> = spec["deny"]
             .as_array()
@@ -2430,34 +2850,82 @@ version = 3.11.9
         // The fields `nvidia-smi` may not be asked for, the environment
         // variables that may be asked for at all, and the registry values
         // that name the machine: each a bound a publisher reads in the spec.
-        let nvsmi = spec["tools"].as_array().unwrap().iter()
-            .find(|t| t["tool"] == "nvidia-smi").unwrap();
-        assert_eq!(nvsmi["refuse_fields"].as_str().unwrap(), GPU_FIELD_DENY,
-                   "the identifying nvidia-smi fields differ from the spec");
-        let env_allowed: Vec<&str> = spec["env"]["allow"].as_array().unwrap().iter()
-            .map(|v| v.as_str().unwrap()).collect();
-        assert_eq!(env_allowed, ENV_ALLOW.to_vec(), "the environment allow list differs from the spec");
+        let nvsmi = spec["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["tool"] == "nvidia-smi")
+            .unwrap();
+        assert_eq!(
+            nvsmi["refuse_fields"].as_str().unwrap(),
+            GPU_FIELD_DENY,
+            "the identifying nvidia-smi fields differ from the spec"
+        );
+        let env_allowed: Vec<&str> = spec["env"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            env_allowed,
+            ENV_ALLOW.to_vec(),
+            "the environment allow list differs from the spec"
+        );
 
-        assert_eq!(spec["registry"]["path"].as_str().unwrap(), REGISTRY_PATH,
-                   "the registry path pattern differs from the spec");
-        assert_eq!(spec["registry"]["name"].as_str().unwrap(), REGISTRY_NAME,
-                   "the registry name pattern differs from the spec");
-        assert_eq!(spec["registry"]["refuse_names"].as_str().unwrap(), REGISTRY_NAME_DENY,
-                   "the identifying registry names differ from the spec");
+        assert_eq!(
+            spec["registry"]["path"].as_str().unwrap(),
+            REGISTRY_PATH,
+            "the registry path pattern differs from the spec"
+        );
+        assert_eq!(
+            spec["registry"]["name"].as_str().unwrap(),
+            REGISTRY_NAME,
+            "the registry name pattern differs from the spec"
+        );
+        assert_eq!(
+            spec["registry"]["refuse_names"].as_str().unwrap(),
+            REGISTRY_NAME_DENY,
+            "the identifying registry names differ from the spec"
+        );
 
         // Which programs may be run for their version, with which argument, is
         // the one place this vocabulary starts a program a publisher chose. It
         // is held to the spec field by field, like the registry patterns, so
         // the gate on the server and the gate here refuse the same things.
         let programs = &spec["programs"];
-        assert_eq!(programs["name"].as_str().unwrap(), PROGRAM_NAME, "program name pattern");
-        let flags: Vec<&str> = programs["flags"].as_array().unwrap().iter()
-            .map(|f| f.as_str().unwrap()).collect();
-        assert_eq!(flags, VERSION_FLAGS.to_vec(), "the version flags differ from the spec");
-        let never: Vec<&str> = programs["deny"].as_array().unwrap().iter()
-            .map(|f| f.as_str().unwrap()).collect();
-        assert_eq!(never, PROGRAM_DENY.to_vec(), "the program deny list differs from the spec");
-        assert_eq!(spec["images"]["name"].as_str().unwrap(), IMAGE_NAME, "image name pattern");
+        assert_eq!(
+            programs["name"].as_str().unwrap(),
+            PROGRAM_NAME,
+            "program name pattern"
+        );
+        let flags: Vec<&str> = programs["flags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            flags,
+            VERSION_FLAGS.to_vec(),
+            "the version flags differ from the spec"
+        );
+        let never: Vec<&str> = programs["deny"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            never,
+            PROGRAM_DENY.to_vec(),
+            "the program deny list differs from the spec"
+        );
+        assert_eq!(
+            spec["images"]["name"].as_str().unwrap(),
+            IMAGE_NAME,
+            "image name pattern"
+        );
 
         // Compared on id and read instruction only. Each entry also carries a
         // `describes` label, but that is this client's own presentation string
@@ -2482,11 +2950,17 @@ version = 3.11.9
         for entry in spec["ops"].as_array().unwrap() {
             let op = entry["op"].as_str().unwrap();
             if let Err(e) = precheck(&json!({"op": op})) {
-                assert!(!crate::msg::is("read_op_unknown", &e), "spec names an op this client does not implement: {op}");
+                assert!(
+                    !crate::msg::is("read_op_unknown", &e),
+                    "spec names an op this client does not implement: {op}"
+                );
             }
         }
         let unknown = precheck(&json!({"op": "run_powershell"})).unwrap_err();
-        assert!(crate::msg::is("read_op_unknown", &unknown), "an op outside the vocabulary was not refused: {unknown}");
+        assert!(
+            crate::msg::is("read_op_unknown", &unknown),
+            "an op outside the vocabulary was not refused: {unknown}"
+        );
     }
 
     /// PV1: a program's version is read by asking the program — and only the
@@ -2501,11 +2975,17 @@ version = 3.11.9
         let r = json!({"op": "program_version", "program": "rustc"});
         precheck(&r).expect("an ordinary program was refused");
         let (what, _) = describe(&r).unwrap();
-        assert!(what.contains("--version"), "the consent text does not say what runs: {what}");
+        assert!(
+            what.contains("--version"),
+            "the consent text does not say what runs: {what}"
+        );
         let v = perform(&r).expect("rustc is running this suite and could not say its version");
         let s = v.as_str().unwrap();
         assert!(version_pair(s).is_some(), "not a version: {s:?}");
-        assert!(!s.contains(' ') && !s.contains("rustc"), "more than the number travelled: {s:?}");
+        assert!(
+            !s.contains(' ') && !s.contains("rustc"),
+            "more than the number travelled: {s:?}"
+        );
     }
 
     /// PV2: not on the search path is not refused — it is a question, and the
@@ -2516,31 +2996,63 @@ version = 3.11.9
         let _g = grants_held();
         end_incident();
         let absent = json!({"op": "program_version", "program": "podshl-no-such-program"});
-        precheck(&absent).expect("a program that is simply not installed was refused — it should be asked about");
+        precheck(&absent).expect(
+            "a program that is simply not installed was refused — it should be asked about",
+        );
         let (what, _) = describe(&absent).unwrap();
-        assert!(crate::msg::is("what_program_version_absent", &what), "the plan does not say the user will be asked: {what}");
-        assert!(perform(&absent).is_none(), "a version was invented for a program that is not there");
+        assert!(
+            crate::msg::is("what_program_version_absent", &what),
+            "the plan does not say the user will be asked: {what}"
+        );
+        assert!(
+            perform(&absent).is_none(),
+            "a version was invented for a program that is not there"
+        );
 
         // The directory rustc lives in, as a user would point at it.
         let rustc = find_on_path("rustc").expect("rustc is not on PATH");
         let dir = rustc.parent().unwrap().to_string_lossy().to_string();
-        let granted = grant_program_path("rustc", &dir).expect("pointing at the directory was refused");
-        assert_eq!(granted.file_name(), rustc.canonicalize().unwrap().file_name());
-        assert_eq!(locate_program("rustc").as_deref(), Some(granted.as_path()),
-                   "the user's answer did not outrank the search path");
+        let granted =
+            grant_program_path("rustc", &dir).expect("pointing at the directory was refused");
+        assert_eq!(
+            granted.file_name(),
+            rustc.canonicalize().unwrap().file_name()
+        );
+        assert_eq!(
+            locate_program("rustc").as_deref(),
+            Some(granted.as_path()),
+            "the user's answer did not outrank the search path"
+        );
 
         // The file has to be the program that was asked about: pointing at
         // rustc does not answer a question about engram.
         let e = grant_program_path("engram", &rustc.to_string_lossy()).unwrap_err();
-        assert!(crate::msg::is("wrong_program_name", &e) && e.contains("engram"), "a different program was accepted: {e}");
+        assert!(
+            crate::msg::is("wrong_program_name", &e) && e.contains("engram"),
+            "a different program was accepted: {e}"
+        );
         assert_eq!(location_error_kind(&e), "wrong_name");
         let e = grant_program_path("engram", &dir).unwrap_err();
-        assert_eq!(location_error_kind(&e), "not_in_folder", "a directory without engram in it answered for it: {e}");
-        assert_eq!(location_error_kind(&grant_program_path("engram", "  ").unwrap_err()), "empty");
-        assert_eq!(location_error_kind(&grant_program_path("bash", &dir).unwrap_err()), "denied");
+        assert_eq!(
+            location_error_kind(&e),
+            "not_in_folder",
+            "a directory without engram in it answered for it: {e}"
+        );
+        assert_eq!(
+            location_error_kind(&grant_program_path("engram", "  ").unwrap_err()),
+            "empty"
+        );
+        assert_eq!(
+            location_error_kind(&grant_program_path("bash", &dir).unwrap_err()),
+            "denied"
+        );
         let nowhere = std::env::temp_dir().join("podshl-no-such-file");
-        assert_eq!(location_error_kind(&grant_program_path("engram", &nowhere.to_string_lossy()).unwrap_err()),
-                   "not_executable");
+        assert_eq!(
+            location_error_kind(
+                &grant_program_path("engram", &nowhere.to_string_lossy()).unwrap_err()
+            ),
+            "not_executable"
+        );
 
         // A relative entry on the search path is the working directory, and a
         // file sitting there — a download next to the client, say — is not the
@@ -2549,28 +3061,45 @@ version = 3.11.9
         let relative = PathBuf::from(format!("vs-cwd-{}", std::process::id()));
         let planted = std::env::current_dir().unwrap().join(&relative);
         std::fs::create_dir_all(&planted).unwrap();
-        let name = if cfg!(windows) { "planted.exe" } else { "planted" };
+        let name = if cfg!(windows) {
+            "planted.exe"
+        } else {
+            "planted"
+        };
         std::fs::write(planted.join(name), b"#!/bin/sh\necho planted 6.6.6\n").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(planted.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::set_permissions(planted.join(name), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
         }
         let rel_path = std::env::join_paths([relative.clone(), PathBuf::from(".")]).unwrap();
         let via_relative = find_in(&rel_path, "planted");
         let abs_path = std::env::join_paths([planted.clone()]).unwrap();
         let via_absolute = find_in(&abs_path, "planted");
         let _ = std::fs::remove_dir_all(&planted);
-        assert!(via_relative.is_none(), "a relative PATH entry ({}) was searched", relative.display());
-        assert!(via_absolute.is_some(),
-                "the same file on an absolute entry was not found — the case proves nothing");
+        assert!(
+            via_relative.is_none(),
+            "a relative PATH entry ({}) was searched",
+            relative.display()
+        );
+        assert!(
+            via_absolute.is_some(),
+            "the same file on an absolute entry was not found — the case proves nothing"
+        );
 
         // And it goes with the incident — and so does the project root, which
         // nothing used to clear at all.
         set_project_root(Some(std::env::temp_dir()));
         end_incident();
-        assert!(granted_program("rustc").is_none(), "a program grant outlived the incident");
-        assert!(project_root().is_none(), "the project root outlived the incident");
+        assert!(
+            granted_program("rustc").is_none(),
+            "a program grant outlived the incident"
+        );
+        assert!(
+            project_root().is_none(),
+            "the project root outlived the incident"
+        );
     }
 
     /// PV3: what a publisher may never have run, whatever the user clicks — a
@@ -2578,18 +3107,37 @@ version = 3.11.9
     /// and anything belonging to the operating system.
     #[test]
     fn a_program_that_is_not_a_program_s_own_version_is_refused() {
-        for (program, flag) in [("bash", ""), ("cmd", ""), ("cmd.exe", ""), ("powershell", ""),
-                                ("sudo", ""), ("shutdown", ""), ("explorer", ""), ("rm", ""),
-                                ("../engram", ""), ("C:\\x\\engram", ""), ("/bin/engram", ""),
-                                ("engram", "-c"), ("engram", "--help; rm -rf ~"), ("engram", "-v"),
-                                ("ѕecret", ""), ("my-token-tool", ""),
-                                // A bare word is an argument to a program without
-                                // subcommands — a file, a target, a host.
-                                ("engram", "version"),
-                                // Package runners, build tools and interpreters
-                                // run what the directory says, whatever the flag.
-                                ("npx", ""), ("npm", ""), ("make", ""), ("just", ""), ("python3", ""),
-                                ("node", ""), ("ruby", ""), ("mvn", "")] {
+        for (program, flag) in [
+            ("bash", ""),
+            ("cmd", ""),
+            ("cmd.exe", ""),
+            ("powershell", ""),
+            ("sudo", ""),
+            ("shutdown", ""),
+            ("explorer", ""),
+            ("rm", ""),
+            ("../engram", ""),
+            ("C:\\x\\engram", ""),
+            ("/bin/engram", ""),
+            ("engram", "-c"),
+            ("engram", "--help; rm -rf ~"),
+            ("engram", "-v"),
+            ("ѕecret", ""),
+            ("my-token-tool", ""),
+            // A bare word is an argument to a program without
+            // subcommands — a file, a target, a host.
+            ("engram", "version"),
+            // Package runners, build tools and interpreters
+            // run what the directory says, whatever the flag.
+            ("npx", ""),
+            ("npm", ""),
+            ("make", ""),
+            ("just", ""),
+            ("python3", ""),
+            ("node", ""),
+            ("ruby", ""),
+            ("mvn", ""),
+        ] {
             let r = json!({"op": "program_version", "program": program, "flag": flag});
             assert!(precheck(&r).is_err(), "{program:?} {flag:?} was permitted");
         }
@@ -2603,21 +3151,38 @@ version = 3.11.9
         // such directory — /usr/sbin *is* /usr/bin — so the claim to make there
         // is the other one, and it is the one that was false.
         if cfg!(windows) {
-            let sys = PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
-                .join("System32").join("where.exe");
-            assert!(in_system_directory(&sys), "{} is not recognised as the system's", sys.display());
+            let sys =
+                PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+                    .join("System32")
+                    .join("where.exe");
+            assert!(
+                in_system_directory(&sys),
+                "{} is not recognised as the system's",
+                sys.display()
+            );
         } else if merged_usr() {
-            assert!(!in_system_directory(Path::new("/usr/bin/podshl-anything")),
-                    "a merged /usr made every program on the machine the system's");
+            assert!(
+                !in_system_directory(Path::new("/usr/bin/podshl-anything")),
+                "a merged /usr made every program on the machine the system's"
+            );
         } else {
             let sys = PathBuf::from("/usr/sbin/podshl-anything");
-            assert!(in_system_directory(&sys), "{} is not recognised as the system's", sys.display());
+            assert!(
+                in_system_directory(&sys),
+                "{} is not recognised as the system's",
+                sys.display()
+            );
         }
-        assert!(!in_system_directory(&std::env::temp_dir().join("engram")),
-                "an ordinary directory was treated as the system's");
+        assert!(
+            !in_system_directory(&std::env::temp_dir().join("engram")),
+            "an ordinary directory was treated as the system's"
+        );
         if cfg!(windows) {
             let e = precheck(&json!({"op": "program_version", "program": "where"})).unwrap_err();
-            assert!(crate::msg::is("system_program", &e), "a system program was offered: {e}");
+            assert!(
+                crate::msg::is("system_program", &e),
+                "a system program was offered: {e}"
+            );
         }
     }
 
@@ -2647,18 +3212,25 @@ version = 3.11.9
             return;
         }
         for d in ["/usr/bin", "/bin", "/sbin", "/usr/sbin"] {
-            let Ok(real) = std::fs::canonicalize(d) else { continue };
+            let Ok(real) = std::fs::canonicalize(d) else {
+                continue;
+            };
             if real == Path::new("/usr/bin") {
-                assert!(!in_system_directory(&real.join("podshl-not-a-real-program")),
-                        "{d} resolves onto {} and was treated as the system's, \
-                         which refuses every program here", real.display());
+                assert!(
+                    !in_system_directory(&real.join("podshl-not-a-real-program")),
+                    "{d} resolves onto {} and was treated as the system's, \
+                         which refuses every program here",
+                    real.display()
+                );
             }
         }
         // And the refusal that has to survive it: what a program *is*, rather
         // than where it sits, still holds.
         for named in ["bash", "sh"] {
-            assert!(program_denied(named).is_some(),
-                    "{named} stopped being refused by name");
+            assert!(
+                program_denied(named).is_some(),
+                "{named} stopped being refused by name"
+            );
         }
     }
 
@@ -2667,19 +3239,41 @@ version = 3.11.9
     #[test]
     fn a_version_is_found_in_what_programs_actually_print() {
         for (out, program, want) in [
-            ("engram v1.2.2 -- AI Memory Engine\n\nUsage:\n  engram create [path]", "engram", "1.2.2"),
+            (
+                "engram v1.2.2 -- AI Memory Engine\n\nUsage:\n  engram create [path]",
+                "engram",
+                "1.2.2",
+            ),
             ("Python 3.12.14", "python3", "3.12.14"),
             ("v20.1.0", "node", "20.1.0"),
-            ("pip 23.2 from /usr/lib/python3/dist-packages/pip (python 3.12)", "pip", "23.2"),
+            (
+                "pip 23.2 from /usr/lib/python3/dist-packages/pip (python 3.12)",
+                "pip",
+                "23.2",
+            ),
             ("git version 2.43.0.windows.1", "git", "2.43.0"),
             ("Docker version 24.0.7, build afdd53b", "docker", "24.0.7"),
             ("ollama version is 0.3.14-rc1", "ollama", "0.3.14-rc1"),
         ] {
-            assert_eq!(version_token(out, program, true).as_deref(), Some(want), "{out:?}");
+            assert_eq!(
+                version_token(out, program, true).as_deref(),
+                Some(want),
+                "{out:?}"
+            );
         }
         // A failed run is believed only on a line that names the program.
-        assert_eq!(version_token("error: unknown option; see manual section 3.4", "engram", false), None);
-        assert_eq!(version_token("engram v1.2.2 -- AI Memory Engine", "engram", false).as_deref(), Some("1.2.2"));
+        assert_eq!(
+            version_token(
+                "error: unknown option; see manual section 3.4",
+                "engram",
+                false
+            ),
+            None
+        );
+        assert_eq!(
+            version_token("engram v1.2.2 -- AI Memory Engine", "engram", false).as_deref(),
+            Some("1.2.2")
+        );
         assert_eq!(version_token("nothing numeric here", "x", true), None);
     }
 
@@ -2688,16 +3282,26 @@ version = 3.11.9
     #[test]
     fn a_program_that_does_not_answer_is_stopped() {
         let (exe, args): (PathBuf, Vec<&str>) = if cfg!(windows) {
-            (PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
-                .join("System32").join("ping.exe"), vec!["-n", "30", "127.0.0.1"])
+            (
+                PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+                    .join("System32")
+                    .join("ping.exe"),
+                vec!["-n", "30", "127.0.0.1"],
+            )
         } else {
             (find_on_path("sleep").expect("no sleep"), vec!["30"])
         };
         let began = Instant::now();
         let out = run_bounded(&exe, &args);
-        assert!(out.is_none(), "a run that outlived the limit returned a result");
-        assert!(began.elapsed() < RUN_LIMIT + Duration::from_secs(5),
-                "the limit was not enforced: {:?}", began.elapsed());
+        assert!(
+            out.is_none(),
+            "a run that outlived the limit returned a result"
+        );
+        assert!(
+            began.elapsed() < RUN_LIMIT + Duration::from_secs(5),
+            "the limit was not enforced: {:?}",
+            began.elapsed()
+        );
     }
 
     /// PV7: a list-shaped tool is shaped to what its reading promises — not the
@@ -2714,9 +3318,15 @@ version = 3.11.9
 0a:00.1 Audio device [0403]: NVIDIA Corporation TU104 HD Audio Controller [10de:10f8] (rev a1)
 0c:00.3 USB controller [0c03]: Advanced Micro Devices, Inc. [AMD] Matisse USB 3.0 Host Controller [1022:149c]";
         let got = shape_tool_output("lspci", lspci).unwrap();
-        assert!(got.contains("GeForce RTX 2070 SUPER") && got.contains("I211") && got.contains("AX200"), "{got}");
+        assert!(
+            got.contains("GeForce RTX 2070 SUPER") && got.contains("I211") && got.contains("AX200"),
+            "{got}"
+        );
         for absent in ["Host bridge", "USB controller", "Audio device", "0a:00.0"] {
-            assert!(!got.contains(absent), "{absent} travelled in pci.devices: {got}");
+            assert!(
+                !got.contains(absent),
+                "{absent} travelled in pci.devices: {got}"
+            );
         }
 
         let mac = "\
@@ -2736,11 +3346,20 @@ Graphics/Displays:
           Resolution: 2560 x 1664 Retina
           Main Display: Yes";
         let got = shape_tool_output("system_profiler", mac).unwrap();
-        assert!(got.contains("Chipset Model: Apple M2") && got.contains("Resolution: 2560 x 1664"), "{got}");
-        assert!(!got.starts_with("Graphics/Displays:"), "the heading came back as the reading: {got}");
+        assert!(
+            got.contains("Chipset Model: Apple M2") && got.contains("Resolution: 2560 x 1664"),
+            "{got}"
+        );
+        assert!(
+            !got.starts_with("Graphics/Displays:"),
+            "the heading came back as the reading: {got}"
+        );
 
         // A one-value tool is still its first line, and "[N/A]" is still nothing.
-        assert_eq!(shape_tool_output("nvidia-smi", "8192 MiB\n").as_deref(), Some("8192 MiB"));
+        assert_eq!(
+            shape_tool_output("nvidia-smi", "8192 MiB\n").as_deref(),
+            Some("8192 MiB")
+        );
         assert_eq!(shape_tool_output("nvidia-smi", "[N/A]"), None);
     }
 
@@ -2764,31 +3383,61 @@ Graphics/Displays:
 
         assert_eq!(nvsmi("serial", "0"), None);
         assert_eq!(nvsmi("serial", "[N/A]"), None);
-        assert_eq!(nvsmi("serial", "0324718061234").as_deref(), Some("0324718061234"));
+        assert_eq!(
+            nvsmi("serial", "0324718061234").as_deref(),
+            Some("0324718061234")
+        );
 
         // A zero that is a reading stays a reading. This is why the rule is per
         // field rather than "0 means nothing".
         for field in ["temperature.gpu", "power.draw", "fan.speed", "memory.used"] {
-            assert_eq!(nvsmi(field, "0").as_deref(), Some("0"),
-                       "{field} of zero was thrown away");
+            assert_eq!(
+                nvsmi(field, "0").as_deref(),
+                Some("0"),
+                "{field} of zero was thrown away"
+            );
         }
         // And a row of several fields is not judged by one of them.
-        assert_eq!(nvsmi("name,serial", "RTX 5070, 0").as_deref(), Some("RTX 5070, 0"));
+        assert_eq!(
+            nvsmi("name,serial", "RTX 5070, 0").as_deref(),
+            Some("RTX 5070, 0")
+        );
         // Another tool printing 0 is another tool's business.
-        assert_eq!(shape_tool_output_for("lscpu", &[], "0").as_deref(), Some("0"));
+        assert_eq!(
+            shape_tool_output_for("lscpu", &[], "0").as_deref(),
+            Some("0")
+        );
     }
 
     /// Docker names an image several ways; the publisher names it once.
     #[test]
     fn an_image_is_the_same_image_however_docker_spells_it() {
-        assert_eq!(split_image("ollama/ollama:0.3.14"), ("ollama/ollama".into(), Some("0.3.14".into())));
-        assert_eq!(split_image("docker.io/library/postgres:18"), ("postgres".into(), Some("18".into())));
-        assert_eq!(split_image("ghcr.io/dx111ge/engram"), ("ghcr.io/dx111ge/engram".into(), None));
-        assert_eq!(split_image("localhost:5000/x/y:1.2@sha256:abc").1, Some("1.2".into()));
-        assert_eq!(normalise_image("docker.io/ollama/ollama:latest"), "ollama/ollama");
+        assert_eq!(
+            split_image("ollama/ollama:0.3.14"),
+            ("ollama/ollama".into(), Some("0.3.14".into()))
+        );
+        assert_eq!(
+            split_image("docker.io/library/postgres:18"),
+            ("postgres".into(), Some("18".into()))
+        );
+        assert_eq!(
+            split_image("ghcr.io/dx111ge/engram"),
+            ("ghcr.io/dx111ge/engram".into(), None)
+        );
+        assert_eq!(
+            split_image("localhost:5000/x/y:1.2@sha256:abc").1,
+            Some("1.2".into())
+        );
+        assert_eq!(
+            normalise_image("docker.io/ollama/ollama:latest"),
+            "ollama/ollama"
+        );
         for bad in ["Ollama", "ollama:latest", "a;b", "x/../y", ""] {
             let r = json!({"op": "container_image_version", "image": bad});
-            assert!(precheck(&r).is_err(), "{bad:?} was permitted as an image name");
+            assert!(
+                precheck(&r).is_err(),
+                "{bad:?} was permitted as an image name"
+            );
         }
     }
 
@@ -2805,33 +3454,62 @@ Graphics/Displays:
     /// number off the card and onto a sticker the user reads out.
     #[test]
     fn a_gpu_reading_that_identifies_the_card_is_refused_at_the_gate() {
-        let nvsmi = |fields: &str| json!({"op": "run_tool", "tool": "nvidia-smi",
-                                          "args": [format!("--query-gpu={fields}"), "--format=csv,noheader"]});
-        for bad in ["uuid", "gpu_uuid", "pci.bus_id", "vbios_version", "gsp.version",
-                    "name,uuid", "memory.total,uuid"] {
+        let nvsmi = |fields: &str| {
+            json!({"op": "run_tool", "tool": "nvidia-smi",
+                                          "args": [format!("--query-gpu={fields}"), "--format=csv,noheader"]})
+        };
+        let identifying = regex::Regex::new(GPU_FIELD_DENY).unwrap();
+        for bad in [
+            "uuid",
+            "gpu_uuid",
+            "pci.bus_id",
+            "vbios_version",
+            "gsp.version",
+            "name,uuid",
+            "memory.total,uuid",
+        ] {
             let e = precheck(&nvsmi(bad)).expect_err(&format!("{bad} was offered"));
-            assert!(crate::msg::is("gpu_field_identifying", &e) || crate::msg::is("tool_absent", &e),
-                    "refused for the wrong reason: {e}");
+            assert!(
+                crate::msg::is("gpu_field_identifying", &e) || crate::msg::is("tool_absent", &e),
+                "refused for the wrong reason: {e}"
+            );
             if crate::msg::is("tool_absent", &e) {
                 // Without the tool the gate stops earlier; the field check is
                 // then exercised on the pattern alone.
-                let identifying = regex::Regex::new(GPU_FIELD_DENY).unwrap();
-                assert!(bad.split(',').any(|f| identifying.is_match(f)), "{bad} is not recognised as identifying");
+                assert!(
+                    bad.split(',').any(|f| identifying.is_match(f)),
+                    "{bad} is not recognised as identifying"
+                );
             }
         }
         // And the readings the catalogue offers are not caught by it —
         // `serial` among them, which the RMA precheck asks for and gets.
-        let identifying = regex::Regex::new(GPU_FIELD_DENY).unwrap();
-        for ok in ["name", "driver_version", "memory.total", "compute_cap", "temperature.gpu",
-                   "power.draw", "serial"] {
-            assert!(!identifying.is_match(ok), "{ok} is refused, and the catalogue offers it");
+        for ok in [
+            "name",
+            "driver_version",
+            "memory.total",
+            "compute_cap",
+            "temperature.gpu",
+            "power.draw",
+            "serial",
+        ] {
+            assert!(
+                !identifying.is_match(ok),
+                "{ok} is refused, and the catalogue offers it"
+            );
         }
-        precheck(&nvsmi("name,serial")).map(|_| ()).or_else(|e| {
-            // Absent on this machine is the other permitted answer; refused as
-            // identifying is not.
-            assert!(crate::msg::is("tool_absent", &e), "the RMA precheck cannot read the serial: {e}");
-            Ok::<(), String>(())
-        }).unwrap();
+        precheck(&nvsmi("name,serial"))
+            .map(|_| ())
+            .or_else(|e| {
+                // Absent on this machine is the other permitted answer; refused as
+                // identifying is not.
+                assert!(
+                    crate::msg::is("tool_absent", &e),
+                    "the RMA precheck cannot read the serial: {e}"
+                );
+                Ok::<(), String>(())
+            })
+            .unwrap();
     }
 
     /// EV1: the environment is read by allow list. The deny list screened the
@@ -2840,11 +3518,22 @@ Graphics/Displays:
     /// name went through the gate.
     #[test]
     fn an_environment_variable_is_read_only_from_the_allow_list() {
-        for bad in ["HOME", "PATH", "SSH_AUTH_SOCK", "GITHUB_TOKEN", "MY_SECRET_THING", "USERPROFILE", "PWD"] {
+        for bad in [
+            "HOME",
+            "PATH",
+            "SSH_AUTH_SOCK",
+            "GITHUB_TOKEN",
+            "MY_SECRET_THING",
+            "USERPROFILE",
+            "PWD",
+        ] {
             let r = json!({"op": "env_var", "name": bad});
             let e = precheck(&r).expect_err(&format!("{bad} was offered"));
             assert!(crate::msg::is("env_var_not_allowed", &e), "{bad}: {e}");
-            assert!(perform(&r).is_none(), "{bad} was read by a direct call, past the gate");
+            assert!(
+                perform(&r).is_none(),
+                "{bad} was read by a direct call, past the gate"
+            );
         }
         for ok in ENV_ALLOW {
             precheck(&json!({"op": "env_var", "name": ok}))
@@ -2852,7 +3541,10 @@ Graphics/Displays:
         }
         // The allow list is what makes `XDG_SESSION_TYPE` readable although
         // `session` is a denied word: a name on the list was judged by name.
-        assert!(deny_hit("XDG_SESSION_TYPE").is_some(), "the case proves nothing unless the word is denied");
+        assert!(
+            deny_hit("XDG_SESSION_TYPE").is_some(),
+            "the case proves nothing unless the word is denied"
+        );
     }
 
     /// RG1: a registry value that names the machine or its owner is refused
@@ -2861,14 +3553,26 @@ Graphics/Displays:
     fn a_registry_value_that_names_the_machine_is_refused() {
         for (path, name) in [
             (r"HKLM:\SOFTWARE\Microsoft\Cryptography", "MachineGuid"),
-            (r"HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductId"),
-            (r"HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "RegisteredOwner"),
-            (r"HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName", "ComputerName"),
+            (
+                r"HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+                "ProductId",
+            ),
+            (
+                r"HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+                "RegisteredOwner",
+            ),
+            (
+                r"HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName",
+                "ComputerName",
+            ),
             (r"HKCU:\Software\X", "SerialNumber"),
         ] {
             let r = json!({"op": "read_registry", "path": path, "name": name});
             assert!(precheck(&r).is_err(), "{name} under {path} was offered");
-            assert!(perform(&r).is_none(), "{name} was read by a direct call, past the gate");
+            assert!(
+                perform(&r).is_none(),
+                "{name} was read by a direct call, past the gate"
+            );
         }
         precheck(&json!({"op": "read_registry", "path": r"HKCU:\Software\Engram", "name": "InstallPath"}))
             .expect("an ordinary registry value was refused");
@@ -2884,22 +3588,60 @@ Graphics/Displays:
         let root = std::env::temp_dir().join(format!("podshl-scalar-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let long = "x".repeat(VALUE_LIMIT + 1);
-        std::fs::write(root.join("app.json"),
-                       format!(r#"{{"version":"1.2.3","n":7,"nested":{{"a":1}},"list":[1],"long":"{long}"}}"#)).unwrap();
-        std::fs::write(root.join("big.json"), format!(r#"{{"version":"1","pad":"{}"}}"#, "p".repeat(FILE_LIMIT as usize))).unwrap();
-        std::fs::write(root.join("settings.cfg"), format!("home = /usr/bin\nlong = {long}\n")).unwrap();
+        std::fs::write(
+            root.join("app.json"),
+            format!(r#"{{"version":"1.2.3","n":7,"nested":{{"a":1}},"list":[1],"long":"{long}"}}"#),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("big.json"),
+            format!(
+                r#"{{"version":"1","pad":"{}"}}"#,
+                "p".repeat(FILE_LIMIT as usize)
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("settings.cfg"),
+            format!("home = /usr/bin\nlong = {long}\n"),
+        )
+        .unwrap();
         set_project_root(Some(root.clone()));
 
-        let read = |file: &str, key: &str| perform(&json!({"op": if file.ends_with(".json") { "read_file_key" } else { "read_ini_key" },
-                                                           "path": root.join(file).to_string_lossy(), "key": key}));
+        let read = |file: &str, key: &str| {
+            perform(
+                &json!({"op": if file.ends_with(".json") { "read_file_key" } else { "read_ini_key" },
+                                                           "path": root.join(file).to_string_lossy(), "key": key}),
+            )
+        };
         assert_eq!(read("app.json", "version"), Some(json!("1.2.3")));
         assert_eq!(read("app.json", "n"), Some(json!(7)));
-        assert_eq!(read("app.json", "nested"), None, "an object travelled under a key");
-        assert_eq!(read("app.json", "list"), None, "an array travelled under a key");
-        assert_eq!(read("app.json", "long"), None, "a paragraph travelled under a key");
-        assert_eq!(read("big.json", "version"), None, "a file past the size limit was opened");
+        assert_eq!(
+            read("app.json", "nested"),
+            None,
+            "an object travelled under a key"
+        );
+        assert_eq!(
+            read("app.json", "list"),
+            None,
+            "an array travelled under a key"
+        );
+        assert_eq!(
+            read("app.json", "long"),
+            None,
+            "a paragraph travelled under a key"
+        );
+        assert_eq!(
+            read("big.json", "version"),
+            None,
+            "a file past the size limit was opened"
+        );
         assert_eq!(read("settings.cfg", "home"), Some(json!("/usr/bin")));
-        assert_eq!(read("settings.cfg", "long"), None, "a paragraph travelled under an ini key");
+        assert_eq!(
+            read("settings.cfg", "long"),
+            None,
+            "a paragraph travelled under an ini key"
+        );
 
         set_project_root(None);
         let _ = std::fs::remove_dir_all(&root);
@@ -2912,18 +3654,33 @@ Graphics/Displays:
     #[test]
     fn a_program_runs_in_an_empty_directory_of_its_own() {
         let (exe, args): (PathBuf, Vec<&str>) = if cfg!(windows) {
-            (PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
-                .join("System32").join("cmd.exe"), vec!["/c", "cd"])
+            (
+                PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+                    .join("System32")
+                    .join("cmd.exe"),
+                vec!["/c", "cd"],
+            )
         } else {
             (find_on_path("pwd").expect("no pwd"), vec![])
         };
         let (ok, out, _) = run_bounded_split(&exe, &args).expect("the program did not run");
         assert!(ok);
         let cwd = PathBuf::from(out.trim());
-        assert!(cwd.starts_with(std::env::temp_dir()) || cwd.to_string_lossy().contains("podshl-run-"),
-                "the program was not started from a scratch directory: {}", cwd.display());
-        assert_ne!(cwd, std::env::current_dir().unwrap(), "the program inherited the client's working directory");
-        assert!(!cwd.exists(), "the scratch directory outlived the run: {}", cwd.display());
+        assert!(
+            cwd.starts_with(std::env::temp_dir()) || cwd.to_string_lossy().contains("podshl-run-"),
+            "the program was not started from a scratch directory: {}",
+            cwd.display()
+        );
+        assert_ne!(
+            cwd,
+            std::env::current_dir().unwrap(),
+            "the program inherited the client's working directory"
+        );
+        assert!(
+            !cwd.exists(),
+            "the scratch directory outlived the run: {}",
+            cwd.display()
+        );
     }
 
     /// A development root is a development feature. A release build must not
@@ -2934,12 +3691,25 @@ Graphics/Displays:
         let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/reads.rs"))
             .unwrap()
             .replace("\r\n", "\n");
-        let reads_var: Vec<&str> = src.lines()
-            .filter(|l| l.contains("std::env::var(\"VS_EXTRA_ROOT\")") && !l.trim_start().starts_with("//"))
+        let reads_var: Vec<&str> = src
+            .lines()
+            .filter(|l| {
+                l.contains("std::env::var(\"VS_EXTRA_ROOT\")") && !l.trim_start().starts_with("//")
+            })
             .collect();
-        assert_eq!(reads_var.len(), 1, "VS_EXTRA_ROOT is read in more than one place: {reads_var:?}");
-        let body = src.split("fn extra_root()").nth(1).expect("extra_root is gone");
+        assert_eq!(
+            reads_var.len(),
+            1,
+            "VS_EXTRA_ROOT is read in more than one place: {reads_var:?}"
+        );
+        let body = src
+            .split("fn extra_root()")
+            .nth(1)
+            .expect("extra_root is gone");
         let body = &body[..body.find("\n}\n").unwrap()];
-        assert!(body.contains("cfg!(debug_assertions)"), "the development root is not gated on the build");
+        assert!(
+            body.contains("cfg!(debug_assertions)"),
+            "the development root is not gated on the build"
+        );
     }
 }

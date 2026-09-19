@@ -17,9 +17,11 @@
 //!
 //! Measured on this project's target desktop, 2026-09-14:
 //!
-//!     hyprland           https://github.com/hyprwm/Hyprland
-//!     curl               https://curl.se/
-//!     nvidia-open-dkms   https://www.nvidia.com/
+//! ```text
+//! hyprland           https://github.com/hyprwm/Hyprland
+//! curl               https://curl.se/
+//! nvidia-open-dkms   https://www.nvidia.com/
+//! ```
 //!
 //! Both shapes fall out of one question, which is the point: a repository and a
 //! domain are compared the same way and neither is special-cased.
@@ -97,7 +99,11 @@ pub fn declared_home(package: &str) -> Option<Provenance> {
     if let Some(exe) = tool("pacman") {
         if let Some((true, out)) = crate::reads::run_bounded(&exe, &["-Qi", package]) {
             if let Some(url) = field(&out, "URL") {
-                return Some(Provenance { url, package: package.into(), source: "pacman" });
+                return Some(Provenance {
+                    url,
+                    package: package.into(),
+                    source: "pacman",
+                });
             }
         }
     }
@@ -106,7 +112,11 @@ pub fn declared_home(package: &str) -> Option<Provenance> {
             crate::reads::run_bounded(&exe, &["-W", "-f=Homepage: ${Homepage}\n", package])
         {
             if let Some(url) = field(&out, "Homepage") {
-                return Some(Provenance { url, package: package.into(), source: "dpkg" });
+                return Some(Provenance {
+                    url,
+                    package: package.into(),
+                    source: "dpkg",
+                });
             }
         }
     }
@@ -117,7 +127,13 @@ pub fn declared_home(package: &str) -> Option<Provenance> {
 /// `.git` suffix are not part of who published something.
 pub fn canonical(url: &str) -> String {
     let mut s = url.trim().to_lowercase();
-    for p in ["https://", "http://", "git+https://", "git://", "ssh://git@"] {
+    for p in [
+        "https://",
+        "http://",
+        "git+https://",
+        "git://",
+        "ssh://git@",
+    ] {
         if let Some(rest) = s.strip_prefix(p) {
             s = rest.to_string();
             break;
@@ -161,7 +177,12 @@ mod tests {
         for bad in ["", "-Qi", "a b", "a;b", "a/b", "../etc", "a$(id)", "a'b"] {
             assert!(!name_ok(bad), "{bad:?} was accepted as a package name");
         }
-        for good in ["hyprland", "nvidia-open-dkms", "lib32-nvidia-utils", "python3.12"] {
+        for good in [
+            "hyprland",
+            "nvidia-open-dkms",
+            "lib32-nvidia-utils",
+            "python3.12",
+        ] {
             assert!(name_ok(good), "{good:?} was refused");
         }
     }
@@ -178,9 +199,11 @@ mod tests {
         for u in same {
             assert_eq!(canonical(u), first, "{u} did not fold to {first}");
         }
-        assert_ne!(canonical("https://github.com/hyprwm/hyprland"),
-                   canonical("https://github.com/hyprwmm/hyprland"),
-                   "an owner one letter out folded together with the real one");
+        assert_ne!(
+            canonical("https://github.com/hyprwm/hyprland"),
+            canonical("https://github.com/hyprwmm/hyprland"),
+            "an owner one letter out folded together with the real one"
+        );
     }
 
     /// The thing this exists to catch, and the three it must stay quiet about.
@@ -192,12 +215,18 @@ mod tests {
             "https://github.com/hyprwm/hyprland/issues",
         ] {
             let (a, b) = (canonical(anchor), canonical(agrees));
-            assert!(a.starts_with(&b) || b.starts_with(&a), "{agrees} read as a disagreement");
+            assert!(
+                a.starts_with(&b) || b.starts_with(&a),
+                "{agrees} read as a disagreement"
+            );
         }
-        let (a, b) = (canonical(anchor), canonical("https://github.com/someone/hyprland"));
-        assert!(!(a.starts_with(&b) || b.starts_with(&a)),
-                "a different owner was not a disagreement — which is the whole case");
+        let (a, b) = (
+            canonical(anchor),
+            canonical("https://github.com/someone/hyprland"),
+        );
+        assert!(
+            !(a.starts_with(&b) || b.starts_with(&a)),
+            "a different owner was not a disagreement — which is the whole case"
+        );
     }
 }
-
-

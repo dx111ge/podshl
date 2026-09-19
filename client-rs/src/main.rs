@@ -8,28 +8,29 @@
 // The window never elevates. Where an action needs elevation the platform layer
 // says so and a separate helper is required — an app able to elevate itself
 // in-process cannot honestly claim bounded effect.
-#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
-// First, so `m!` is in scope in every module below it.
+// The record of local fixes and what it stands on, shared with
+// `podshl-repairs`. Imported by name so `crate::reads::…` and the rest keep
+// meaning what they meant when these were modules of this binary.
 #[macro_use]
-mod msg;
+extern crate podshl_repairs;
+use podshl_repairs::{
+    actions, clientlog, http, msg, provenance, reads, redact, repair, repairs_cli,
+};
 // The desktop's own agent as this client's model — measured, not assumed.
-mod omarchy;
-mod clientlog;
 mod a2a;
-mod actions;
 mod demo;
-mod elevate;
-// Shared with the helper, which uses the parts the client does not.
-#[allow(dead_code)]
-mod elevated;
 mod doctor;
 mod excerpt;
 mod flow;
-mod http;
+mod handover;
 mod jcs;
 mod ledger;
-mod handover;
+mod omarchy;
 // The window fetches the language files itself; this module exists so the
 // suite can check them without a JavaScript engine.
 #[cfg(test)]
@@ -37,28 +38,19 @@ mod i18n;
 mod index;
 // The report a person takes with them — more public than the one they send
 // here, so it is anonymised harder rather than less.
-mod issue;
 mod identity;
+mod issue;
 mod jws;
 mod llm;
 mod logproof;
 mod probes;
-// The client's own question, asked on the person's behalf and requestable by
-// no publisher — see the module for why that separation is the point.
-mod provenance;
-mod reads;
-mod redact;
-mod repair;
-mod repairs_cli;
 mod report;
 mod trust;
 // Source-level checks only; nothing here ships in the binary.
 #[cfg(test)]
 mod ui_contract;
-mod upstream;
 mod vendors;
 mod wire;
-
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -121,9 +113,20 @@ fn search_vendors(query: String) -> Value {
     clientlog::line(&format!(
         "search {query:?} -> {} hit(s) first={} answers={} how={}",
         out.as_array().map(|a| a.len()).unwrap_or(0),
-        first.and_then(|h| h.get("vendor")).and_then(|v| v.as_str()).unwrap_or("-"),
-        first.and_then(|h| h.get("answers")).and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
-        first.and_then(|h| h.get("how")).and_then(|v| v.as_str()).unwrap_or("-")));
+        first
+            .and_then(|h| h.get("vendor"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("-"),
+        first
+            .and_then(|h| h.get("answers"))
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0),
+        first
+            .and_then(|h| h.get("how"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("-")
+    ));
     out
 }
 
@@ -276,10 +279,16 @@ async fn published_card(base: String, host: String) -> Result<Value, String> {
         format!("{}/mirror/{}", base.trim_end_matches('/'), host)
     };
     let v = from_operator(&host, || http::client().get(&url)).await?;
-    clientlog::line(&format!("card {} -> attested={:?} collect={}", url,
+    clientlog::line(&format!(
+        "card {} -> attested={:?} collect={}",
+        url,
         v.get("attested"),
-        v.get("card").and_then(|c| c.get("collect")).and_then(|c| c.as_array())
-            .map(|a| a.len()).unwrap_or(0)));
+        v.get("card")
+            .and_then(|c| c.get("collect"))
+            .and_then(|c| c.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0)
+    ));
     if v.get("attested") != Some(&Value::Bool(true)) {
         return Err(m!("not_mirrored", host = host));
     }
@@ -320,17 +329,27 @@ async fn verify_log_entry(base: String, seq: u64, expected: Value) -> Result<Val
 /// branch whose whole offer is "the maintainer finally hears about it" could
 /// not deliver a single report.
 #[tauri::command]
-async fn send_published_report(base: String, subject: String, report: Value) -> Result<Value, String> {
+async fn send_published_report(
+    base: String,
+    subject: String,
+    report: Value,
+) -> Result<Value, String> {
     if let Some(why) = a2a::insecure_base(&base) {
         return Err(why);
     }
-    let body = report::for_operator(&report, &subject, &identity::pseudonym(&subject)?,
-                                    &identity::epoch())?;
+    let body = report::for_operator(
+        &report,
+        &subject,
+        &identity::pseudonym(&subject)?,
+        &identity::epoch(),
+    )?;
     let resp = http::client()
         .post(format!("{}/report", base.trim_end_matches('/')))
         .json(&body)
         .timeout(std::time::Duration::from_secs(30))
-        .send().await.map_err(|e| m!("unreachable", e = e))?;
+        .send()
+        .await
+        .map_err(|e| m!("unreachable", e = e))?;
     let v: Value = http::json_capped(resp, http::MAX_BODY).await?;
     Ok(v)
 }
@@ -353,7 +372,6 @@ fn index_status() -> Value {
         None => json!({"have": false, "entries": 0, "stale": true}),
     }
 }
-
 
 #[tauri::command]
 async fn triage(base: String, problem: String, lang: String) -> Result<Value, String> {
@@ -383,17 +401,40 @@ fn perform_reads(probes: Vec<Value>, allow: Vec<String>) -> Value {
 }
 
 #[tauri::command]
-async fn diagnose(base: String, skill_id: String, facts: Value, lang: Option<String>,
-                  state: State<'_, AppState>) -> Result<Value, String> {
-    let jwk = state.jwk.lock().unwrap().clone().ok_or_else(|| m!("no_verified_key"))?;
-    flow::diagnose(&base, &skill_id, &facts, &jwk, lang.as_deref().unwrap_or("en")).await
+async fn diagnose(
+    base: String,
+    skill_id: String,
+    facts: Value,
+    lang: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let jwk = state
+        .jwk
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| m!("no_verified_key"))?;
+    flow::diagnose(
+        &base,
+        &skill_id,
+        &facts,
+        &jwk,
+        lang.as_deref().unwrap_or("en"),
+    )
+    .await
 }
 
 /// Build the report and show it before anything is sent. The user sees exactly
 /// what would travel and what is held back, then decides.
 #[tauri::command]
-fn preview_report(skill: Value, facts: Value, stated: Vec<String>, decided_on: Vec<String>,
-                  resolved_by: String, outcome: String) -> Value {
+fn preview_report(
+    skill: Value,
+    facts: Value,
+    stated: Vec<String>,
+    decided_on: Vec<String>,
+    resolved_by: String,
+    outcome: String,
+) -> Value {
     let (r, held) = report::build(&skill, &facts, &stated, &decided_on, &resolved_by, &outcome);
     json!({ "report": r, "held_back": held })
 }
@@ -409,15 +450,24 @@ fn preview_report(skill: Value, facts: Value, stated: Vec<String>, decided_on: V
 /// pointless — but a finding that rests on one is graded differently, and the
 /// user is told, because a confident wrong answer is the thing worth avoiding.
 #[tauri::command]
-async fn ask_published(base: String, subject: String, problem_class: String,
-                       facts: Value, stated: Vec<String>) -> Result<Value, String> {
+async fn ask_published(
+    base: String,
+    subject: String,
+    problem_class: String,
+    facts: Value,
+    stated: Vec<String>,
+) -> Result<Value, String> {
     if let Some(why) = a2a::insecure_base(&base) {
         return Err(why);
     }
     clientlog::line(&format!(
         "ask {} about {} class={} — {} fact(s), {} of them stated",
-        base, subject, problem_class,
-        facts.as_object().map(|o| o.len()).unwrap_or(0), stated.len()));
+        base,
+        subject,
+        problem_class,
+        facts.as_object().map(|o| o.len()).unwrap_or(0),
+        stated.len()
+    ));
     let url = format!("{}/diagnose", base.trim_end_matches('/'));
     let body = json!({"subject": subject, "problem_class": problem_class,
                       "facts": facts, "stated": stated});
@@ -441,13 +491,20 @@ where
     for attempt in 1..=ATTEMPTS {
         let resp = request()
             .timeout(std::time::Duration::from_secs(30))
-            .send().await.map_err(|e| m!("unreachable", e = e))?;
+            .send()
+            .await
+            .map_err(|e| m!("unreachable", e = e))?;
         let v: Value = http::json_capped(resp, http::MAX_BODY).await?;
         match v.get("code").and_then(|c| c.as_str()) {
             Some("loading") if attempt < ATTEMPTS => {
-                let wait = v.get("retry_after").and_then(|w| w.as_u64()).unwrap_or(5).clamp(1, 10);
+                let wait = v
+                    .get("retry_after")
+                    .and_then(|w| w.as_u64())
+                    .unwrap_or(5)
+                    .clamp(1, 10);
                 clientlog::line(&format!(
-                    "the operator is loading {subject}; asking again in {wait} s"));
+                    "the operator is loading {subject}; asking again in {wait} s"
+                ));
                 tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
             }
             Some("loading") => return Err(m!("published_loading", host = subject)),
@@ -463,22 +520,42 @@ where
 /// because it is a separate consent: the report is complete without it, and a
 /// caller must have shown the exact words to somebody to get here.
 #[tauri::command]
-fn attach_consented_text(report: Value, text: String, destination: String)
-    -> Result<Value, String> {
+fn attach_consented_text(
+    report: Value,
+    text: String,
+    destination: String,
+) -> Result<Value, String> {
     let mut r = report;
     report::with_consented_text(&mut r, &text, &destination, &identity::epoch())?;
     Ok(r)
 }
 
 #[tauri::command]
-async fn send_report(base: String, report: Value, domain: String, lang: Option<String>)
-    -> Result<Value, String> {
-    let n = report.get("observed").and_then(|o| o.as_object()).map(|o| o.len()).unwrap_or(0);
-    let s = report.get("stated").and_then(|o| o.as_object()).map(|o| o.len()).unwrap_or(0);
+async fn send_report(
+    base: String,
+    report: Value,
+    domain: String,
+    lang: Option<String>,
+) -> Result<Value, String> {
+    let n = report
+        .get("observed")
+        .and_then(|o| o.as_object())
+        .map(|o| o.len())
+        .unwrap_or(0);
+    let s = report
+        .get("stated")
+        .and_then(|o| o.as_object())
+        .map(|o| o.len())
+        .unwrap_or(0);
     let text = report.get("consented_text").is_some();
     clientlog::line(&format!(
         "send report to {domain} via {base} — {n} measured, {s} stated{}",
-        if text { ", with the free text agreed separately" } else { "" }));
+        if text {
+            ", with the free text agreed separately"
+        } else {
+            ""
+        }
+    ));
     flow::send_report(&base, report, &domain, lang.as_deref().unwrap_or("en")).await
 }
 
@@ -495,7 +572,11 @@ fn identity_info(domain: String) -> Value {
 /// spends the effort on a vendor that has never once responded learns only that
 /// the channel is worthless, and stops using it for everyone.
 #[tauri::command]
-async fn vendor_standing(vendor: String, index_url: Option<String>, state: State<'_, AppState>) -> Result<Value, String> {
+async fn vendor_standing(
+    vendor: String,
+    index_url: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let led = ledger::Ledger::open(state.root.join("vendor_standing.json"));
     let standing = led.standing(&vendor);
     // The network median rests on more observations than one client can have,
@@ -516,7 +597,11 @@ async fn vendor_standing(vendor: String, index_url: Option<String>, state: State
 /// Record what a vendor's receipt actually said. Only a state that changed
 /// something counts as the vendor acting; an acknowledgement does not.
 #[tauri::command]
-fn record_report_state(vendor: String, receipt_state: String, state: State<'_, AppState>) -> Result<Value, String> {
+fn record_report_state(
+    vendor: String,
+    receipt_state: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let mut led = ledger::Ledger::open(state.root.join("vendor_standing.json"));
     led.record(&vendor, &receipt_state)?;
     let s = led.standing(&vendor);
@@ -528,8 +613,13 @@ fn record_report_state(vendor: String, receipt_state: String, state: State<'_, A
 /// this client has dealt with is a profile of the software it runs, so a batch
 /// would disclose in one call exactly what the design refuses to hold.
 #[tauri::command]
-async fn contribute_standing(index_url: String, dry_run: bool, state: State<'_, AppState>) -> Result<Value, String> {
-    let pending = ledger::Ledger::open(state.root.join("vendor_standing.json")).pending_contributions();
+async fn contribute_standing(
+    index_url: String,
+    dry_run: bool,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let pending =
+        ledger::Ledger::open(state.root.join("vendor_standing.json")).pending_contributions();
     // The preview must be exactly what would travel, and must travel nothing.
     // A dry-run that quietly does the thing is worse than no dry-run at all.
     if dry_run {
@@ -550,32 +640,60 @@ fn identity_reset() -> Result<Value, String> {
     Ok(json!({ "reset": true }))
 }
 
-
 /// Let the user's model pick from the catalogue for this specific question.
 #[tauri::command]
-async fn llm_choose_reads(problem: String, known: Value, lang: String, round: Option<u32>,
-                          context: Option<Value>)
-    -> Result<Value, String> {
+async fn llm_choose_reads(
+    problem: String,
+    known: Value,
+    lang: String,
+    round: Option<u32>,
+    context: Option<Value>,
+) -> Result<Value, String> {
     let cfg = llm::load();
     let cat = reads::catalogue();
     // Anything already gathered drops out of the menu, so a round cannot ask
     // for the same value twice.
-    let have: Vec<String> = known.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
-    let remaining = json!(cat.as_array().cloned().unwrap_or_default().into_iter()
-        .filter(|c| !have.iter().any(|h| c.get("id").and_then(|v| v.as_str()) == Some(h)))
+    let have: Vec<String> = known
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    let remaining = json!(cat
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| !have
+            .iter()
+            .any(|h| c.get("id").and_then(|v| v.as_str()) == Some(h)))
         .collect::<Vec<_>>());
     // The project's own words, on the rounds as well as on the answer. These
     // are the calls a person actually meets: the model choosing what to read
     // and what to ask. Giving the context only to the final answer left the
     // questions being asked about a project nobody had named.
-    let round = llm::choose_reads(&cfg, &problem, &remaining, &known,
-                                  &context.unwrap_or(Value::Null), &lang,
-                                  round.unwrap_or(1).max(1) as usize).await?;
+    let round = llm::choose_reads(
+        &cfg,
+        &problem,
+        &remaining,
+        &known,
+        &context.unwrap_or(Value::Null),
+        &lang,
+        round.unwrap_or(1).max(1) as usize,
+    )
+    .await?;
     let ids = round.read_ids;
-    let chosen: Vec<Value> = remaining.as_array().into_iter().flatten()
-        .filter(|c| ids.iter().any(|id| c.get("id").and_then(|v| v.as_str()) == Some(id)))
+    let chosen: Vec<Value> = remaining
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|c| {
+            ids.iter()
+                .any(|id| c.get("id").and_then(|v| v.as_str()) == Some(id))
+        })
         .cloned()
-        .map(|mut c| { c["kind"] = json!("machine"); c })
+        .map(|mut c| {
+            c["kind"] = json!("machine");
+            c
+        })
         .collect();
     Ok(json!({
         "probes": chosen,
@@ -586,13 +704,27 @@ async fn llm_choose_reads(problem: String, known: Value, lang: String, round: Op
 }
 
 #[tauri::command]
-async fn llm_follow_up(problem: String, facts: Value, previous: String, added: String,
-                       lang: String, typed: Option<Vec<String>>,
-                       context: Option<Value>) -> Result<Value, String> {
+async fn llm_follow_up(
+    problem: String,
+    facts: Value,
+    previous: String,
+    added: String,
+    lang: String,
+    typed: Option<Vec<String>>,
+    context: Option<Value>,
+) -> Result<Value, String> {
     let cfg = llm::load();
     let typed = typed.unwrap_or_default();
-    let raw = llm::follow_up(&cfg, &problem, &facts, &previous, &added, &lang,
-                             &context.unwrap_or(Value::Null)).await?;
+    let raw = llm::follow_up(
+        &cfg,
+        &problem,
+        &facts,
+        &previous,
+        &added,
+        &lang,
+        &context.unwrap_or(Value::Null),
+    )
+    .await?;
     // Held to the same sections as the first answer. A follow-up that dropped
     // back to a paragraph would quietly undo the method one question in, which
     // is exactly when a person is most likely to act on what they read.
@@ -607,15 +739,23 @@ async fn llm_follow_up(problem: String, facts: Value, previous: String, added: S
 /// `keep` is a published project's glossary — its own terms, kept as written.
 /// The answer is `{texts, lost}`: the translation, and any kept term it dropped.
 #[tauri::command]
-async fn llm_translate(texts: Value, to: String, keep: Option<Vec<String>>) -> Result<Value, String> {
+async fn llm_translate(
+    texts: Value,
+    to: String,
+    keep: Option<Vec<String>>,
+) -> Result<Value, String> {
     let cfg = llm::load();
     llm::translate(&cfg, &texts, &to, &keep.unwrap_or_default()).await
 }
 
 #[tauri::command]
-async fn llm_solve(problem: String, facts: Value, lang: String, typed: Option<Vec<String>>,
-                   context: Option<Value>)
-    -> Result<Value, String> {
+async fn llm_solve(
+    problem: String,
+    facts: Value,
+    lang: String,
+    typed: Option<Vec<String>>,
+    context: Option<Value>,
+) -> Result<Value, String> {
     let cfg = llm::load();
     // `typed` is what the person answered rather than what the machine read.
     // A cause resting on one of those may still be right and is not evidence
@@ -660,10 +800,14 @@ fn preview_without_vendor(observed: Value) -> Value {
 }
 
 #[tauri::command]
-async fn report_without_vendor(base: String, subject: String,
-                               model_class: String, ux_severity: String, observed: Value,
-                               outcome: Option<String>)
-    -> Result<Value, String> {
+async fn report_without_vendor(
+    base: String,
+    subject: String,
+    model_class: String,
+    ux_severity: String,
+    observed: Value,
+    outcome: Option<String>,
+) -> Result<Value, String> {
     // **The run that reached this through a gap says so.** A model guessing is
     // the second exit from "nothing published covered this", and the maintainer
     // needs that fact exactly as much as they need it from the first exit — the
@@ -699,8 +843,15 @@ async fn report_without_vendor(base: String, subject: String,
     // contents were just shown to somebody on a panel they agreed to.
     clientlog::line(&format!(
         "send report(no vendor) to {} about {} — {} value(s), {} held back{}",
-        base, subject, observed.len(), held.len(),
-        outcome.as_deref().map(|o| format!(", outcome {o}")).unwrap_or_default()));
+        base,
+        subject,
+        observed.len(),
+        held.len(),
+        outcome
+            .as_deref()
+            .map(|o| format!(", outcome {o}"))
+            .unwrap_or_default()
+    ));
     let mut body = json!({ "subject": subject,
                        "pseudonym": identity::pseudonym(&subject)?,
                        "model_class": model_class, "ux_severity": ux_severity,
@@ -714,7 +865,9 @@ async fn report_without_vendor(base: String, subject: String,
     let resp = http::client()
         .post(format!("{}/report", base.trim_end_matches('/')))
         .json(&body)
-        .send().await.map_err(|e| e.to_string())?;
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     let v: Value = http::json_capped(resp, http::MAX_BODY).await?;
     Ok(v)
 }
@@ -735,25 +888,28 @@ fn llm_providers() -> Value {
     if let Some(arr) = list.as_array_mut() {
         arr.retain(|p| p.get("id").and_then(|v| v.as_str()) != Some("omarchy_agent"));
         if let Some((agent, cloud)) = offer {
-            arr.insert(0, json!({
-                "id": "omarchy_agent",
-                // **`name`, because that is the key the window renders.** This
-                // row carried only `label`, so the settings drew it as an empty
-                // option — the first entry in the list, and the selected one on
-                // the desktop this was built for. `tr(undefined)` is the empty
-                // string, so nothing showed and nothing complained.
-                "name": format!("Omarchy default agent ({agent})"),
-                "label": format!("Omarchy default agent ({agent})"),
-                "endpoint": "",
-                "model": agent,
-                "needs_key": false,
-                "cloud": cloud,
-                // Stated rather than absent. The window reads `local` to pick a
-                // model class, and a missing one reads as false by accident — right
-                // for this agent today, wrong the moment a local one is measured.
-                "local": !cloud,
-                "note": "no model setup here — this desktop already has one"
-            }));
+            arr.insert(
+                0,
+                json!({
+                    "id": "omarchy_agent",
+                    // **`name`, because that is the key the window renders.** This
+                    // row carried only `label`, so the settings drew it as an empty
+                    // option — the first entry in the list, and the selected one on
+                    // the desktop this was built for. `tr(undefined)` is the empty
+                    // string, so nothing showed and nothing complained.
+                    "name": format!("Omarchy default agent ({agent})"),
+                    "label": format!("Omarchy default agent ({agent})"),
+                    "endpoint": "",
+                    "model": agent,
+                    "needs_key": false,
+                    "cloud": cloud,
+                    // Stated rather than absent. The window reads `local` to pick a
+                    // model class, and a missing one reads as false by accident — right
+                    // for this agent today, wrong the moment a local one is measured.
+                    "local": !cloud,
+                    "note": "no model setup here — this desktop already has one"
+                }),
+            );
         }
     }
     list
@@ -773,10 +929,21 @@ fn llm_get() -> Value {
 }
 
 #[tauri::command]
-fn llm_set(provider: String, model: String, endpoint: String, model_class: String,
-           api_key: Option<String>) -> Result<Value, String> {
+fn llm_set(
+    provider: String,
+    model: String,
+    endpoint: String,
+    model_class: String,
+    api_key: Option<String>,
+) -> Result<Value, String> {
     let uses_key = llm::preset(&provider).map(|p| p.4).unwrap_or(true);
-    let c = llm::Config { provider: provider.clone(), model, endpoint, model_class, uses_key };
+    let c = llm::Config {
+        provider: provider.clone(),
+        model,
+        endpoint,
+        model_class,
+        uses_key,
+    };
     llm::save(&c)?;
     // An empty string clears the stored key; `None` leaves it untouched, so
     // re-saving other settings never silently drops the credential.
@@ -811,8 +978,13 @@ async fn llm_test() -> Result<Value, String> {
 #[tauri::command]
 async fn llm_models(provider: String, endpoint: String) -> Result<Value, String> {
     let uses_key = llm::preset(&provider).map(|p| p.4).unwrap_or(true);
-    let cfg = llm::Config { provider, model: String::new(), endpoint,
-                            model_class: String::new(), uses_key };
+    let cfg = llm::Config {
+        provider,
+        model: String::new(),
+        endpoint,
+        model_class: String::new(),
+        uses_key,
+    };
     Ok(json!({ "models": llm::list_models(&cfg).await? }))
 }
 
@@ -829,19 +1001,32 @@ fn reply_channels(offered: Value) -> Value {
 /// Hand the case to a person. The routing target is the vendor's and passes
 /// through untouched; the payload is exactly what the user saw and approved.
 #[tauri::command]
-async fn escalate(base: String, queue: String, target: Option<String>,
-                  reply_via: String, payload: Value, lang: Option<String>) -> Result<Value, String> {
+async fn escalate(
+    base: String,
+    queue: String,
+    target: Option<String>,
+    reply_via: String,
+    payload: Value,
+    lang: Option<String>,
+) -> Result<Value, String> {
     if !handover::channel_known(&reply_via) {
-        return Err(m!("reply_channel_unknown", via = format!("{reply_via:?}"),
-                      known = format!("{:?}", handover::REPLY_CHANNELS)));
+        return Err(m!(
+            "reply_channel_unknown",
+            via = format!("{reply_via:?}"),
+            known = format!("{:?}", handover::REPLY_CHANNELS)
+        ));
     }
-    a2a::send_message(&base, json!({
-        "kind": "escalate", "queue": queue, "target": target,
-        "reply_via": reply_via, "payload": payload,
-        // The reply note is the vendor's sentence to this person; it comes in
-        // their language where the vendor has it.
-        "lang": lang.as_deref().unwrap_or("en")
-    })).await
+    a2a::send_message(
+        &base,
+        json!({
+            "kind": "escalate", "queue": queue, "target": target,
+            "reply_via": reply_via, "payload": payload,
+            // The reply note is the vendor's sentence to this person; it comes in
+            // their language where the vendor has it.
+            "lang": lang.as_deref().unwrap_or("en")
+        }),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -866,9 +1051,15 @@ fn dry_run(action: String, params: Value) -> Result<String, String> {
 /// Off the window's thread: an action that needs administrator rights waits
 /// for Windows' prompt and, for a service, for the service.
 #[tauri::command]
-async fn execute(action: String, params: Value, subject: Option<String>, upstream: Option<Value>,
-                 note: Option<String>, undoes: Option<String>,
-                 state: State<'_, AppState>) -> Result<Value, String> {
+async fn execute(
+    action: String,
+    params: Value,
+    subject: Option<String>,
+    upstream: Option<Value>,
+    note: Option<String>,
+    undoes: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let root = state.root.clone();
     let upstream = repair::Upstream::from_value(upstream.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -878,7 +1069,14 @@ async fn execute(action: String, params: Value, subject: Option<String>, upstrea
             note,
             undoes,
         };
-        repair::execute(&action, &params, &root, &root, ctx, &repair::installed_version)
+        repair::execute(
+            &action,
+            &params,
+            &root,
+            &root,
+            ctx,
+            &repair::installed_version,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -895,7 +1093,8 @@ async fn repairs_review(state: State<'_, AppState>) -> Result<Value, String> {
         let mut out = json!(repair::review(&root, &repairs_cli::live_lookups(false)));
         // The window is photographed; the path is shown without the account name.
         for item in out.as_array_mut().into_iter().flatten() {
-            let shown = item["record"]["target"].as_str()
+            let shown = item["record"]["target"]
+                .as_str()
                 .map(|t| reads::display_path(std::path::Path::new(t)));
             if let (Some(shown), Some(rec)) = (shown, item["record"].as_object_mut()) {
                 rec.insert("target_shown".into(), json!(shown));
@@ -919,7 +1118,10 @@ fn repair_looked_at(id: String, state: State<'_, AppState>) -> Result<(), String
 #[tauri::command]
 fn repair_watch(id: String, on: bool, state: State<'_, AppState>) -> Result<(), String> {
     repair::set_watch(&state.root, &id, on)?;
-    clientlog::line(&format!("repair watch {id} {}", if on { "on" } else { "off" }));
+    clientlog::line(&format!(
+        "repair watch {id} {}",
+        if on { "on" } else { "off" }
+    ));
     Ok(())
 }
 
@@ -927,7 +1129,10 @@ fn repair_watch(id: String, on: bool, state: State<'_, AppState>) -> Result<(), 
 #[tauri::command]
 fn repair_restore(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let r = repair::restore_external(&state.root, &id)?;
-    clientlog::line(&format!("repair restore {id}: {}", r.target.as_deref().unwrap_or("?")));
+    clientlog::line(&format!(
+        "repair restore {id}: {}",
+        r.target.as_deref().unwrap_or("?")
+    ));
     Ok(())
 }
 
@@ -992,7 +1197,11 @@ fn os_locale() -> Value {
         .or_else(|_| std::env::var("LC_MESSAGES"))
         .or_else(|_| std::env::var("LANG"))
         .unwrap_or_default();
-    let code = raw.split(['.', '_', '-']).next().unwrap_or("").to_lowercase();
+    let code = raw
+        .split(['.', '_', '-'])
+        .next()
+        .unwrap_or("")
+        .to_lowercase();
     json!({ "raw": raw, "code": if code.is_empty() { "en".into() } else { code } })
 }
 
@@ -1001,36 +1210,6 @@ fn applicability(required: Value) -> Value {
     let (ok, why) = probes::applicability(&required);
     json!({ "applies": ok, "why": why })
 }
-
-/// Everything the binary can do without a window.
-///
-/// Both of these used to live in Python, next to a second implementation of
-/// this client — so `doctor` reported what *that* code could do, and the demo
-/// exercised it too. Whatever they were measuring, it was not the program
-/// anybody installs. They answer for the shipped binary now.
-/// Die quietly when the reader goes away.
-///
-/// The Rust runtime sets SIGPIPE to SIG_IGN, so a write to a closed pipe returns
-/// EPIPE instead of killing the process — and `println!` turns that error into a
-/// panic, which `panic = "abort"` turns into SIGABRT and a multi-megabyte core
-/// dump. `podshl-client demo | head` did exactly that.
-///
-/// Every ordinary Unix program exits silently there, and a diagnostic tool that
-/// litters the coredump directory when someone pipes it through `less` is not
-/// one anybody will trust. Restored only for the command-line path: leaving the
-/// GUI's disposition alone, because there a write to a closed socket returning
-/// an error is the behaviour the rest of the code expects.
-#[cfg(unix)]
-fn exit_quietly_on_a_closed_pipe() {
-    // SAFETY: setting a signal disposition to the system default, before any
-    // thread is spawned and before anything is written.
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-    }
-}
-
-#[cfg(not(unix))]
-fn exit_quietly_on_a_closed_pipe() {}
 
 /// One of the window's commands, by name, for `invoke`.
 ///
@@ -1041,9 +1220,16 @@ fn exit_quietly_on_a_closed_pipe() {}
 async fn invoke_by_name(name: &str, a: &Value) -> Result<Value, String> {
     let s = |k: &str| a.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
     let v = |k: &str| a.get(k).cloned().unwrap_or(Value::Null);
-    let list = |k: &str| a.get(k).and_then(|x| x.as_array())
-        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
-        .unwrap_or_default();
+    let list = |k: &str| {
+        a.get(k)
+            .and_then(|x| x.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
     Ok(match name {
         "search_vendors" => search_vendors(s("query")),
         "index_status" => index_status(),
@@ -1134,9 +1320,14 @@ async fn invoke_by_name(name: &str, a: &Value) -> Result<Value, String> {
     })
 }
 
-
+/// Everything the binary can do without a window.
+///
+/// Both of these used to live in Python, next to a second implementation of
+/// this client — so `doctor` reported what *that* code could do, and the demo
+/// exercised it too. Whatever they were measuring, it was not the program
+/// anybody installs. They answer for the shipped binary now.
 fn run_subcommand(name: &str) -> Result<(), String> {
-    exit_quietly_on_a_closed_pipe();
+    repairs_cli::exit_quietly_on_a_closed_pipe();
     match name {
         "doctor" => {
             doctor::print_report();
@@ -1163,17 +1354,21 @@ fn run_subcommand(name: &str) -> Result<(), String> {
         // that stays `manual`, and it is a far smaller thing than a flow that
         // silently takes the wrong turn.
         "invoke" => {
-            let name = std::env::args().nth(2)
+            let name = std::env::args()
+                .nth(2)
                 .ok_or_else(|| "usage: podshl-client invoke <command> [json]".to_string())?;
             let raw = std::env::args().nth(3).unwrap_or_else(|| "{}".into());
-            let args: Value = serde_json::from_str(&raw)
-                .map_err(|e| format!("arguments are not JSON: {e}"))?;
+            let args: Value =
+                serde_json::from_str(&raw).map_err(|e| format!("arguments are not JSON: {e}"))?;
             let out = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|e| e.to_string())?
                 .block_on(invoke_by_name(&name, &args))?;
-            println!("{}", serde_json::to_string(&out).map_err(|e| e.to_string())?);
+            println!(
+                "{}",
+                serde_json::to_string(&out).map_err(|e| e.to_string())?
+            );
             Ok(())
         }
         "--help" | "-h" | "help" => {
@@ -1181,7 +1376,9 @@ fn run_subcommand(name: &str) -> Result<(), String> {
             println!("  (no argument)  the window");
             println!("  doctor         what this client can do on this machine");
             println!("  demo           the whole argument in five acts, against live services");
-            println!("  repairs        recorded local fixes: review, add, install-hook (repairs help)");
+            println!(
+                "  repairs        recorded local fixes: review, add, install-hook (repairs help)"
+            );
             println!("  invoke         one of the window's commands, without the window");
             println!("  --version      which version this is");
             Ok(())
@@ -1193,7 +1390,9 @@ fn run_subcommand(name: &str) -> Result<(), String> {
             println!("podshl-client {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        other => Err(format!("unknown command {other:?} — possible are: doctor, demo, --version")),
+        other => Err(format!(
+            "unknown command {other:?} — possible are: doctor, demo, --version"
+        )),
     }
 }
 
@@ -1206,7 +1405,11 @@ fn run_subcommand(name: &str) -> Result<(), String> {
 /// which is a person asking for the accelerated path back and being given it.
 #[cfg(target_os = "linux")]
 fn dmabuf_renderer_setting(already_set: bool) -> Option<&'static str> {
-    if already_set { None } else { Some("1") }
+    if already_set {
+        None
+    } else {
+        Some("1")
+    }
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -1220,8 +1423,16 @@ mod dmabuf_tests {
     /// what would turn a per-application default into one nobody can undo.
     #[test]
     fn it_chooses_only_when_nobody_else_did() {
-        assert_eq!(dmabuf_renderer_setting(false), Some("1"), "left the window to fail");
-        assert_eq!(dmabuf_renderer_setting(true), None, "overrode the person's own value");
+        assert_eq!(
+            dmabuf_renderer_setting(false),
+            Some("1"),
+            "left the window to fail"
+        );
+        assert_eq!(
+            dmabuf_renderer_setting(true),
+            None,
+            "overrode the person's own value"
+        );
     }
 }
 
@@ -1253,7 +1464,6 @@ fn provenance_check(anchor_url: String, subject: String) -> Value {
     }
 }
 
-
 /// The report a person takes with them, as Markdown, and what was taken out of
 /// it.
 ///
@@ -1269,13 +1479,29 @@ fn provenance_check(anchor_url: String, subject: String) -> Value {
 /// larger audience.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-fn issue_report(subject: String, problem: String, facts: Value, stated: Vec<String>,
-                outcome: String, answer: String, answer_from_model: bool,
-                tried: Vec<String>, footer: bool) -> Value {
-    issue::build(&subject, &problem, &facts, &stated, &outcome, &answer,
-                 answer_from_model, &tried, footer)
+fn issue_report(
+    subject: String,
+    problem: String,
+    facts: Value,
+    stated: Vec<String>,
+    outcome: String,
+    answer: String,
+    answer_from_model: bool,
+    tried: Vec<String>,
+    footer: bool,
+) -> Value {
+    issue::build(
+        &subject,
+        &problem,
+        &facts,
+        &stated,
+        &outcome,
+        &answer,
+        answer_from_model,
+        &tried,
+        footer,
+    )
 }
-
 
 /// A release build on Windows is a window program, and a window program has no
 /// console: everything a subcommand prints would go nowhere. Borrowing the
@@ -1294,14 +1520,7 @@ fn main() {
         #[cfg(windows)]
         attach_console();
         if arg == "repairs" {
-            exit_quietly_on_a_closed_pipe();
-            match repairs_cli::run(std::env::args().skip(2).collect()) {
-                Ok(code) => std::process::exit(code),
-                Err(e) => {
-                    eprintln!("{e}");
-                    std::process::exit(1);
-                }
-            }
+            repairs_cli::exit_with(std::env::args().skip(2).collect());
         }
         if let Err(e) = run_subcommand(&arg) {
             eprintln!("{e}");
@@ -1315,9 +1534,13 @@ fn main() {
     // whatever directory a shortcut happened to start it in: the install folder,
     // removed with the program, or somewhere it has no business writing. Beside
     // the rest of its state instead, where `llm.json` and the identity live.
-    let root = std::env::var("VS_ROOT").map(PathBuf::from).unwrap_or_else(|_| {
-        dirs::config_dir().map(|p| p.join("podshl")).unwrap_or_else(|| PathBuf::from("."))
-    });
+    let root = std::env::var("VS_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            dirs::config_dir()
+                .map(|p| p.join("podshl"))
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
     let _ = std::fs::create_dir_all(&root);
     // VS_TRUST=dns selects the production path: keys resolved from DNS under a
     // domain the organisation controls. Anything else is treated as a pinned
@@ -1362,7 +1585,7 @@ fn main() {
         let st = index_status();
         let cfg = llm::load();
         clientlog::start(
-            &endpoints()["operator"].as_str().unwrap_or("?").to_string(),
+            endpoints()["operator"].as_str().unwrap_or("?"),
             st.get("entries").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
             st.get("have").and_then(|v| v.as_bool()).unwrap_or(false),
             &format!("{}/{}", cfg.provider, cfg.model),
@@ -1382,13 +1605,62 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            discover, triage, plan_reads, perform_reads, diagnose, vocabulary, dry_run,
-            execute, applicability, reply_channels, escalate, preview_report, ask_published, attach_consented_text, send_report, search_vendors, refresh_index, index_status, interpreter_conflict, set_project_root, vendor_mismatch, identity_info, identity_reset, vendor_standing, record_report_state, contribute_standing, llm_solve, llm_translate, report_without_vendor, preview_without_vendor, llm_providers, llm_models, llm_probe, llm_test, baseline_facts, os_locale, endpoints, llm_choose_reads, llm_follow_up,
-            llm_get, llm_set, end_incident, grant_program_path, load_log_excerpt, anonymise_text,
+            discover,
+            triage,
+            plan_reads,
+            perform_reads,
+            diagnose,
+            vocabulary,
+            dry_run,
+            execute,
+            applicability,
+            reply_channels,
+            escalate,
+            preview_report,
+            ask_published,
+            attach_consented_text,
+            send_report,
+            search_vendors,
+            refresh_index,
+            index_status,
+            interpreter_conflict,
+            set_project_root,
+            vendor_mismatch,
+            identity_info,
+            identity_reset,
+            vendor_standing,
+            record_report_state,
+            contribute_standing,
+            llm_solve,
+            llm_translate,
+            report_without_vendor,
+            preview_without_vendor,
+            llm_providers,
+            llm_models,
+            llm_probe,
+            llm_test,
+            baseline_facts,
+            os_locale,
+            endpoints,
+            llm_choose_reads,
+            llm_follow_up,
+            llm_get,
+            llm_set,
+            end_incident,
+            grant_program_path,
+            load_log_excerpt,
+            anonymise_text,
             facts_as_sent,
-            published_card, send_published_report, verify_log_entry,
-            provenance_check, issue_report, log_line,
-            repairs_review, repair_looked_at, repair_watch, repair_restore
+            published_card,
+            send_published_report,
+            verify_log_entry,
+            provenance_check,
+            issue_report,
+            log_line,
+            repairs_review,
+            repair_looked_at,
+            repair_watch,
+            repair_restore
         ])
         .run(tauri::generate_context!())
         .expect("PODSHL could not start");

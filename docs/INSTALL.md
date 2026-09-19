@@ -15,9 +15,9 @@ client names the recipient, shows the values, and sends only after you say so.
 
 | Platform | File | State |
 |---|---|---|
-| **Windows** 10/11 x64 | `podshl-client-0.1.6-windows-x64-setup.exe` | Installed and walked against the live operator, uninstall included |
-| **Linux** x86_64 | `PODSHL_0.1.6_amd64.deb`, or the bare `podshl-client-0.1.6-linux-x86_64` | Built and its suite run in a container; **the window walked on a real Omarchy desktop** (Wayland, WebKitGTK), and the daily review walked on a plain Linux with a live systemd user session |
-| **macOS** Apple Silicon | `podshl-client-0.1.6-macos-arm64.dmg` | Built on GitHub's macOS runners, and since 0.1.6 **run** on one: the client starts, its cases pass, and the daily review installs and removes. **The window itself has still never been opened by us** — no Mac here — so a report of how it went is very welcome |
+| **Windows** 10/11 x64 | `podshl-client-0.1.7-windows-x64-setup.exe` | Installed and walked against the live operator, uninstall included |
+| **Linux** x86_64 | `PODSHL_0.1.7_amd64.deb`, or the bare `podshl-client-0.1.7-linux-x86_64` | Built and its suite run in a container; **the window walked on a real Omarchy desktop** (Wayland, WebKitGTK), and the daily review walked on a plain Linux with a live systemd user session |
+| **macOS** Apple Silicon | `podshl-client-0.1.7-macos-arm64.dmg` | Built on GitHub's macOS runners, and since 0.1.6 **run** on one: the client starts, its cases pass, and the daily review installs and removes. **The window itself has still never been opened by us** — no Mac here — so a report of how it went is very welcome |
 
 **None of them is signed.** A signature says who built something, and there is
 no certificate yet. `SHA256SUMS` (and `SHA256SUMS-macos`) in the release say the
@@ -44,7 +44,7 @@ xattr -dr com.apple.quarantine /Applications/PODSHL.app
 ## Linux
 
 ```bash
-sudo apt install ./PODSHL_0.1.6_amd64.deb
+sudo apt install ./PODSHL_0.1.7_amd64.deb
 podshl-client
 ```
 
@@ -54,8 +54,8 @@ hundred-megabyte download would cost what makes a binary of under 7 MB
 auditable. Or run the bare binary with those installed:
 
 ```bash
-chmod +x podshl-client-0.1.6-linux-x86_64
-./podshl-client-0.1.6-linux-x86_64
+chmod +x podshl-client-0.1.7-linux-x86_64
+./podshl-client-0.1.7-linux-x86_64
 ```
 
 **On Wayland the client turns WebKitGTK's DMA-BUF renderer off for itself**, by
@@ -113,8 +113,8 @@ Without a package manager, the bare binary from the release works too, with
 
 ```bash
 sudo pacman -S --needed webkit2gtk-4.1 gtk3
-chmod +x podshl-client-0.1.6-linux-x86_64
-./podshl-client-0.1.6-linux-x86_64
+chmod +x podshl-client-0.1.7-linux-x86_64
+./podshl-client-0.1.7-linux-x86_64
 ```
 
 **If you are running a client older than this one and nothing happens when you
@@ -122,7 +122,7 @@ start it**, that is the bug above and not a broken download. Start it from a
 terminal to see the line the icon discards, and then:
 
 ```bash
-WEBKIT_DISABLE_DMABUF_RENDERER=1 ./podshl-client-0.1.6-linux-x86_64
+WEBKIT_DISABLE_DMABUF_RENDERER=1 ./podshl-client-0.1.7-linux-x86_64
 ```
 
 Measured 2026-09-14 on Omarchy 4.0.2 — Hyprland 0.56.2, webkit2gtk 2.52.6,

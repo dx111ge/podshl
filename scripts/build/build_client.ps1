@@ -54,6 +54,25 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
+# **Run a built program and wait for it.** A release client is a window
+# program on Windows, and `& $bin …` does not reliably wait for one: a quick
+# answer (`endpoints`) arrived, the one that goes to the network
+# (`refresh_index`) did not — the pipe was closed under it, it panicked writing
+# to stdout, and the check reported that the key does not verify a directory it
+# verifies. Each argument is passed as itself, so JSON needs no quoting games.
+function Invoke-Built([string]$exe, [string[]]$argv) {
+    $psi = [System.Diagnostics.ProcessStartInfo]::new($exe)
+    foreach ($a in $argv) { $psi.ArgumentList.Add($a) }
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $out = $p.StandardOutput.ReadToEndAsync()
+    $err = $p.StandardError.ReadToEndAsync()
+    $p.WaitForExit()
+    [pscustomobject]@{ Code = $p.ExitCode; Out = $out.Result; Err = $err.Result }
+}
+
 $keyFile = Join-Path $repo "release\$Operator\log_key.json"
 if (-not (Test-Path $keyFile)) { throw "no public log key at $keyFile" }
 $keyText = (Get-Content -Raw $keyFile).Trim()
@@ -104,7 +123,7 @@ if (-not $ascii.Contains($jwk.x)) {
 }
 
 Write-Host '- asking the binary itself'
-$ep = & $bin invoke endpoints '{}' | ConvertFrom-Json
+$ep = (Invoke-Built $bin @('invoke', 'endpoints', '{}')).Out | ConvertFrom-Json
 Write-Host "  operator: $($ep.operator)"
 if ($ep.operator -ne $base) { throw "the binary reports $($ep.operator), not $base" }
 
@@ -123,7 +142,8 @@ if ($UiTest) {
 } else {
 Write-Host '- checking the test-only surface is not in it'
 foreach ($cmd in 'perform_reads', 'send_published_report', 'llm_translate') {
-    $answer = & $bin invoke $cmd '{}' 2>&1 | Out-String
+    $r = Invoke-Built $bin @('invoke', $cmd, '{}')
+    $answer = $r.Out + $r.Err
     if ($answer -notmatch 'is not in this build') {
         throw "$bin answers $cmd - it was built with the uitest feature and must not be released"
     }
@@ -131,8 +151,9 @@ foreach ($cmd in 'perform_reads', 'send_published_report', 'llm_translate') {
 }
 
 Write-Host '- verifying the compiled key against the operator'
-$refresh = & $bin invoke refresh_index (@{ base = $base } | ConvertTo-Json -Compress)
-if ($LASTEXITCODE -ne 0 -or $refresh -notmatch '"entries"') {
+$r = Invoke-Built $bin @('invoke', 'refresh_index', (@{ base = $base } | ConvertTo-Json -Compress))
+$refresh = $r.Out + $r.Err
+if ($r.Code -ne 0 -or $refresh -notmatch '"entries"') {
     throw "the directory did not verify with the compiled key: $refresh"
 }
 Write-Host "  $refresh"
@@ -142,10 +163,17 @@ New-Item -ItemType Directory -Force $InstallDir | Out-Null
 # or the next `-UiTest` quietly replaces what the desktop entry starts.
 $dest = Join-Path $InstallDir $(if ($UiTest) { 'podshl-client-uitest.exe' } else { 'podshl-client.exe' })
 Copy-Item $bin $dest -Force
-$installedOp = (& $dest invoke endpoints '{}' | ConvertFrom-Json).operator
+$installedOp = ((Invoke-Built $dest @('invoke', 'endpoints', '{}')).Out | ConvertFrom-Json).operator
 if ($installedOp -ne $base) { throw "installed client reports $installedOp, not $base" }
 
 Write-Host "built and installed $dest for $base"
+
+# **Not `podshl-repairs`, on Windows, for now.** The record of local fixes on
+# its own is offered on Linux, Omarchy first, where one agent is the defined
+# one and its hooks can be walked end to end. Windows has no such default, and
+# the standalone record there comes later and as a whole rather than half-way.
+# The build still writes `podshl-repairs.exe` (the code and its cases stay);
+# it is not installed.
 if (($env:PATH -split ';') -notcontains $InstallDir) {
     Write-Host "note: $InstallDir is not on PATH, so `podshl-client` still resolves elsewhere (or nowhere)"
 }

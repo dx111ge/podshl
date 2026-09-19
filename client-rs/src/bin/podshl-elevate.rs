@@ -72,7 +72,11 @@ mod win {
 
     fn open(name: &str, access: u32) -> Result<(Handle, Handle), i32> {
         unsafe {
-            let scm = Handle(OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT));
+            let scm = Handle(OpenSCManagerW(
+                std::ptr::null(),
+                std::ptr::null(),
+                SC_MANAGER_CONNECT,
+            ));
             if scm.0.is_null() {
                 return Err(code_for(GetLastError()));
             }
@@ -88,9 +92,13 @@ mod win {
         unsafe {
             let mut s: SERVICE_STATUS_PROCESS = std::mem::zeroed();
             let mut needed = 0u32;
-            (QueryServiceStatusEx(svc.0, SC_STATUS_PROCESS_INFO, &mut s as *mut _ as *mut u8,
-                                  std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32,
-                                  &mut needed) != 0)
+            (QueryServiceStatusEx(
+                svc.0,
+                SC_STATUS_PROCESS_INFO,
+                &mut s as *mut _ as *mut u8,
+                std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32,
+                &mut needed,
+            ) != 0)
                 .then_some(s.dwCurrentState)
         }
     }
@@ -128,7 +136,11 @@ mod win {
                 return code_for(GetLastError());
             }
         }
-        if wait_for(&svc, SERVICE_RUNNING) { exit::DONE } else { exit::TIMED_OUT }
+        if wait_for(&svc, SERVICE_RUNNING) {
+            exit::DONE
+        } else {
+            exit::TIMED_OUT
+        }
     }
 
     pub fn set_service_start(name: &str, start: &str) -> i32 {
@@ -156,10 +168,19 @@ mod win {
             {
                 return exit::START_TYPE_NOT_OURS;
             }
-            if ChangeServiceConfigW(svc.0, SERVICE_NO_CHANGE, wanted, SERVICE_NO_CHANGE,
-                                    std::ptr::null(), std::ptr::null(), std::ptr::null_mut(),
-                                    std::ptr::null(), std::ptr::null(), std::ptr::null(),
-                                    std::ptr::null()) == 0
+            if ChangeServiceConfigW(
+                svc.0,
+                SERVICE_NO_CHANGE,
+                wanted,
+                SERVICE_NO_CHANGE,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+            ) == 0
             {
                 return code_for(GetLastError());
             }
@@ -170,8 +191,13 @@ mod win {
     pub fn set_machine_env(name: &str, value: &str) -> i32 {
         unsafe {
             let mut key = std::ptr::null_mut();
-            let opened = RegOpenKeyExW(HKEY_LOCAL_MACHINE, wide(ENV_KEY).as_ptr(), 0,
-                                       KEY_QUERY_VALUE | KEY_SET_VALUE, &mut key);
+            let opened = RegOpenKeyExW(
+                HKEY_LOCAL_MACHINE,
+                wide(ENV_KEY).as_ptr(),
+                0,
+                KEY_QUERY_VALUE | KEY_SET_VALUE,
+                &mut key,
+            );
             if opened != 0 {
                 return code_for(opened);
             }
@@ -186,15 +212,27 @@ mod win {
                 // one it expands.
                 let mut kind = 0u32;
                 let mut len = 0u32;
-                if RegQueryValueExW(key, n.as_ptr(), std::ptr::null(), &mut kind,
-                                    std::ptr::null_mut(), &mut len) != 0
+                if RegQueryValueExW(
+                    key,
+                    n.as_ptr(),
+                    std::ptr::null(),
+                    &mut kind,
+                    std::ptr::null_mut(),
+                    &mut len,
+                ) != 0
                     || (kind != REG_SZ && kind != REG_EXPAND_SZ)
                 {
                     kind = REG_SZ;
                 }
                 let data = wide(value);
-                RegSetValueExW(key, n.as_ptr(), 0, kind, data.as_ptr() as *const u8,
-                               (data.len() * 2) as u32)
+                RegSetValueExW(
+                    key,
+                    n.as_ptr(),
+                    0,
+                    kind,
+                    data.as_ptr() as *const u8,
+                    (data.len() * 2) as u32,
+                )
             };
             RegCloseKey(key);
             if result != 0 {
@@ -203,8 +241,15 @@ mod win {
             // Programs started from now on see it; running ones are told.
             let env = wide("Environment");
             let mut _r = 0usize;
-            SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, env.as_ptr() as LPARAM,
-                                SMTO_ABORTIFHUNG, 2000, &mut _r);
+            SendMessageTimeoutW(
+                HWND_BROADCAST,
+                WM_SETTINGCHANGE,
+                0,
+                env.as_ptr() as LPARAM,
+                SMTO_ABORTIFHUNG,
+                2000,
+                &mut _r,
+            );
         }
         exit::DONE
     }

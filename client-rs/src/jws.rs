@@ -20,7 +20,9 @@ pub fn b64u(data: &[u8]) -> String {
 }
 
 fn b64u_decode(s: &str) -> Result<Vec<u8>, String> {
-    URL_SAFE_NO_PAD.decode(s).map_err(|e| format!("base64url: {e}"))
+    URL_SAFE_NO_PAD
+        .decode(s)
+        .map_err(|e| format!("base64url: {e}"))
 }
 
 pub fn key_from_jwk(jwk: &Value) -> Result<VerifyingKey, String> {
@@ -29,9 +31,15 @@ pub fn key_from_jwk(jwk: &Value) -> Result<VerifyingKey, String> {
     {
         return Err("unsupported JWK: expected OKP/Ed25519".into());
     }
-    let x = jwk.get("x").and_then(|v| v.as_str()).ok_or("JWK has no x")?;
+    let x = jwk
+        .get("x")
+        .and_then(|v| v.as_str())
+        .ok_or("JWK has no x")?;
     let raw = b64u_decode(x)?;
-    let bytes: [u8; 32] = raw.as_slice().try_into().map_err(|_| "JWK x is not 32 bytes")?;
+    let bytes: [u8; 32] = raw
+        .as_slice()
+        .try_into()
+        .map_err(|_| "JWK x is not 32 bytes")?;
     let key = VerifyingKey::from_bytes(&bytes).map_err(|e| format!("bad public key: {e}"))?;
     // A small-order point is a valid encoding and a worthless key: signatures
     // under it can be produced without any secret, for many messages at once.
@@ -40,7 +48,10 @@ pub fn key_from_jwk(jwk: &Value) -> Result<VerifyingKey, String> {
     // with. Refused here, where it is, the refusal names what is actually
     // wrong: the key offered as the vendor's is not a key.
     if key.is_weak() {
-        return Err("the offered public key has small order — it is not a key anybody holds a secret for".into());
+        return Err(
+            "the offered public key has small order — it is not a key anybody holds a secret for"
+                .into(),
+        );
     }
     Ok(key)
 }
@@ -48,18 +59,27 @@ pub fn key_from_jwk(jwk: &Value) -> Result<VerifyingKey, String> {
 /// Verify a detached signature over `payload`, canonicalised per RFC 8785.
 pub fn verify_detached(jwk: &Value, payload: &Value, sig: &Value) -> Result<Verified, String> {
     let key = key_from_jwk(jwk)?;
-    let protected_b64 = sig.get("protected").and_then(|v| v.as_str()).ok_or("no protected header")?;
-    let signature_b64 = sig.get("signature").and_then(|v| v.as_str()).ok_or("no signature")?;
+    let protected_b64 = sig
+        .get("protected")
+        .and_then(|v| v.as_str())
+        .ok_or("no protected header")?;
+    let signature_b64 = sig
+        .get("signature")
+        .and_then(|v| v.as_str())
+        .ok_or("no signature")?;
 
-    let protected: Value =
-        serde_json::from_slice(&b64u_decode(protected_b64)?).map_err(|e| format!("protected: {e}"))?;
+    let protected: Value = serde_json::from_slice(&b64u_decode(protected_b64)?)
+        .map_err(|e| format!("protected: {e}"))?;
     if protected.get("alg").and_then(|v| v.as_str()) != Some("EdDSA") {
         return Err("unsupported alg — only EdDSA is accepted".into());
     }
 
     let signing_input = format!("{}.{}", protected_b64, b64u(&jcs::canonicalize(payload)?));
     let raw = b64u_decode(signature_b64)?;
-    let sig_bytes: [u8; 64] = raw.as_slice().try_into().map_err(|_| "signature is not 64 bytes")?;
+    let sig_bytes: [u8; 64] = raw
+        .as_slice()
+        .try_into()
+        .map_err(|_| "signature is not 64 bytes")?;
 
     // verify_strict rejects small-order public keys; the permissive variant is
     // not appropriate for a trust boundary.
@@ -91,7 +111,10 @@ mod tests {
         let (jwk, body, sig) = fixture();
         let mut tampered = body;
         tampered["name"] = Value::String("EVIL Corp".into());
-        assert!(verify_detached(&jwk, &tampered, &sig).is_err(), "tampered card accepted");
+        assert!(
+            verify_detached(&jwk, &tampered, &sig).is_err(),
+            "tampered card accepted"
+        );
     }
 
     /// D6: a card carrying no signature at all is refused as untrusted. It is
@@ -162,10 +185,17 @@ mod tests {
         }
         order_two[31] = 0x7f;
         let order_four = [0u8; 32];
-        for (name, raw) in [("identity", identity), ("order 2", order_two), ("order 4", order_four)] {
+        for (name, raw) in [
+            ("identity", identity),
+            ("order 2", order_two),
+            ("order 4", order_four),
+        ] {
             let jwk = json!({"kty": "OKP", "crv": "Ed25519", "x": b64u(&raw)});
             let err = verify_detached(&jwk, &body, &sig).unwrap_err();
-            assert!(err.contains("small order"), "{name}: refused for the wrong reason: {err}");
+            assert!(
+                err.contains("small order"),
+                "{name}: refused for the wrong reason: {err}"
+            );
         }
         // And a real key is not caught by it, or this is an outage.
         let (jwk, body, sig) = fixture();

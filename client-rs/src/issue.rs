@@ -47,16 +47,22 @@ fn table(rows: &[(String, String)], left: &str, right: &str, out: &mut String) {
     out.push('\n');
 }
 
+/// Fact name and its cell, in the order the table shows them.
+type Rows = Vec<(String, String)>;
+
 /// Split the facts into what the machine read and what the person answered.
-fn split(facts: &Map<String, Value>, stated: &[String]) -> (Vec<(String, String)>, Vec<(String, String)>) {
+fn split(facts: &Map<String, Value>, stated: &[String]) -> (Rows, Rows) {
     let (mut read, mut said) = (Vec::new(), Vec::new());
     for (k, v) in facts {
         let row = (k.clone(), cell(v));
-        if stated.iter().any(|s| s == k) { said.push(row) } else { read.push(row) }
+        if stated.iter().any(|s| s == k) {
+            said.push(row)
+        } else {
+            read.push(row)
+        }
     }
     (read, said)
 }
-
 
 /// Version numbers an answer states that this machine did not report.
 ///
@@ -103,7 +109,9 @@ pub fn unstated_versions(answer: &str, facts: &Value, stated: &[String]) -> Vec<
     for tok in version_tokens(answer) {
         // A number the machine did report, or a prefix of one — `610` against
         // `610.57` is the same version spoken coarsely, not a different claim.
-        if known.iter().any(|k| k == &tok || k.starts_with(&format!("{tok}.")) || tok.starts_with(&format!("{k}."))) {
+        if known.iter().any(|k| {
+            k == &tok || k.starts_with(&format!("{tok}.")) || tok.starts_with(&format!("{k}."))
+        }) {
             continue;
         }
         if !out.contains(&tok) {
@@ -222,8 +230,16 @@ pub fn build(
                  this machine did not report {}. That does not make the answer \
                  wrong — it may be about a version to move *to* — but nothing \
                  here measured it.\n\n",
-                invented.iter().map(|v| format!("`{v}`")).collect::<Vec<_>>().join(", "),
-                if invented.len() == 1 { "It appears" } else { "They appear" },
+                invented
+                    .iter()
+                    .map(|v| format!("`{v}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if invented.len() == 1 {
+                    "It appears"
+                } else {
+                    "They appear"
+                },
                 if invented.len() == 1 { "it" } else { "them" },
             ));
         }
@@ -295,25 +311,45 @@ mod tests {
         );
         let md = v["markdown"].as_str().unwrap();
         for leak in ["jdoe", "192.168.0.26", "ghp_abcdefghij"] {
-            assert!(!md.contains(leak),
-                    "{leak} survived into text meant for a public issue tracker:\n{md}");
+            assert!(
+                !md.contains(leak),
+                "{leak} survived into text meant for a public issue tracker:\n{md}"
+            );
         }
-        assert!(!v["replaced"].as_object().unwrap().is_empty(),
-                "things were replaced and the panel is not told, so it cannot say so");
+        assert!(
+            !v["replaced"].as_object().unwrap().is_empty(),
+            "things were replaced and the panel is not told, so it cannot say so"
+        );
     }
 
     /// A maintainer must be able to tell a measurement from something typed,
     /// because only one of them is evidence about their rule.
     #[test]
     fn measured_and_supplied_are_two_sections() {
-        let v = build("s", "", &facts(), &["engram.download".into()],
-                      "finding", "", false, &[], false);
+        let v = build(
+            "s",
+            "",
+            &facts(),
+            &["engram.download".into()],
+            "finding",
+            "",
+            false,
+            &[],
+            false,
+        );
         let md = v["markdown"].as_str().unwrap();
-        let read = md.find("What this machine reports").expect("no readings section");
+        let read = md
+            .find("What this machine reports")
+            .expect("no readings section");
         let said = md.find("What I answered").expect("no answers section");
-        let dl = md.find("engram.download").expect("the answered fact is missing");
+        let dl = md
+            .find("engram.download")
+            .expect("the answered fact is missing");
         let arch = md.find("os.arch").expect("the read fact is missing");
-        assert!(read < arch && arch < said, "a measured fact is under the answers");
+        assert!(
+            read < arch && arch < said,
+            "a measured fact is under the answers"
+        );
         assert!(said < dl, "a supplied fact is under the readings");
     }
 
@@ -321,28 +357,69 @@ mod tests {
     /// not.
     #[test]
     fn a_model_answer_is_marked_before_it_is_quoted() {
-        let v = build("s", "", &facts(), &[], "finding",
-                      "Revert to driver 610.86.", true, &[], false);
+        let v = build(
+            "s",
+            "",
+            &facts(),
+            &[],
+            "finding",
+            "Revert to driver 610.86.",
+            true,
+            &[],
+            false,
+        );
         let md = v["markdown"].as_str().unwrap();
-        let mark = md.find("Unchecked").expect("a model's answer is not marked as one");
+        let mark = md
+            .find("Unchecked")
+            .expect("a model's answer is not marked as one");
         let text = md.find("Revert to driver").expect("the answer is missing");
         assert!(mark < text, "the mark comes after the answer it qualifies");
 
-        let published = build("s", "", &facts(), &[], "finding",
-                              "Revert to driver 610.86.", false, &[], false);
-        assert!(!published["markdown"].as_str().unwrap().contains("Unchecked"),
-                "a project's own answer was marked as a guess");
+        let published = build(
+            "s",
+            "",
+            &facts(),
+            &[],
+            "finding",
+            "Revert to driver 610.86.",
+            false,
+            &[],
+            false,
+        );
+        assert!(
+            !published["markdown"]
+                .as_str()
+                .unwrap()
+                .contains("Unchecked"),
+            "a project's own answer was marked as a guess"
+        );
     }
 
     /// A pipe or a newline in a value ends the row it is in and takes the rest
     /// of the value out of the document without saying so.
     #[test]
     fn a_value_cannot_break_out_of_its_row() {
-        let v = build("s", "", &json!({"k": "a | b\nc"}), &[], "finding", "", false, &[], false);
+        let v = build(
+            "s",
+            "",
+            &json!({"k": "a | b\nc"}),
+            &[],
+            "finding",
+            "",
+            false,
+            &[],
+            false,
+        );
         let md = v["markdown"].as_str().unwrap();
-        let row = md.lines().find(|l| l.contains("`k`")).expect("the row is gone");
+        let row = md
+            .lines()
+            .find(|l| l.contains("`k`"))
+            .expect("the row is gone");
         assert!(row.contains("\\|"), "an unescaped pipe: {row}");
-        assert!(row.contains('c'), "the value was truncated at the newline: {row}");
+        assert!(
+            row.contains('c'),
+            "the value was truncated at the newline: {row}"
+        );
     }
 
     /// The measured failure, from a released client against a local model: the
@@ -352,13 +429,18 @@ mod tests {
     fn a_version_the_machine_never_reported_is_named() {
         let facts = json!({"gpu.driver_version": "610.57", "os.name": "windows"});
         let got = unstated_versions("Revert to driver 610.86 and reboot.", &facts, &[]);
-        assert_eq!(got, vec!["610.86".to_string()],
-                   "the invented version was not caught");
+        assert_eq!(
+            got,
+            vec!["610.86".to_string()],
+            "the invented version was not caught"
+        );
 
         // The one that was reported is not named, spoken coarsely or in full.
         assert!(unstated_versions("You are on 610.57, which is fine.", &facts, &[]).is_empty());
-        assert!(unstated_versions("The 610 series is affected.", &facts, &[]).is_empty(),
-                "a coarser form of the same version was treated as a different claim");
+        assert!(
+            unstated_versions("The 610 series is affected.", &facts, &[]).is_empty(),
+            "a coarser form of the same version was treated as a different claim"
+        );
     }
 
     /// Where nothing version-shaped was read, there is nothing to compare
@@ -368,8 +450,10 @@ mod tests {
     #[test]
     fn it_says_nothing_when_there_is_nothing_to_compare_against() {
         let facts = json!({"os.name": "linux", "session.type": "wayland"});
-        assert!(unstated_versions("The actual fix is driver 555 or newer.", &facts, &[]).is_empty(),
-                "fired with no reading to compare against");
+        assert!(
+            unstated_versions("The actual fix is driver 555 or newer.", &facts, &[]).is_empty(),
+            "fired with no reading to compare against"
+        );
     }
 
     /// A bare integer is a port, a count, a year. Treating one as a version
@@ -377,26 +461,47 @@ mod tests {
     #[test]
     fn a_bare_integer_is_not_a_version() {
         let facts = json!({"gpu.driver_version": "610.57"});
-        for prose in ["Open http://localhost:3030 and log in.",
-                      "There are 47 tools across 8 clusters.",
-                      "Released in 2026."] {
-            assert!(unstated_versions(prose, &facts, &[]).is_empty(),
-                    "a number in {prose:?} was read as a version");
+        for prose in [
+            "Open http://localhost:3030 and log in.",
+            "There are 47 tools across 8 clusters.",
+            "Released in 2026.",
+        ] {
+            assert!(
+                unstated_versions(prose, &facts, &[]).is_empty(),
+                "a number in {prose:?} was read as a version"
+            );
         }
     }
 
     /// And it has to reach the document, above the answer rather than below it.
     #[test]
     fn the_mark_is_in_the_text_before_the_answer_it_qualifies() {
-        let v = build("s", "", &json!({"gpu.driver_version": "610.57"}), &[],
-                      "finding", "Revert to driver 610.86.", true, &[], false);
+        let v = build(
+            "s",
+            "",
+            &json!({"gpu.driver_version": "610.57"}),
+            &[],
+            "finding",
+            "Revert to driver 610.86.",
+            true,
+            &[],
+            false,
+        );
         let md = v["markdown"].as_str().unwrap();
-        let mark = md.find("Not from this machine").expect("the invented version is not marked");
+        let mark = md
+            .find("Not from this machine")
+            .expect("the invented version is not marked");
         let text = md.find("Revert to driver").expect("the answer is missing");
         assert!(mark < text, "the mark comes after the number it qualifies");
-        assert!(md.contains("610.86"), "the number itself is not named in the mark");
-        assert_eq!(v["unstated_versions"], json!(["610.86"]),
-                   "the panel is not told, so it cannot say it before anybody scrolls");
+        assert!(
+            md.contains("610.86"),
+            "the number itself is not named in the mark"
+        );
+        assert_eq!(
+            v["unstated_versions"],
+            json!(["610.86"]),
+            "the panel is not told, so it cannot say it before anybody scrolls"
+        );
     }
 
     #[test]
@@ -404,8 +509,10 @@ mod tests {
         let on = build("s", "", &facts(), &[], "finding", "", false, &[], true);
         let off = build("s", "", &facts(), &[], "finding", "", false, &[], false);
         assert!(on["markdown"].as_str().unwrap().contains("PODSHL"));
-        assert!(!off["markdown"].as_str().unwrap().contains("PODSHL"),
-                "the footer stayed after it was switched off");
+        assert!(
+            !off["markdown"].as_str().unwrap().contains("PODSHL"),
+            "the footer stayed after it was switched off"
+        );
     }
 
     /// The panel's checkbox does not call this twice; it takes the footer off
@@ -419,9 +526,15 @@ mod tests {
         let off = build("s", "", &facts(), &[], "finding", "", false, &[], false);
         let with = on["markdown"].as_str().unwrap();
         let without = off["markdown"].as_str().unwrap();
-        assert_eq!(with, format!("{without}{FOOTER}"),
-                   "switching the footer off is not the same as removing it from the end");
-        assert_eq!(on["footer"].as_str().unwrap(), FOOTER,
-                   "the panel is handed the words, so it never has to recognise them");
+        assert_eq!(
+            with,
+            format!("{without}{FOOTER}"),
+            "switching the footer off is not the same as removing it from the end"
+        );
+        assert_eq!(
+            on["footer"].as_str().unwrap(),
+            FOOTER,
+            "the panel is handed the words, so it never has to recognise them"
+        );
     }
 }

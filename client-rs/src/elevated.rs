@@ -34,26 +34,70 @@ pub const ENV_VALUE: &str = r"[\w.:\\/+-]{0,200}";
 /// command line carries them.
 pub const ACTIONS: &[(&str, &[(&str, &str)])] = &[
     ("restart_service", &[("service", SERVICE)]),
-    ("set_service_start", &[("service", SERVICE), ("start", START)]),
-    ("set_machine_env", &[("name", ENV_NAME), ("value", ENV_VALUE)]),
+    (
+        "set_service_start",
+        &[("service", SERVICE), ("start", START)],
+    ),
+    (
+        "set_machine_env",
+        &[("name", ENV_NAME), ("value", ENV_VALUE)],
+    ),
 ];
 
 /// Services these examples will not touch: stopping or disabling them stops
 /// Windows, its updates or its defences. Case does not matter to Windows, so
 /// it does not matter here.
 pub const PROTECTED_SERVICES: &[&str] = &[
-    "BFE", "BrokerInfrastructure", "CryptSvc", "DcomLaunch", "EventLog", "gpsvc",
-    "LSM", "mpssvc", "PlugPlay", "Power", "ProfSvc", "RpcEptMapper", "RpcSs",
-    "SamSs", "Schedule", "SecurityHealthService", "SENS", "SystemEventsBroker",
-    "TrustedInstaller", "WdNisSvc", "WinDefend", "Winmgmt", "wscsvc", "wuauserv",
+    "BFE",
+    "BrokerInfrastructure",
+    "CryptSvc",
+    "DcomLaunch",
+    "EventLog",
+    "gpsvc",
+    "LSM",
+    "mpssvc",
+    "PlugPlay",
+    "Power",
+    "ProfSvc",
+    "RpcEptMapper",
+    "RpcSs",
+    "SamSs",
+    "Schedule",
+    "SecurityHealthService",
+    "SENS",
+    "SystemEventsBroker",
+    "TrustedInstaller",
+    "WdNisSvc",
+    "WinDefend",
+    "Winmgmt",
+    "wscsvc",
+    "wuauserv",
 ];
 
 /// Variables Windows and every program read to find themselves.
 pub const PROTECTED_ENV: &[&str] = &[
-    "ALLUSERSPROFILE", "APPDATA", "COMPUTERNAME", "COMSPEC", "DRIVERDATA",
-    "NUMBER_OF_PROCESSORS", "OS", "PATH", "PATHEXT", "PROCESSOR_ARCHITECTURE",
-    "PROGRAMDATA", "PROGRAMFILES", "PROGRAMW6432", "PSMODULEPATH", "PUBLIC",
-    "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "TMP", "USERNAME", "USERPROFILE", "WINDIR",
+    "ALLUSERSPROFILE",
+    "APPDATA",
+    "COMPUTERNAME",
+    "COMSPEC",
+    "DRIVERDATA",
+    "NUMBER_OF_PROCESSORS",
+    "OS",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMW6432",
+    "PSMODULEPATH",
+    "PUBLIC",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERNAME",
+    "USERPROFILE",
+    "WINDIR",
 ];
 
 /// Why a request is refused. The helper exits with the code, the client says
@@ -70,13 +114,18 @@ pub fn is_elevated(id: &str) -> bool {
 }
 
 fn full(pattern: &str, value: &str) -> bool {
-    regex::Regex::new(&format!("^(?:{pattern})$")).map(|re| re.is_match(value)).unwrap_or(false)
+    regex::Regex::new(&format!("^(?:{pattern})$"))
+        .map(|re| re.is_match(value))
+        .unwrap_or(false)
 }
 
 /// The same check on both sides of the prompt: the client before asking, the
 /// helper before doing.
 pub fn check(id: &str, params: &BTreeMap<String, String>) -> Result<(), Refusal> {
-    let (_, declared) = ACTIONS.iter().find(|(a, _)| *a == id).ok_or(Refusal::Unknown)?;
+    let (_, declared) = ACTIONS
+        .iter()
+        .find(|(a, _)| *a == id)
+        .ok_or(Refusal::Unknown)?;
     if params.len() != declared.len() {
         return Err(Refusal::BadParams);
     }
@@ -104,7 +153,10 @@ pub fn to_args(id: &str, params: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = vec![id.to_string()];
     if let Some((_, declared)) = ACTIONS.iter().find(|(a, _)| *a == id) {
         for (name, _) in declared.iter() {
-            out.push(format!("{name}={}", params.get(*name).map(String::as_str).unwrap_or("")));
+            out.push(format!(
+                "{name}={}",
+                params.get(*name).map(String::as_str).unwrap_or("")
+            ));
         }
     }
     out
@@ -146,7 +198,10 @@ pub fn wide(s: &str) -> Vec<u16> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum State {
     /// A service: whether it runs, and how it starts.
-    Service { running: bool, start: String },
+    Service {
+        running: bool,
+        start: String,
+    },
     /// A machine variable, or `None` where it is not set.
     Env(Option<String>),
     Missing,
@@ -187,7 +242,11 @@ fn read_service(name: &str) -> State {
         if scm.is_null() {
             return State::Missing;
         }
-        let svc = OpenServiceW(scm, wide(name).as_ptr(), SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG);
+        let svc = OpenServiceW(
+            scm,
+            wide(name).as_ptr(),
+            SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG,
+        );
         if svc.is_null() {
             CloseServiceHandle(scm);
             return State::Missing;
@@ -224,21 +283,40 @@ fn read_env(name: &str) -> State {
     use windows_sys::Win32::System::Registry::*;
     unsafe {
         let mut key = std::ptr::null_mut();
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, wide(ENV_KEY).as_ptr(), 0, KEY_READ, &mut key) != 0 {
+        if RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            wide(ENV_KEY).as_ptr(),
+            0,
+            KEY_READ,
+            &mut key,
+        ) != 0
+        {
             return State::Missing;
         }
         let mut kind = 0u32;
         let mut len = 0u32;
         let n = wide(name);
-        let first = RegQueryValueExW(key, n.as_ptr(), std::ptr::null(), &mut kind,
-                                     std::ptr::null_mut(), &mut len);
+        let first = RegQueryValueExW(
+            key,
+            n.as_ptr(),
+            std::ptr::null(),
+            &mut kind,
+            std::ptr::null_mut(),
+            &mut len,
+        );
         let state = if first != 0 {
             State::Env(None)
         } else {
             let mut data = vec![0u16; (len as usize).div_ceil(2) + 1];
             let mut size = (data.len() * 2) as u32;
-            if RegQueryValueExW(key, n.as_ptr(), std::ptr::null(), &mut kind,
-                                data.as_mut_ptr() as *mut u8, &mut size) == 0
+            if RegQueryValueExW(
+                key,
+                n.as_ptr(),
+                std::ptr::null(),
+                &mut kind,
+                data.as_mut_ptr() as *mut u8,
+                &mut size,
+            ) == 0
                 && (kind == REG_SZ || kind == REG_EXPAND_SZ)
             {
                 let end = data.iter().position(|&c| c == 0).unwrap_or(data.len());
@@ -257,23 +335,53 @@ mod tests {
     use super::*;
 
     fn p(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
     fn only_the_three_actions_with_their_parameters_pass() {
-        assert_eq!(check("restart_service", &p(&[("service", "Spooler")])), Ok(()));
-        assert_eq!(check("set_service_start", &p(&[("service", "Spooler"), ("start", "demand")])), Ok(()));
-        assert_eq!(check("set_machine_env", &p(&[("name", "OLLAMA_HOST"), ("value", "127.0.0.1:11434")])), Ok(()));
-        assert_eq!(check("set_machine_env", &p(&[("name", "OLLAMA_HOST"), ("value", "")])), Ok(()),
-                   "an empty value is how a variable is removed");
+        assert_eq!(
+            check("restart_service", &p(&[("service", "Spooler")])),
+            Ok(())
+        );
+        assert_eq!(
+            check(
+                "set_service_start",
+                &p(&[("service", "Spooler"), ("start", "demand")])
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            check(
+                "set_machine_env",
+                &p(&[("name", "OLLAMA_HOST"), ("value", "127.0.0.1:11434")])
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            check(
+                "set_machine_env",
+                &p(&[("name", "OLLAMA_HOST"), ("value", "")])
+            ),
+            Ok(()),
+            "an empty value is how a variable is removed"
+        );
 
         assert_eq!(check("run_powershell", &p(&[])), Err(Refusal::Unknown));
         for bad in [
             ("restart_service", p(&[("service", "Spooler & calc")])),
-            ("restart_service", p(&[("service", "Spooler"), ("extra", "1")])),
+            (
+                "restart_service",
+                p(&[("service", "Spooler"), ("extra", "1")]),
+            ),
             ("restart_service", p(&[])),
-            ("set_service_start", p(&[("service", "Spooler"), ("start", "boot")])),
+            (
+                "set_service_start",
+                p(&[("service", "Spooler"), ("start", "boot")]),
+            ),
             ("set_machine_env", p(&[("name", "X"), ("value", "a b")])),
             ("set_machine_env", p(&[("name", "X"), ("value", "a\"b")])),
             ("set_machine_env", p(&[("name", "X"), ("value", "a;b")])),
@@ -286,13 +394,33 @@ mod tests {
     #[test]
     fn what_windows_needs_to_run_is_not_touched() {
         for s in ["RpcSs", "rpcss", "WinDefend", "wuauserv", "EventLog"] {
-            assert_eq!(check("restart_service", &p(&[("service", s)])), Err(Refusal::Protected), "{s}");
-            assert_eq!(check("set_service_start", &p(&[("service", s), ("start", "disabled")])),
-                       Err(Refusal::Protected), "{s}");
+            assert_eq!(
+                check("restart_service", &p(&[("service", s)])),
+                Err(Refusal::Protected),
+                "{s}"
+            );
+            assert_eq!(
+                check(
+                    "set_service_start",
+                    &p(&[("service", s), ("start", "disabled")])
+                ),
+                Err(Refusal::Protected),
+                "{s}"
+            );
         }
-        for n in ["PATH", "Path", "ComSpec", "SystemRoot", "TEMP", "PSModulePath"] {
-            assert_eq!(check("set_machine_env", &p(&[("name", n), ("value", "x")])),
-                       Err(Refusal::Protected), "{n}");
+        for n in [
+            "PATH",
+            "Path",
+            "ComSpec",
+            "SystemRoot",
+            "TEMP",
+            "PSModulePath",
+        ] {
+            assert_eq!(
+                check("set_machine_env", &p(&[("name", n), ("value", "x")])),
+                Err(Refusal::Protected),
+                "{n}"
+            );
         }
     }
 
@@ -300,15 +428,37 @@ mod tests {
     fn the_command_line_says_exactly_the_request_and_nothing_else_passes() {
         let params = p(&[("value", "C:\\ollama\\models"), ("name", "OLLAMA_MODELS")]);
         let args = to_args("set_machine_env", &params);
-        assert_eq!(args, ["set_machine_env", "name=OLLAMA_MODELS", "value=C:\\ollama\\models"]);
-        assert_eq!(from_args(&args), Ok(("set_machine_env".to_string(), params)));
+        assert_eq!(
+            args,
+            [
+                "set_machine_env",
+                "name=OLLAMA_MODELS",
+                "value=C:\\ollama\\models"
+            ]
+        );
+        assert_eq!(
+            from_args(&args),
+            Ok(("set_machine_env".to_string(), params))
+        );
 
         let own = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(from_args(&own(&[])), Err(Refusal::Unknown));
-        assert_eq!(from_args(&own(&["set_machine_env", "name=A", "name=B", "value=x"])),
-                   Err(Refusal::BadParams), "a repeated key was taken");
-        assert_eq!(from_args(&own(&["set_machine_env", "name=A"])), Err(Refusal::BadParams));
-        assert_eq!(from_args(&own(&["set_machine_env", "nameA", "value=x"])), Err(Refusal::BadParams));
-        assert_eq!(from_args(&own(&["restart_service", "service=RpcSs"])), Err(Refusal::Protected));
+        assert_eq!(
+            from_args(&own(&["set_machine_env", "name=A", "name=B", "value=x"])),
+            Err(Refusal::BadParams),
+            "a repeated key was taken"
+        );
+        assert_eq!(
+            from_args(&own(&["set_machine_env", "name=A"])),
+            Err(Refusal::BadParams)
+        );
+        assert_eq!(
+            from_args(&own(&["set_machine_env", "nameA", "value=x"])),
+            Err(Refusal::BadParams)
+        );
+        assert_eq!(
+            from_args(&own(&["restart_service", "service=RpcSs"])),
+            Err(Refusal::Protected)
+        );
     }
 }

@@ -94,7 +94,8 @@ mod tests {
                 let head = if declare {
                     format!("HTTP/1.1 200 OK\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n")
                 } else {
-                    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_string()
+                    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+                        .to_string()
                 };
                 let _ = s.write_all(head.as_bytes());
                 if declare {
@@ -120,12 +121,16 @@ mod tests {
         for declare in [true, false] {
             let url = serve_once(10_000, declare);
             let resp = client().get(&url).send().await.expect("no answer");
-            let e = body_capped(resp, 8_000).await.expect_err("an oversized body was read whole");
+            let e = body_capped(resp, 8_000)
+                .await
+                .expect_err("an oversized body was read whole");
             assert!(crate::msg::is("answer_too_large", &e), "{e}");
 
             let url = serve_once(3_000, declare);
             let resp = client().get(&url).send().await.expect("no answer");
-            let got = body_capped(resp, 8_000).await.expect("a body under the cap was refused");
+            let got = body_capped(resp, 8_000)
+                .await
+                .expect("a body under the cap was refused");
             assert_eq!(got.len(), 3_000);
         }
     }
@@ -138,14 +143,4 @@ mod tests {
         assert_eq!(a, b, "two clients were built");
         assert!(CONNECT_TIMEOUT < TOTAL_TIMEOUT);
     }
-}
-
-/// The operator these tests check themselves against. Loopback by default,
-/// which is the development loop; `PODSHL_SERVER_URL` points them at a real
-/// one — the live operator answers every route they use with a GET, so running
-/// the suite against it reads a genuinely signed index and log rather than one
-/// this machine produced for itself.
-#[cfg(test)]
-pub(crate) fn operator_base() -> String {
-    std::env::var("PODSHL_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1:8725".into())
 }

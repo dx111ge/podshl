@@ -55,7 +55,11 @@ pub fn registered_commands(main_rs: &str) -> Vec<String> {
         .replace('\n', " ")
         .split(',')
         .map(|c| c.trim().to_string())
-        .filter(|c| !c.is_empty() && c.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'))
+        .filter(|c| {
+            !c.is_empty()
+                && c.chars()
+                    .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+        })
         .collect()
 }
 
@@ -72,14 +76,21 @@ mod tests {
             .into_iter()
             .filter(|c| !ui.contains(&format!("\"{c}\"")))
             .collect();
-        assert!(dead.is_empty(), "registered but never called: {}", dead.join(", "));
+        assert!(
+            dead.is_empty(),
+            "registered but never called: {}",
+            dead.join(", ")
+        );
     }
 
     /// W2: the applicability gate exists and something calls it. A gate that is
     /// implemented and never consulted is a comment.
     #[test]
     fn the_applicability_gate_is_actually_applied() {
-        assert!(ui_source().contains("\"applicability\""), "the check exists but nothing calls it");
+        assert!(
+            ui_source().contains("\"applicability\""),
+            "the check exists but nothing calls it"
+        );
     }
 
     /// T1: declining the report returns before anything is sent. The refusal
@@ -93,8 +104,12 @@ mod tests {
             .split("async function offerReport")
             .nth(1)
             .expect("the report offer is gone");
-        let refusal = offer.find("if(!await ask(el))").expect("the report is sent without asking");
-        let send = offer.find("\"send_report\"").expect("nothing sends the report");
+        let refusal = offer
+            .find("if(!await ask(el))")
+            .expect("the report is sent without asking");
+        let send = offer
+            .find("\"send_report\"")
+            .expect("nothing sends the report");
         assert!(
             refusal < send,
             "the report is sent before the user is asked to allow it"
@@ -112,9 +127,16 @@ mod tests {
     fn a_vendors_standing_is_checked_before_the_button_is_offered() {
         let ui = ui_source();
         let offer = ui.split("async function offerReport").nth(1).unwrap();
-        let standing = offer.find("\"vendor_standing\"").expect("standing is never consulted");
-        let preview = offer.find("\"preview_report\"").expect("nothing previews the report");
-        assert!(standing < preview, "the report is built before the vendor is judged worth it");
+        let standing = offer
+            .find("\"vendor_standing\"")
+            .expect("standing is never consulted");
+        let preview = offer
+            .find("\"preview_report\"")
+            .expect("nothing previews the report");
+        assert!(
+            standing < preview,
+            "the report is built before the vendor is judged worth it"
+        );
     }
 
     /// Contributing to the index is a separate decision and must be asked
@@ -122,11 +144,21 @@ mod tests {
     #[test]
     fn contributing_to_the_index_is_asked_separately() {
         let ui = ui_source();
-        let f = ui.split("async function offerContribution").nth(1).expect("no contribution flow");
+        let f = ui
+            .split("async function offerContribution")
+            .nth(1)
+            .expect("no contribution flow");
         assert!(f.contains("dryRun:true"), "the preview is not a dry run");
-        let ask = f.find("await ask(el)").expect("contributing is never asked about");
-        let real = f.find("dryRun:false").expect("nothing actually contributes");
-        assert!(ask < real, "the contribution is sent before the user agrees to it");
+        let ask = f
+            .find("await ask(el)")
+            .expect("contributing is never asked about");
+        let real = f
+            .find("dryRun:false")
+            .expect("nothing actually contributes");
+        assert!(
+            ask < real,
+            "the contribution is sent before the user agrees to it"
+        );
     }
 
     /// ND4: the vendor path loops on `need` instead of answering once, and a
@@ -138,7 +170,10 @@ mod tests {
             ui.contains("for(let round=1; rem.need && rem.need.length; round++)"),
             "the vendor path is single-shot again"
         );
-        assert!(ui.contains("\".declined\""), "a skipped question is not recorded as declined");
+        assert!(
+            ui.contains("\".declined\""),
+            "a skipped question is not recorded as declined"
+        );
     }
 
     /// ND7: a question left empty is recorded as declined, on every panel that
@@ -161,9 +196,11 @@ mod tests {
         // Every panel that collects answers into `FACTS` also records the
         // absence of one. Found by class, so a fourth panel is covered when it
         // is written rather than when it breaks.
-        for (class, what) in [(".ai", "the armed question"),
-                              (".nq", "the need round"),
-                              (".rq", "the hand-off")] {
+        for (class, what) in [
+            (".ai", "the armed question"),
+            (".nq", "the need round"),
+            (".rq", "the hand-off"),
+        ] {
             let mut saw = false;
             for (at, _) in ui.match_indices(&format!("querySelectorAll(\"{class}\")")) {
                 let rest = &ui[at..];
@@ -202,9 +239,11 @@ mod tests {
                     || body.contains(".declined`]=true")
                     || body.contains("bad=true")
                     || after.contains("Flow.readAnswers(");
-                assert!(records,
-                        "{what} keeps an answer and forgets a skip, so the endpoint is \
-                         never told it was asked something nobody can answer: {body}");
+                assert!(
+                    records,
+                    "{what} keeps an answer and forgets a skip, so the endpoint is \
+                         never told it was asked something nobody can answer: {body}"
+                );
             }
             assert!(saw, "nothing collects answers from {class} any more");
         }
@@ -244,15 +283,23 @@ mod tests {
             .expect("nothing checks whether a round asks for anything new");
         // Before the panel is built, not after: the point is that the person is
         // never shown the question a fourth time.
-        let panel = loop_body.find("const el=add(").expect("the need panel is gone");
-        assert!(guard < panel,
-                "the loop guard runs after the question has already been put to the person");
-        assert!(loop_body[guard..panel].contains("break;"),
-                "a round that cannot make progress does not end the loop");
+        let panel = loop_body
+            .find("const el=add(")
+            .expect("the need panel is gone");
+        assert!(
+            guard < panel,
+            "the loop guard runs after the question has already been put to the person"
+        );
+        assert!(
+            loop_body[guard..panel].contains("break;"),
+            "a round that cannot make progress does not end the loop"
+        );
         // Both halves of "already": answered, and answered with "I don't know".
         let check = &loop_body[guard..panel];
-        assert!(check.contains("p.id in FACTS") && check.contains(".declined\") in FACTS"),
-                "a round is judged new by only one of the two ways it can be old: {check}");
+        assert!(
+            check.contains("p.id in FACTS") && check.contains(".declined\") in FACTS"),
+            "a round is judged new by only one of the two ways it can be old: {check}"
+        );
     }
 
     /// ND5: there is a way out of the loop as well as a way past one question.
@@ -274,7 +321,10 @@ mod tests {
             ui.contains("if((triaged.lang_served||\"en\") !== LANG)"),
             "the translation gate is gone"
         );
-        assert!(ui.contains(".bi-o{display:none}"), "the original variant is not rendered alongside");
+        assert!(
+            ui.contains(".bi-o{display:none}"),
+            "the original variant is not rendered alongside"
+        );
     }
 
     /// H7: the client refuses a reply channel it cannot honour, in the command
@@ -335,17 +385,26 @@ mod tests {
                 continue;
             }
             checked += 1;
-            assert!(block.contains("p.choices.map"),
-                    "a question's options are not exactly the choices published: {block}");
-            assert!(block.contains("<option value=\"\">"),
-                    "a question arrives with an answer already selected, so clicking \
-                     through states a fact the person never chose: {block}");
+            assert!(
+                block.contains("p.choices.map"),
+                "a question's options are not exactly the choices published: {block}"
+            );
+            assert!(
+                block.contains("<option value=\"\">"),
+                "a question arrives with an answer already selected, so clicking \
+                     through states a fact the person never chose: {block}"
+            );
         }
-        assert!(checked >= 4, "only {checked} question selects found - the shape has changed");
+        assert!(
+            checked >= 4,
+            "only {checked} question selects found - the shape has changed"
+        );
 
         // And an unanswered *required* field does not open a case. It could not
         // happen while the first choice was pre-selected, so nothing checked it.
-        let esc = ui.split("if((plan.require||[]).length){").nth(1)
+        let esc = ui
+            .split("if((plan.require||[]).length){")
+            .nth(1)
             .expect("the hand-off no longer asks for what the vendor requires");
         assert!(
             esc.contains("{required:true}"),
@@ -382,16 +441,25 @@ mod tests {
         // the anonymising is a command rather than a repetition of the rules in
         // JavaScript — one implementation, the one `flow::diagnose` uses.
         let snapshots = ui.matches("const sent=await asSent(FACTS);").count();
-        assert!(snapshots >= 2,
-                "only {snapshots} send panels render what is actually sent");
-        assert_eq!(ui.matches("const SHOWN={...FACTS};").count(), 0,
-                   "a send panel still snapshots the raw facts");
-        assert!(ui.contains("\"facts_as_sent\""),
-                "the panel anonymises in the window rather than through the client");
+        assert!(
+            snapshots >= 2,
+            "only {snapshots} send panels render what is actually sent"
+        );
+        assert_eq!(
+            ui.matches("const SHOWN={...FACTS};").count(),
+            0,
+            "a send panel still snapshots the raw facts"
+        );
+        assert!(
+            ui.contains("\"facts_as_sent\""),
+            "the panel anonymises in the window rather than through the client"
+        );
         // And it says what was taken out, as the free-text panel does: a value
         // silently different from what was typed is its own kind of lie.
-        assert!(ui.matches("replacedLine(sent.replaced)").count() >= 2,
-                "a panel shows anonymised values without saying anything was replaced");
+        assert!(
+            ui.matches("replacedLine(sent.replaced)").count() >= 2,
+            "a panel shows anonymised values without saying anything was replaced"
+        );
     }
 
     /// C4b: a person can change their own words before they go.
@@ -405,21 +473,32 @@ mod tests {
     fn a_person_can_change_their_own_words_before_they_go() {
         let ui = ui_source();
         let flow = flow_source();
-        assert!(ui.contains("Flow.editable(obj, TYPED_IDS())"),
-                "nothing decides which values a person may change");
+        assert!(
+            ui.contains("Flow.editable(obj, TYPED_IDS())"),
+            "nothing decides which values a person may change"
+        );
         // Which is the rule, and it lives in `flow.js` now: only what the person
         // supplied. A box over a machine reading would make the report a fiction.
-        assert!(flow.contains("was(k) && typeof values[k] === \"string\""),
-                "a machine reading is editable, which would make the report a fiction");
+        assert!(
+            flow.contains("was(k) && typeof values[k] === \"string\""),
+            "a machine reading is editable, which would make the report a fiction"
+        );
         let writeback = ui.matches("send.querySelectorAll(\"textarea.sv\")").count()
             + ui.matches("tx.querySelectorAll(\"textarea.sv\")").count();
-        assert!(writeback >= 4,
-                "the edits are offered and not read back on both panels ({writeback} sites)");
-        assert_eq!(ui.matches("SHOWN=Flow.applyEdits(SHOWN, edits);").count(), 2,
-                   "a consent panel reads its edit boxes and decides for itself what they mean");
+        assert!(
+            writeback >= 4,
+            "the edits are offered and not read back on both panels ({writeback} sites)"
+        );
+        assert_eq!(
+            ui.matches("SHOWN=Flow.applyEdits(SHOWN, edits);").count(),
+            2,
+            "a consent panel reads its edit boxes and decides for itself what they mean"
+        );
         // Emptied means withdrawn, which is a wire fact and not an empty string.
-        assert!(flow.contains("else { delete out[k]; out[k + \".declined\"] = true; }"),
-                "emptying an answer sends an empty string rather than withdrawing it");
+        assert!(
+            flow.contains("else { delete out[k]; out[k + \".declined\"] = true; }"),
+            "emptying an answer sends an empty string rather than withdrawing it"
+        );
         // And the edit box cannot introduce a fact the panel never showed.
         assert!(flow.contains("if (!(k in out)) continue;"),
                 "an edit for something that was never on screen is applied, so what is sent \n                 is no longer what was shown");
@@ -451,9 +530,11 @@ mod tests {
         // — the binding moves, the property does not. What matters is that it is
         // `sent.facts`: the anonymised object the panel listed.
         let snapshots = ui.matches("SHOWN=sent.facts;").count();
-        assert!(snapshots >= 2,
-                "only {snapshots} send panels snapshot what they show - the vendor path \
-                 and the published path each have one");
+        assert!(
+            snapshots >= 2,
+            "only {snapshots} send panels snapshot what they show - the vendor path \
+                 and the published path each have one"
+        );
 
         // And the calls that carry facts off this device ask the gate for them.
         // Not "read the variable that happens to hold the snapshot": since
@@ -470,41 +551,60 @@ mod tests {
                     continue;
                 }
                 found += 1;
-                assert!(args.contains("facts:CONSENT.factsFor("),
-                        "{command} is sent facts that were never put in front of anybody: {args}");
+                assert!(
+                    args.contains("facts:CONSENT.factsFor("),
+                    "{command} is sent facts that were never put in front of anybody: {args}"
+                );
             }
-            assert!(found > 0, "{command} is never called with facts - has it been renamed?");
+            assert!(
+                found > 0,
+                "{command} is never called with facts - has it been renamed?"
+            );
         }
 
         // The gate refuses rather than inventing, which is the half that makes
         // the above a property instead of a spelling.
-        assert!(flow_source().contains("throw new Error("),
-                "the consent gate hands out facts for a destination nobody agreed to");
+        assert!(
+            flow_source().contains("throw new Error("),
+            "the consent gate hands out facts for a destination nobody agreed to"
+        );
 
         // Nothing is read out of it before something is put in. Each path grants
         // where its panel is and reads afterwards; the other order would be a
         // send looking for consent it has not asked for yet.
         for path in ["runInner", "publishedPath"] {
             let body = function_body(&ui, path);
-            let grant = body.find("CONSENT.grant(")
+            let grant = body
+                .find("CONSENT.grant(")
                 .unwrap_or_else(|| panic!("{path} sends facts and never records a consent"));
-            let asked = body.find("await ask(")
+            let asked = body
+                .find("await ask(")
                 .unwrap_or_else(|| panic!("{path} grants a consent it never asked for"));
-            assert!(asked < grant, "{path} records a consent before asking for it");
+            assert!(
+                asked < grant,
+                "{path} records a consent before asking for it"
+            );
             if let Some(read) = body.find("CONSENT.factsFor(") {
-                assert!(grant < read, "{path} sends before the panel that permits it");
+                assert!(
+                    grant < read,
+                    "{path} sends before the panel that permits it"
+                );
             }
         }
 
         // Agreement belongs to the incident it was given for.
-        assert!(ui.contains("CONSENT.clear();"),
-                "a new question reuses the last one's consent");
+        assert!(
+            ui.contains("CONSENT.clear();"),
+            "a new question reuses the last one's consent"
+        );
 
         // The snapshot grows only where a panel showed the additions and the
         // person answered them, so `SHOWN` means one thing everywhere: what has
         // been put in front of them and agreed to.
-        assert!(ui.contains("Object.assign(SHOWN, FACTS);"),
-                "the need rounds do not fold their answers into what may be sent");
+        assert!(
+            ui.contains("Object.assign(SHOWN, FACTS);"),
+            "the need rounds do not fold their answers into what may be sent"
+        );
     }
 
     /// W16: a command that grades an answer by what it rests on is given what
@@ -539,18 +639,26 @@ mod tests {
             assert!(!name.is_empty(), "a command taking `typed` has no name");
             wants.push(name);
         }
-        assert!(wants.len() >= 2, "only {} commands take `typed` - has the grading gone?", wants.len());
+        assert!(
+            wants.len() >= 2,
+            "only {} commands take `typed` - has the grading gone?",
+            wants.len()
+        );
 
         for name in wants {
             let call = format!("\"{name}\"");
-            let at = ui.find(&call).unwrap_or_else(|| panic!("{name} is registered and never called"));
+            let at = ui
+                .find(&call)
+                .unwrap_or_else(|| panic!("{name} is registered and never called"));
             // The invoke's own argument object, not the rest of the file: the
             // next `})` closes it.
             let rest = &ui[at..];
             let args = &rest[..rest.find("})").unwrap_or(rest.len())];
-            assert!(args.contains("typed:"),
-                    "{name} is called without `typed`, so an answer resting on what the \
-                     person said would be graded as a measurement: {args}");
+            assert!(
+                args.contains("typed:"),
+                "{name} is called without `typed`, so an answer resting on what the \
+                     person said would be graded as a measurement: {args}"
+            );
         }
     }
 
@@ -570,18 +678,27 @@ mod tests {
     fn the_conversation_scrolls_and_the_footer_stays() {
         let ui = ui_source();
         let rule = |sel: &str| -> String {
-            let at = ui.find(&format!("
-  {sel}{{")).unwrap_or_else(|| panic!("no {sel} rule"));
+            let at = ui
+                .find(&format!(
+                    "
+  {sel}{{"
+                ))
+                .unwrap_or_else(|| panic!("no {sel} rule"));
             let rest = &ui[at + 3 + sel.len()..];
             rest[..rest.find('}').expect("unterminated rule")].to_string()
         };
         let main = rule("main");
-        assert!(main.contains("overflow-y:auto"), "the conversation no longer scrolls: {main}");
+        assert!(
+            main.contains("overflow-y:auto"),
+            "the conversation no longer scrolls: {main}"
+        );
         assert!(main.contains("min-height:0"),
                 "a scrolling flex item without min-height:0 never shrinks below its content,                  so it does not scroll and the footer leaves the window: {main}");
         for sel in ["footer", ".idbar"] {
-            assert!(rule(sel).contains("flex:none"),
-                    "{sel} may be squeezed out when the conversation is long");
+            assert!(
+                rule(sel).contains("flex:none"),
+                "{sel} may be squeezed out when the conversation is long"
+            );
         }
     }
 
@@ -596,13 +713,17 @@ mod tests {
     #[test]
     fn the_native_parts_of_the_window_follow_its_theme() {
         let ui = crate::ui_contract::ui_source();
-        assert!(ui.contains("@media (prefers-color-scheme: dark)"),
-                "the window no longer has a dark palette, so this case is about nothing");
+        assert!(
+            ui.contains("@media (prefers-color-scheme: dark)"),
+            "the window no longer has a dark palette, so this case is about nothing"
+        );
         let root = ui.split(":root{").nth(1).expect("no :root block");
         let root = &root[..root.find('}').expect("unterminated :root block")];
-        assert!(root.contains("color-scheme:"),
-                "the palette follows the system theme and the engine is not told, so the \
-                 scrollbar and everything else it draws will not follow it: {root}");
+        assert!(
+            root.contains("color-scheme:"),
+            "the palette follows the system theme and the engine is not told, so the \
+                 scrollbar and everything else it draws will not follow it: {root}"
+        );
     }
 
     /// The refusing button holds focus, so a stray Return can never grant. This
@@ -622,7 +743,10 @@ mod tests {
     #[test]
     fn the_window_asks_for_language_files_that_exist() {
         let ui = ui_source();
-        assert!(ui.contains("i18n/${lang}.json"), "the window no longer fetches language files");
+        assert!(
+            ui.contains("i18n/${lang}.json"),
+            "the window no longer fetches language files"
+        );
         assert!(
             !ui.contains("i18n/de.js"),
             "a script tag for a language file survived the move to JSON"
@@ -644,7 +768,9 @@ mod tests {
             .and_then(|l| l.split('"').nth(1))
             .expect("Cargo.toml declares no version");
         let bundle: serde_json::Value = serde_json::from_str(&manifest).unwrap();
-        let bundle_version = bundle["version"].as_str().expect("tauri.conf.json declares no version");
+        let bundle_version = bundle["version"]
+            .as_str()
+            .expect("tauri.conf.json declares no version");
 
         assert_eq!(
             crate_version, bundle_version,
@@ -716,7 +842,10 @@ the binary and its manifest would ship disagreeing about what they are"
             .find(&format!("async function {name}("))
             .unwrap_or_else(|| panic!("{name} is gone from the window"));
         let rest = &ui[start + 10..];
-        let end = rest.find("\nasync function ").map(|i| i + 10).unwrap_or(rest.len());
+        let end = rest
+            .find("\nasync function ")
+            .map(|i| i + 10)
+            .unwrap_or(rest.len());
         ui[start..start + end].to_string()
     }
 
@@ -726,13 +855,21 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn a_new_question_ends_the_last_incident_first() {
         let body = function_body(&ui_source(), "runInner");
-        let ended = body.find("invoke(\"end_incident\")").expect("a new question does not end the last incident");
+        let ended = body
+            .find("invoke(\"end_incident\")")
+            .expect("a new question does not end the last incident");
         for later in ["\"search_vendors\"", "chooseVendor(", "\"discover\""] {
             if let Some(at) = body.find(later) {
-                assert!(ended < at, "{later} runs before the last incident's grants are withdrawn");
+                assert!(
+                    ended < at,
+                    "{later} runs before the last incident's grants are withdrawn"
+                );
             }
         }
-        assert!(body.contains("STATED.clear()"), "what a person said last time survives into this one");
+        assert!(
+            body.contains("STATED.clear()"),
+            "what a person said last time survives into this one"
+        );
     }
 
     /// PB3: **every way out of the published path says which way it was**, to
@@ -752,15 +889,26 @@ the binary and its manifest would ship disagreeing about what they are"
     fn every_exit_from_the_published_path_says_which_exit_it_was() {
         let ui = ui_source();
         let body = function_body(&ui, "publishedPath");
-        let known = ["answered", "declined", "unreachable", "reads", "nofinding", "none"];
+        let known = [
+            "answered",
+            "declined",
+            "unreachable",
+            "reads",
+            "nofinding",
+            "none",
+        ];
         let lines: Vec<&str> = body.lines().collect();
         let mut exits = 0;
         for (i, line) in lines.iter().enumerate() {
-            let Some(at) = line.find("return \"") else { continue };
+            let Some(at) = line.find("return \"") else {
+                continue;
+            };
             exits += 1;
             let outcome = line[at + 8..].split('"').next().unwrap_or("");
-            assert!(known.contains(&outcome),
-                    "publishedPath returns an outcome nothing handles: {outcome:?}");
+            assert!(
+                known.contains(&outcome),
+                "publishedPath returns an outcome nothing handles: {outcome:?}"
+            );
             // A failure or a refusal has to say so *where it leaves*: those are
             // the six exits that look alike to the caller. "answered" is
             // different — it is recorded the moment the project's text is on
@@ -771,39 +919,58 @@ the binary and its manifest would ship disagreeing about what they are"
                 body.contains("answered from the project's own files")
             } else {
                 line.contains("logUi(")
-                    || lines.get(i.wrapping_sub(1)).is_some_and(|p| p.contains("logUi("))
+                    || lines
+                        .get(i.wrapping_sub(1))
+                        .is_some_and(|p| p.contains("logUi("))
             };
             assert!(named, "publishedPath leaves silently at: {}", line.trim());
         }
-        assert!(exits >= 6, "publishedPath has only {exits} named exits; it had six");
-        assert!(!body.contains("return false") && !body.contains("return true"),
-                "publishedPath is back to a boolean, which cannot tell a refusal from a failure");
+        assert!(
+            exits >= 6,
+            "publishedPath has only {exits} named exits; it had six"
+        );
+        assert!(
+            !body.contains("return false") && !body.contains("return true"),
+            "publishedPath is back to a boolean, which cannot tell a refusal from a failure"
+        );
 
         // One event, one panel. The failure used to be announced where it
         // happened and then again, differently, by the panel offering the
         // retry — the person read "the catalogue is not answering" and then a
         // second panel with a gentler tone about the same thing.
-        assert!(!body.contains("pub_off_h"),
-                "publishedPath announces an unreachable operator itself, so it is said twice");
-        assert!(body.contains("UNREACHABLE_WHY ="),
-                "the reason is not kept, so the one panel that remains cannot say what happened");
+        assert!(
+            !body.contains("pub_off_h"),
+            "publishedPath announces an unreachable operator itself, so it is said twice"
+        );
+        assert!(
+            body.contains("UNREACHABLE_WHY ="),
+            "the reason is not kept, so the one panel that remains cannot say what happened"
+        );
 
         // The caller must keep the three apart: finished, unreachable, and the
         // rest. An operator that did not answer is not a project that publishes
         // nothing, and a timeout is not a person asking for a model.
         let no_vendor = function_body(&ui, "noVendorPath");
-        let unreachable = no_vendor.find("offer-retry")
+        let unreachable = no_vendor
+            .find("offer-retry")
             .expect("noVendorPath no longer treats an unreachable catalogue as its own case");
-        let no_agent = no_vendor.rfind("if(plan.sayNoAgent) saidNoAgent();")
+        let no_agent = no_vendor
+            .rfind("if(plan.sayNoAgent) saidNoAgent();")
             .expect("noVendorPath no longer says when a project publishes no agent");
         assert!(unreachable < no_agent,
                 "the unreachable case is decided after the no-agent message, so it still fires on a network failure");
-        assert!(no_vendor.contains("DESPITE published answers"),
-                "a project with published answers can reach the model unrecorded");
+        assert!(
+            no_vendor.contains("DESPITE published answers"),
+            "a project with published answers can reach the model unrecorded"
+        );
 
         // The window can only say any of this if the binary still offers it.
-        assert!(registered_commands(&main_source()).iter().any(|c| c == "log_line"),
-                "log_line is no longer registered, so none of the lines above are written");
+        assert!(
+            registered_commands(&main_source())
+                .iter()
+                .any(|c| c == "log_line"),
+            "log_line is no longer registered, so none of the lines above are written"
+        );
     }
 
     /// PB4: **the question is asked in the person's words.**
@@ -818,27 +985,40 @@ the binary and its manifest would ship disagreeing about what they are"
     fn the_class_picker_asks_in_the_persons_words() {
         let ui = ui_source();
         let body = function_body(&ui, "publishedPath");
-        assert!(!body.contains("<select id=\"pcls\""),
-                "the classes are a dropdown of identifiers again");
-        assert!(body.contains("Flow.publishedAnswers(pick).labels"),
-                "the window no longer reads the maintainer's sentence for a class");
+        assert!(
+            !body.contains("<select id=\"pcls\""),
+            "the classes are a dropdown of identifiers again"
+        );
+        assert!(
+            body.contains("Flow.publishedAnswers(pick).labels"),
+            "the window no longer reads the maintainer's sentence for a class"
+        );
         assert!(body.contains("labels[c] ? bi(labels[c], labels_t[c]) : esc(c)"),
                 "a class with no sentence no longer falls back to its identifier, so                  every manifest published before this would show nothing");
         // What is recorded and sent stays the identifier, never the sentence.
-        assert!(body.contains("input.pc:checked"),
-                "the chosen class is not read from what the person actually chose");
+        assert!(
+            body.contains("input.pc:checked"),
+            "the chosen class is not read from what the person actually chose"
+        );
 
         // LG7 reaches the first publisher sentence a person meets, too. It is
         // translated by the reader's own model with the original beside it, and
         // the question is asked before the card is fetched, so the translation
         // happens before the picker is drawn rather than after.
-        let translated = body.find("translateKeeping(src, KEEP_EARLY)")
+        let translated = body
+            .find("translateKeeping(src, KEEP_EARLY)")
             .expect("the class sentences are never translated, so a German reader meets English");
-        let drawn = body.find("role=\"radiogroup\"").expect("the class picker is gone");
-        assert!(translated < drawn,
-                "the sentences are translated after the picker is drawn, so it is drawn in English");
-        assert!(body.contains("bi(labels[c], labels_t[c])"),
-                "a translated sentence no longer keeps the publisher's own words beside it");
+        let drawn = body
+            .find("role=\"radiogroup\"")
+            .expect("the class picker is gone");
+        assert!(
+            translated < drawn,
+            "the sentences are translated after the picker is drawn, so it is drawn in English"
+        );
+        assert!(
+            body.contains("bi(labels[c], labels_t[c])"),
+            "a translated sentence no longer keeps the publisher's own words beside it"
+        );
 
         // **And translated with the project's own terms kept (`LG8`).** This
         // assertion used to pin `translateKeeping(src, [])` — the empty
@@ -847,19 +1027,26 @@ the binary and its manifest would ship disagreeing about what they are"
         // translated with nothing kept, because the card holding the glossary
         // is fetched under a consent this question comes before. The terms
         // ride with the labels on the index entry now.
-        let early = body.find("Flow.publishedGlossary(pick)")
+        let early = body
+            .find("Flow.publishedGlossary(pick)")
             .expect("the first question is translated with no glossary again");
-        assert!(early < translated,
-                "the glossary is read after the translation that needed it");
+        assert!(
+            early < translated,
+            "the glossary is read after the translation that needed it"
+        );
 
         // And the binary still puts both on the hit the window reads.
         let vendors = std::fs::read_to_string(crate_dir().join("src/vendors.rs"))
             .expect("cannot read src/vendors.rs");
-        assert!(vendors.contains("\"answer_labels\""),
-                "the search hit no longer carries the sentences, so the window has only ids");
-        assert!(vendors.contains("\"glossary_keep\""),
-                "the search hit no longer carries the terms, so the first sentence a person \
-                 reads is translated with nothing kept");
+        assert!(
+            vendors.contains("\"answer_labels\""),
+            "the search hit no longer carries the sentences, so the window has only ids"
+        );
+        assert!(
+            vendors.contains("\"glossary_keep\""),
+            "the search hit no longer carries the terms, so the first sentence a person \
+                 reads is translated with nothing kept"
+        );
     }
 
     /// **A build with no operator compiled in says so, and cannot stop the
@@ -878,16 +1065,24 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn a_development_build_says_so_and_cannot_stop_the_window_opening() {
         let ui = ui_source();
-        assert!(main_source().contains("\"built\": option_env!(\"PODSHL_BUILD_SERVER_URL\").is_some()"),
-                "the binary no longer reports whether it was built for an operator");
-        let lang = ui.find("applyLang();").expect("the window never applies a language");
-        let marker = ui.find("ep.built === false").expect("a development build is no longer marked");
+        assert!(
+            main_source().contains("\"built\": option_env!(\"PODSHL_BUILD_SERVER_URL\").is_some()"),
+            "the binary no longer reports whether it was built for an operator"
+        );
+        let lang = ui
+            .find("applyLang();")
+            .expect("the window never applies a language");
+        let marker = ui
+            .find("ep.built === false")
+            .expect("a development build is no longer marked");
         assert!(lang < marker,
                 "the marker reads a sentence before the language files are loaded, which                  throws in boot and shows \"PODSHL could not start\" instead of the window");
         // Wrapped: the few lines before it open a `try`.
         let before = &ui[marker.saturating_sub(120)..marker];
-        assert!(before.contains("try{"),
-                "the marker is not wrapped, so a missing sentence would stop the window");
+        assert!(
+            before.contains("try{"),
+            "the marker is not wrapped, so a missing sentence would stop the window"
+        );
     }
 
     /// **The commands a released client must not have are behind a build flag.**
@@ -906,19 +1101,26 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn the_commands_a_release_must_not_have_are_behind_the_build_flag() {
         let main = main_source();
-        let start = main.find("async fn invoke_by_name").expect("the invoke surface is gone");
+        let start = main
+            .find("async fn invoke_by_name")
+            .expect("the invoke surface is gone");
         let body = &main[start..];
         for cmd in ["perform_reads", "send_published_report", "llm_translate"] {
-            let at = body.find(&format!("\"{cmd}\" =>"))
+            let at = body
+                .find(&format!("\"{cmd}\" =>"))
                 .unwrap_or_else(|| panic!("{cmd} is no longer on the surface at all"));
             // The three lines above the arm carry the flag.
             let before = &body[at.saturating_sub(120)..at];
-            assert!(before.contains("#[cfg(feature = \"uitest\")]"),
-                    "{cmd} is on the invoke surface of every build, including released ones");
+            assert!(
+                before.contains("#[cfg(feature = \"uitest\")]"),
+                "{cmd} is on the invoke surface of every build, including released ones"
+            );
         }
         // And the refusal tells the two kinds of absence apart.
-        assert!(body.contains("is not in this build"),
-                "a command missing for want of a build flag is reported as one that does not exist");
+        assert!(
+            body.contains("is not in this build"),
+            "a command missing for want of a build flag is reported as one that does not exist"
+        );
     }
 
     /// **The decisions live in `flow.js`, and the page asks it.**
@@ -936,23 +1138,37 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn the_flow_decisions_are_asked_for_rather_than_repeated() {
         let ui = ui_source();
-        assert!(ui.contains(r#"<script src="flow.js">"#),
-                "the page no longer loads the file the decisions live in");
+        assert!(
+            ui.contains(r#"<script src="flow.js">"#),
+            "the page no longer loads the file the decisions live in"
+        );
         let flow = std::fs::read_to_string(crate_dir().join("ui/flow.js"))
             .expect("cannot read ui/flow.js");
         // Defined there, and asked for here.
-        for name in ["publishedAnswers", "planBefore", "planAfter", "planOnGivingUp", "OUTCOMES"] {
+        for name in [
+            "publishedAnswers",
+            "planBefore",
+            "planAfter",
+            "planOnGivingUp",
+            "OUTCOMES",
+        ] {
             assert!(flow.contains(name), "flow.js no longer defines {name}");
         }
         for name in ["publishedAnswers", "planBefore", "planAfter"] {
-            assert!(ui.contains(&format!("Flow.{name}")),
-                    "the page does not ask flow.js for {name}");
+            assert!(
+                ui.contains(&format!("Flow.{name}")),
+                "the page does not ask flow.js for {name}"
+            );
         }
         // The two the page used to work out inline, and got wrong.
-        assert!(!ui.contains("Array.isArray(pick.answers) && pick.answers.length"),
-                "whether a project publishes answers is decided in the page again");
-        assert!(!ui.contains(r#"if(took === "answered") return;"#),
-                "what to do with an outcome is decided in the page again");
+        assert!(
+            !ui.contains("Array.isArray(pick.answers) && pick.answers.length"),
+            "whether a project publishes answers is decided in the page again"
+        );
+        assert!(
+            !ui.contains(r#"if(took === "answered") return;"#),
+            "what to do with an outcome is decided in the page again"
+        );
     }
 
     /// Every sentence the window asks for exists in every language it offers.
@@ -963,9 +1179,11 @@ the binary and its manifest would ship disagreeing about what they are"
         let dir = crate_dir().join("ui/i18n");
         let read = |l: &str| -> serde_json::Map<String, serde_json::Value> {
             let p = dir.join(format!("{l}.json"));
-            serde_json::from_str(&std::fs::read_to_string(&p)
-                .unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display())))
-                .unwrap_or_else(|e| panic!("{} is not JSON: {e}", p.display()))
+            serde_json::from_str(
+                &std::fs::read_to_string(&p)
+                    .unwrap_or_else(|e| panic!("cannot read {}: {e}", p.display())),
+            )
+            .unwrap_or_else(|e| panic!("{} is not JSON: {e}", p.display()))
         };
         let en = read("en");
         for lang in ["de", "fr", "es"] {
@@ -981,13 +1199,23 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn the_published_path_reads_before_it_asks() {
         let body = function_body(&ui_source(), "publishedPath");
-        let card = body.find("\"published_card\"").expect("the project's own probes are never fetched");
-        let collect = body.find("collectFacts(").expect("the published path never reads anything");
-        let asked = body.find("\"ask_published\"").expect("the published path never asks the operator");
-        assert!(card < collect && collect < asked,
-                "the operator is asked before the project's probes were read");
-        assert!(!body.contains("\"baseline_facts\""),
-                "the published path went back to asking with nothing but the platform");
+        let card = body
+            .find("\"published_card\"")
+            .expect("the project's own probes are never fetched");
+        let collect = body
+            .find("collectFacts(")
+            .expect("the published path never reads anything");
+        let asked = body
+            .find("\"ask_published\"")
+            .expect("the published path never asks the operator");
+        assert!(
+            card < collect && collect < asked,
+            "the operator is asked before the project's probes were read"
+        );
+        assert!(
+            !body.contains("\"baseline_facts\""),
+            "the published path went back to asking with nothing but the platform"
+        );
     }
 
     /// PB2: a `need` that carries a reading is read, not typed. It went
@@ -996,11 +1224,23 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn a_needed_fact_that_can_be_read_is_read() {
         let body = function_body(&ui_source(), "askOneProbe");
-        let read = body.find("own.read").expect("askOneProbe never looks at the probe's reading");
-        let reads = body.find("collectFacts(").expect("a readable need is never read");
-        let asks = body.find("add(`").expect("askOneProbe no longer asks at all");
-        assert!(read < asks && reads < asks, "a readable need is asked before it is read");
-        assert!(body.contains(".declined"), "a declined read is not recorded, so the operator asks again");
+        let read = body
+            .find("own.read")
+            .expect("askOneProbe never looks at the probe's reading");
+        let reads = body
+            .find("collectFacts(")
+            .expect("a readable need is never read");
+        let asks = body
+            .find("add(`")
+            .expect("askOneProbe no longer asks at all");
+        assert!(
+            read < asks && reads < asks,
+            "a readable need is asked before it is read"
+        );
+        assert!(
+            body.contains(".declined"),
+            "a declined read is not recorded, so the operator asks again"
+        );
     }
 
     /// PB4 and PB5: whether the answer worked is asked, not assumed — and the
@@ -1011,16 +1251,38 @@ the binary and its manifest would ship disagreeing about what they are"
     fn a_published_report_asks_first_and_goes_to_the_operator() {
         let ui = ui_source();
         let path = function_body(&ui, "publishedPath");
-        assert!(!path.contains("offerReport("), "the published path reports through the vendor path again");
-        assert!(!path.contains("\"resolved\")"), "the outcome is assumed rather than asked");
-        assert!(path.contains("offerPublishedReport(pick, outcome)"), "the asked outcome is not what is reported");
+        assert!(
+            !path.contains("offerReport("),
+            "the published path reports through the vendor path again"
+        );
+        assert!(
+            !path.contains("\"resolved\")"),
+            "the outcome is assumed rather than asked"
+        );
+        assert!(
+            path.contains("offerPublishedReport(pick, outcome)"),
+            "the asked outcome is not what is reported"
+        );
 
         let offer = function_body(&ui, "offerPublishedReport");
-        let refusal = offer.find("if(!await ask(el))").expect("the report is sent without asking");
-        let send = offer.find("\"send_published_report\"").expect("nothing sends the published report");
-        assert!(refusal < send, "the report is sent before the person is asked");
-        assert!(offer[refusal..send].contains("return"), "declining does not return");
-        assert!(!offer.contains("\"send_report\""), "a published report goes to a vendor agent again");
+        let refusal = offer
+            .find("if(!await ask(el))")
+            .expect("the report is sent without asking");
+        let send = offer
+            .find("\"send_published_report\"")
+            .expect("nothing sends the published report");
+        assert!(
+            refusal < send,
+            "the report is sent before the person is asked"
+        );
+        assert!(
+            offer[refusal..send].contains("return"),
+            "declining does not return"
+        );
+        assert!(
+            !offer.contains("\"send_report\""),
+            "a published report goes to a vendor agent again"
+        );
     }
 
     /// PB6: the questions a project declared for a person are asked, with the
@@ -1030,15 +1292,26 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn declared_questions_are_asked_with_their_choices() {
         let body = function_body(&ui_source(), "collectFacts");
-        assert!(body.contains("p.kind!==\"machine\""), "questions declared for a person are not asked");
-        assert!(body.contains("byId[p.id]"), "an empty reading is asked without the publisher's own question");
+        assert!(
+            body.contains("p.kind!==\"machine\""),
+            "questions declared for a person are not asked"
+        );
+        assert!(
+            body.contains("byId[p.id]"),
+            "an empty reading is asked without the publisher's own question"
+        );
         let ask = function_body(&ui_source(), "askQuestions");
-        assert!(ask.contains("p.choices.map"), "a publisher's choices are not offered");
+        assert!(
+            ask.contains("p.choices.map"),
+            "a publisher's choices are not offered"
+        );
         // And a reading that simply found nothing is not handed to a person as
         // a bare text box — only one the publisher wrote a question for, or one
         // the person withheld themselves.
-        assert!(body.contains("p.prompt || (withheld(p.id) && !p.refused)"),
-                "every empty reading is put to the person as free text again");
+        assert!(
+            body.contains("p.prompt || (withheld(p.id) && !p.refused)"),
+            "every empty reading is put to the person as free text again"
+        );
     }
 
     /// P3: an answer that does not fit the publisher's `pattern` is caught in
@@ -1071,30 +1344,40 @@ the binary and its manifest would ship disagreeing about what they are"
             let stop = after
                 .find("!round.ok")
                 .unwrap_or_else(|| panic!("a panel reads a round and never asks whether it was                                            good: {}", &after[..200.min(after.len())]));
-            let store = after
-                .find("round.facts")
-                .unwrap_or_else(|| panic!("a panel reads a round and never applies it: {}",
-                                          &after[..200.min(after.len())]));
-            assert!(stop < store,
-                    "a panel applies a round before it knows the round is good: {}",
-                    &after[..300.min(after.len())]);
+            let store = after.find("round.facts").unwrap_or_else(|| {
+                panic!(
+                    "a panel reads a round and never applies it: {}",
+                    &after[..200.min(after.len())]
+                )
+            });
+            assert!(
+                stop < store,
+                "a panel applies a round before it knows the round is good: {}",
+                &after[..300.min(after.len())]
+            );
             // And it does not carry on. The need round used to resolve on the
             // click itself, which is why it could not refuse anything.
-            assert!(after[stop..store].contains("return"),
-                    "a refused answer does not keep the panel open, so it is simply lost: {}",
-                    &after[stop..store]);
+            assert!(
+                after[stop..store].contains("return"),
+                "a refused answer does not keep the panel open, so it is simply lost: {}",
+                &after[stop..store]
+            );
         }
-        assert_eq!(panels, 4,
-                   "{panels} panels read a round of answers - the armed question, the need \
+        assert_eq!(
+            panels, 4,
+            "{panels} panels read a round of answers - the armed question, the need \
                     round, the hand-off and the model's own questions are four, so one has been \
-                    added or has gone back to deciding for itself");
+                    added or has gone back to deciding for itself"
+        );
 
         // And the pattern is still what decides. `readAnswers` is also the thing
         // that records a decline, so a version of it that had quietly stopped
         // checking patterns would satisfy every line above.
         let flow = flow_source();
         assert!(
-            flow.contains("if (q.pattern && !matchesPattern(q.pattern, v)) { invalid.push(q.id); continue; }"),
+            flow.contains(
+                "if (q.pattern && !matchesPattern(q.pattern, v)) { invalid.push(q.id); continue; }"
+            ),
             "flow.js accepts an answer that does not fit the publisher's pattern"
         );
         assert!(
@@ -1108,11 +1391,23 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn free_text_is_anonymised_before_it_is_offered() {
         let body = function_body(&ui_source(), "offerFreeText");
-        let anon = body.find("\"anonymise_text\"").expect("free text is offered as typed");
-        let asked = body.find("await ask(el)").expect("free text is sent without asking");
-        let attach = body.find("\"attach_consented_text\"").expect("nothing attaches the text");
-        assert!(anon < asked, "the text is anonymised after the person agreed to it");
-        assert!(asked < attach, "the text is attached before the person agreed");
+        let anon = body
+            .find("\"anonymise_text\"")
+            .expect("free text is offered as typed");
+        let asked = body
+            .find("await ask(el)")
+            .expect("free text is sent without asking");
+        let attach = body
+            .find("\"attach_consented_text\"")
+            .expect("nothing attaches the text");
+        assert!(
+            anon < asked,
+            "the text is anonymised after the person agreed to it"
+        );
+        assert!(
+            asked < attach,
+            "the text is attached before the person agreed"
+        );
     }
 
     /// PV2, the window's half: a program not on the search path is asked
@@ -1120,8 +1415,14 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn a_program_not_on_the_path_is_asked_about_not_searched_for() {
         let body = function_body(&ui_source(), "locatePrograms");
-        assert!(body.contains("\"grant_program_path\""), "the location the person gives is not validated by the binary");
-        assert!(body.contains(".deny\").focus()"), "a stray Return could run a program");
+        assert!(
+            body.contains("\"grant_program_path\""),
+            "the location the person gives is not validated by the binary"
+        );
+        assert!(
+            body.contains(".deny\").focus()"),
+            "a stray Return could run a program"
+        );
     }
 
     /// W11: no inline style attributes. Tauri puts a nonce into `style-src`,
@@ -1138,8 +1439,14 @@ the binary and its manifest would ship disagreeing about what they are"
         // attribute; anything else is the attribute.
         let n = ui.matches("style=\"").count() - ui.matches("style=\"…\"").count()
             + ui.matches("style='").count();
-        assert_eq!(n, 0, "an inline style attribute is back — the window's CSP blocks it");
-        assert!(ui.contains(".field{"), "the class that replaced the inline field styles is gone");
+        assert_eq!(
+            n, 0,
+            "an inline style attribute is back — the window's CSP blocks it"
+        );
+        assert!(
+            ui.contains(".field{"),
+            "the class that replaced the inline field styles is gone"
+        );
     }
 
     /// LG7: a published project owes English and nothing more, so a person
@@ -1151,16 +1458,41 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn a_published_projects_words_are_translated_by_the_readers_own_model() {
         let ui = ui_source();
-        let path = ui.split("async function publishedPath").nth(1).expect("the published path is gone");
-        let translate = path.find("translatePublisher(SKILL.probes").expect("the project's questions are never translated");
-        let collect = path.find("collectFacts(SKILL.probes").expect("the project's readings are never taken");
-        assert!(translate < collect, "the questions are asked before they are translated");
-        assert!(path.contains("translatePublisherText(text"), "the answer is never translated");
-        assert!(path.contains("pub_translated"), "a translated answer is not marked as one");
-        let f = ui.split("async function translatePublisher(probes").nth(1).unwrap();
+        let path = ui
+            .split("async function publishedPath")
+            .nth(1)
+            .expect("the published path is gone");
+        let translate = path
+            .find("translatePublisher(SKILL.probes")
+            .expect("the project's questions are never translated");
+        let collect = path
+            .find("collectFacts(SKILL.probes")
+            .expect("the project's readings are never taken");
+        assert!(
+            translate < collect,
+            "the questions are asked before they are translated"
+        );
+        assert!(
+            path.contains("translatePublisherText(text"),
+            "the answer is never translated"
+        );
+        assert!(
+            path.contains("pub_translated"),
+            "a translated answer is not marked as one"
+        );
+        let f = ui
+            .split("async function translatePublisher(probes")
+            .nth(1)
+            .unwrap();
         let f = &f[..f.find("\n}\n").unwrap()];
-        assert!(!f.contains("choices"), "a publisher's choices are translated, so the recorded answer would not be theirs");
-        assert!(ui.contains("return cfg.configured ? cfg : null;"), "translation is attempted without a model");
+        assert!(
+            !f.contains("choices"),
+            "a publisher's choices are translated, so the recorded answer would not be theirs"
+        );
+        assert!(
+            ui.contains("return cfg.configured ? cfg : null;"),
+            "translation is attempted without a model"
+        );
     }
 
     /// LG8, the window's half: the project's glossary reaches both
@@ -1171,24 +1503,51 @@ the binary and its manifest would ship disagreeing about what they are"
     fn a_projects_own_terms_are_kept_and_a_lost_one_is_said() {
         let ui = ui_source();
         let path = function_body(&ui, "publishedPath");
-        assert!(path.contains("card.glossary"), "the project's glossary is never read");
-        assert!(path.contains("translatePublisher(SKILL.probes, KEEP)"), "the questions are translated without the glossary");
-        assert!(path.contains("translatePublisherText(text, KEEP)"), "the answer is translated without the glossary");
-        assert!(path.contains("termsLostLine(textT.lost)"), "a term lost from the answer is not said");
+        assert!(
+            path.contains("card.glossary"),
+            "the project's glossary is never read"
+        );
+        assert!(
+            path.contains("translatePublisher(SKILL.probes, KEEP)"),
+            "the questions are translated without the glossary"
+        );
+        assert!(
+            path.contains("translatePublisherText(text, KEEP)"),
+            "the answer is translated without the glossary"
+        );
+        assert!(
+            path.contains("termsLostLine(textT.lost)"),
+            "a term lost from the answer is not said"
+        );
         let questions = function_body(&ui, "translatePublisher");
-        assert!(questions.contains("translateKeeping(src, keep)") && questions.contains("termsLostLine(lost)"),
-                "a term lost from the questions is not said");
-        assert!(ui.contains("invoke(\"llm_translate\",{texts, to:LANG, keep:terms})"),
-                "the glossary never reaches the binary");
+        assert!(
+            questions.contains("translateKeeping(src, keep)")
+                && questions.contains("termsLostLine(lost)"),
+            "a term lost from the questions is not said"
+        );
+        assert!(
+            ui.contains("invoke(\"llm_translate\",{texts, to:LANG, keep:terms})"),
+            "the glossary never reaches the binary"
+        );
         for lang in ["en", "de", "fr", "es"] {
             let table: serde_json::Value = serde_json::from_str(
-                &std::fs::read_to_string(crate_dir().join(format!("ui/i18n/{lang}.json"))).unwrap()).unwrap();
-            let s = table["pub_terms_lost"].as_str().unwrap_or_else(|| panic!("{lang} cannot say a term was lost"));
-            assert!(s.contains("{list}"), "{lang} does not name the term it lost");
+                &std::fs::read_to_string(crate_dir().join(format!("ui/i18n/{lang}.json"))).unwrap(),
+            )
+            .unwrap();
+            let s = table["pub_terms_lost"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{lang} cannot say a term was lost"));
+            assert!(
+                s.contains("{list}"),
+                "{lang} does not name the term it lost"
+            );
         }
         let main = std::fs::read_to_string(crate_dir().join("src/main.rs")).unwrap();
         let card = main.split("async fn published_card(").nth(1).unwrap();
-        assert!(card.contains("\"glossary\""), "the client drops the glossary before the window sees it");
+        assert!(
+            card.contains("\"glossary\""),
+            "the client drops the glossary before the window sees it"
+        );
     }
 
     /// I5: what the binary says reaches the person in the window's language.
@@ -1198,17 +1557,37 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn the_binarys_messages_are_shown_through_tr() {
         let ui = ui_source();
-        assert!(ui.contains("function tr(s)"), "the window no longer translates the binary's messages");
+        assert!(
+            ui.contains("function tr(s)"),
+            "the window no longer translates the binary's messages"
+        );
         // A local of the same name hid the function for a whole flow, and the
         // first message on the vendor path threw instead of being said.
         for local in ["const tr=", "let tr=", "const tr =", "let tr ="] {
-            assert!(!ui.contains(local), "a local `tr` hides the function that says the binary's messages");
+            assert!(
+                !ui.contains(local),
+                "a local `tr` hides the function that says the binary's messages"
+            );
         }
-        assert!(ui.contains("I18N.en).filter(([k]) => k.startsWith(\"m_\"))"),
-                "the window no longer recognises messages by the templates the binary uses");
-        for raw in ["${esc(e)}", "String(e)", ",{e})", "esc(e && e.message || e)", "esc(st.note)",
-                    "esc(pl.reason)", "esc(dry)", "esc(h.how)", "esc(p.name)"] {
-            assert!(!ui.contains(raw), "{raw} shows the binary's words untranslated");
+        assert!(
+            ui.contains("I18N.en).filter(([k]) => k.startsWith(\"m_\"))"),
+            "the window no longer recognises messages by the templates the binary uses"
+        );
+        for raw in [
+            "${esc(e)}",
+            "String(e)",
+            ",{e})",
+            "esc(e && e.message || e)",
+            "esc(st.note)",
+            "esc(pl.reason)",
+            "esc(dry)",
+            "esc(h.how)",
+            "esc(p.name)",
+        ] {
+            assert!(
+                !ui.contains(raw),
+                "{raw} shows the binary's words untranslated"
+            );
         }
     }
 
@@ -1219,44 +1598,97 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn the_consent_text_exists_in_every_language() {
         let ui = ui_source();
-        assert!(ui.contains("${esc(whatText(p))}"), "the consent list shows the binary's own sentence again");
-        assert!(ui.contains("t(\"refused_\"+p.refused_kind)"), "refusals are shown in the binary's language again");
+        assert!(
+            ui.contains("${esc(whatText(p))}"),
+            "the consent list shows the binary's own sentence again"
+        );
+        assert!(
+            ui.contains("t(\"refused_\"+p.refused_kind)"),
+            "refusals are shown in the binary's language again"
+        );
         let spec: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(crate_dir().join("../spec/vocabulary/reads.json")).unwrap()).unwrap();
-        let mut keys: Vec<String> = spec["ops"].as_array().unwrap().iter()
-            .map(|o| format!("m_what_{}", o["op"].as_str().unwrap())).collect();
+            &std::fs::read_to_string(crate_dir().join("../spec/vocabulary/reads.json")).unwrap(),
+        )
+        .unwrap();
+        let mut keys: Vec<String> = spec["ops"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| format!("m_what_{}", o["op"].as_str().unwrap()))
+            .collect();
         keys.push("m_what_program_version_absent".into());
-        for k in ["risk_low", "risk_medium", "refused_absent", "refused_denied", "refused_system",
-                  "refused_outside", "refused_invalid", "pseudo_explain", "q_pattern", "env_why"] {
+        for k in [
+            "risk_low",
+            "risk_medium",
+            "refused_absent",
+            "refused_denied",
+            "refused_system",
+            "refused_outside",
+            "refused_invalid",
+            "pseudo_explain",
+            "q_pattern",
+            "env_why",
+        ] {
             keys.push(k.into());
         }
         // Every kind of refusal the binary can name for a location or a log,
         // and every answer to the interpreter question — named by the binary,
         // said by the window.
-        for k in ["wrong_name", "system", "denied", "empty", "not_in_folder", "not_executable", "invalid"] {
+        for k in [
+            "wrong_name",
+            "system",
+            "denied",
+            "empty",
+            "not_in_folder",
+            "not_executable",
+            "invalid",
+        ] {
             keys.push(format!("loc_err_{k}"));
         }
-        for k in ["no_docker", "no_container", "denied", "not_file", "invalid", "unreadable"] {
+        for k in [
+            "no_docker",
+            "no_container",
+            "denied",
+            "not_file",
+            "invalid",
+            "unreadable",
+        ] {
             keys.push(format!("log_err_{k}"));
         }
         let conflict = crate::reads::interpreter_conflict(&serde_json::json!(
-            {"python.version": "3.12.1", "python.venv.version": "3.11.9"})).unwrap();
+            {"python.version": "3.12.1", "python.venv.version": "3.11.9"}))
+        .unwrap();
         for c in conflict["choices"].as_array().unwrap() {
             keys.push(format!("env_c_{}", c.as_str().unwrap()));
         }
-        assert!(ui.contains("t(\"env_c_\"+c)"), "the interpreter question shows the binary's ids again");
-        assert!(ui.contains("t(\"loc_err_\"+g.code"), "a refused location is shown in the binary's language");
-        assert!(ui.contains("t(\"log_err_\"+r.code"), "a refused log is shown in the binary's language");
+        assert!(
+            ui.contains("t(\"env_c_\"+c)"),
+            "the interpreter question shows the binary's ids again"
+        );
+        assert!(
+            ui.contains("t(\"loc_err_\"+g.code"),
+            "a refused location is shown in the binary's language"
+        );
+        assert!(
+            ui.contains("t(\"log_err_\"+r.code"),
+            "a refused log is shown in the binary's language"
+        );
         for lang in ["en", "de", "fr", "es"] {
             let table: serde_json::Value = serde_json::from_str(
-                &std::fs::read_to_string(crate_dir().join(format!("ui/i18n/{lang}.json"))).unwrap()).unwrap();
+                &std::fs::read_to_string(crate_dir().join(format!("ui/i18n/{lang}.json"))).unwrap(),
+            )
+            .unwrap();
             for k in &keys {
-                assert!(table.get(k).and_then(|v| v.as_str()).map_or(false, |s| !s.is_empty()),
-                        "{lang}.json has no {k}");
+                assert!(
+                    table
+                        .get(k)
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty()),
+                    "{lang}.json has no {k}"
+                );
             }
         }
     }
-
 
     /// Every text the window asks for by name exists in every language it
     /// offers.
@@ -1300,21 +1732,34 @@ the binary and its manifest would ship disagreeing about what they are"
         }
         keys.sort();
         keys.dedup();
-        assert!(keys.len() > 50, "only {} keys found — this case is reading the wrong file", keys.len());
+        assert!(
+            keys.len() > 50,
+            "only {} keys found — this case is reading the wrong file",
+            keys.len()
+        );
 
         for lang in ["en", "de", "fr", "es"] {
             let table: serde_json::Value = serde_json::from_str(
-                &std::fs::read_to_string(crate_dir().join(format!("ui/i18n/{lang}.json"))).unwrap()).unwrap();
-            let missing: Vec<&String> = keys.iter()
-                .filter(|k| table.get(k.as_str()).and_then(|v| v.as_str())
-                                 .map_or(true, |s| s.trim().is_empty()))
+                &std::fs::read_to_string(crate_dir().join(format!("ui/i18n/{lang}.json"))).unwrap(),
+            )
+            .unwrap();
+            let missing: Vec<&String> = keys
+                .iter()
+                .filter(|k| {
+                    table
+                        .get(k.as_str())
+                        .and_then(|v| v.as_str())
+                        .is_none_or(|s| s.trim().is_empty())
+                })
                 .collect();
-            assert!(missing.is_empty(),
-                    "{lang}.json is missing {} of the window's texts: {:?}",
-                    missing.len(), &missing[..missing.len().min(8)]);
+            assert!(
+                missing.is_empty(),
+                "{lang}.json is missing {} of the window's texts: {:?}",
+                missing.len(),
+                &missing[..missing.len().min(8)]
+            );
         }
     }
-
 
     /// IS1: the diagnosis has an exit that is not a report to the operator.
     ///
@@ -1329,41 +1774,57 @@ the binary and its manifest would ship disagreeing about what they are"
     fn the_published_path_offers_a_report_the_person_can_take_away() {
         let ui = ui_source();
         let path = function_body(&ui, "publishedPath");
-        assert!(path.contains("offerIssueReport("),
-                "the published path still ends at the operator or nowhere");
+        assert!(
+            path.contains("offerIssueReport("),
+            "the published path still ends at the operator or nowhere"
+        );
 
         let panel = function_body(&ui, "offerIssueReport");
 
         // Shown before it is copied, and what was taken out is said — the same
         // sentence the consent panel uses, about a larger audience, because an
         // issue tracker is more public than a report and keeps it for ever.
-        assert!(panel.contains("issue_took") && panel.contains("r.replaced"),
-                "the panel does not say what the anonymiser removed");
-        assert!(panel.contains("<textarea") && panel.contains("box.value = r.markdown"),
-                "the text is not shown before it is copied");
+        assert!(
+            panel.contains("issue_took") && panel.contains("r.replaced"),
+            "the panel does not say what the anonymiser removed"
+        );
+        assert!(
+            panel.contains("<textarea") && panel.contains("box.value = r.markdown"),
+            "the text is not shown before it is copied"
+        );
 
         // **The footer is the binary's words, not the page's.** The checkbox
         // that takes it out used to work by matching a copy of the sentence
         // written here as a regex. That breaks silently and in the direction
         // that matters: reword it in `issue.rs`, the pattern matches nothing,
         // unchecking removes nothing, and the label goes on saying it did.
-        assert!(!panel.contains("Assembled by PODSHL"),
-                "the panel carries its own copy of the footer's words again");
-        assert!(panel.contains("Flow.footerToggle(box.value, r.footer"),
-                "the checkbox does not use the footer the binary returned");
+        assert!(
+            !panel.contains("Assembled by PODSHL"),
+            "the panel carries its own copy of the footer's words again"
+        );
+        assert!(
+            panel.contains("Flow.footerToggle(box.value, r.footer"),
+            "the checkbox does not use the footer the binary returned"
+        );
 
         // **What is copied is what is in the box.** Copying `r.markdown` would
         // hand over the generated text after the person edited it — something
         // they did not read, from a panel whose whole argument is that they did.
         let copy = panel.split("issuecopy\").onclick").nth(1).unwrap_or("");
-        assert!(copy.contains("box.value"),
-                "the copy button copies the generated text rather than what is shown");
-        assert!(!copy.contains("r.markdown"),
-                "the copy button reaches past the box to the original");
+        assert!(
+            copy.contains("box.value"),
+            "the copy button copies the generated text rather than what is shown"
+        );
+        assert!(
+            !copy.contains("r.markdown"),
+            "the copy button reaches past the box to the original"
+        );
 
         // The footer is the publisher's line about us, and it is theirs to drop.
-        assert!(panel.contains("issuefoot") && panel.contains("issue_footer"),
-                "the footer cannot be switched off");
+        assert!(
+            panel.contains("issuefoot") && panel.contains("issue_footer"),
+            "the footer cannot be switched off"
+        );
     }
 
     /// AT1: a published answer says what the operator attests about whoever
@@ -1374,23 +1835,49 @@ the binary and its manifest would ship disagreeing about what they are"
     fn a_published_answer_says_what_is_attested_about_its_publisher() {
         let ui = ui_source();
         let path = function_body(&ui, "publishedPath");
-        assert!(path.contains("attestationLine(card, pick.domain)"), "the answer no longer says who stands behind it");
-        let line = ui.split("function attestationLine(").nth(1).expect("attestationLine is gone");
-        for state in ["\"live\"", "\"stale\"", "att_unknown", "deprecated", "forge_archived", "log_seq"] {
-            assert!(line.contains(state), "the attestation line does not handle {state}");
+        assert!(
+            path.contains("attestationLine(card, pick.domain)"),
+            "the answer no longer says who stands behind it"
+        );
+        let line = ui
+            .split("function attestationLine(")
+            .nth(1)
+            .expect("attestationLine is gone");
+        for state in [
+            "\"live\"",
+            "\"stale\"",
+            "att_unknown",
+            "deprecated",
+            "forge_archived",
+            "log_seq",
+        ] {
+            assert!(
+                line.contains(state),
+                "the attestation line does not handle {state}"
+            );
         }
         let main = main_source();
         let card = main.split("async fn published_card(").nth(1).unwrap();
-        assert!(card.contains("\"anchor\"") && card.contains("\"project\""),
-                "the client drops what the mirror attests before the window sees it");
+        assert!(
+            card.contains("\"anchor\"") && card.contains("\"project\""),
+            "the client drops what the mirror attests before the window sees it"
+        );
         // AT2's window half: the check the sentence promises is made, and its
         // result — either way — is shown.
         let path = function_body(&ui, "publishedPath");
-        assert!(path.contains("checkLogEntry(answered, card)"), "the log entry is announced and never checked");
+        assert!(
+            path.contains("checkLogEntry(answered, card)"),
+            "the log entry is announced and never checked"
+        );
         let check = function_body(&ui, "checkLogEntry");
-        assert!(check.contains("\"verify_log_entry\"") && check.contains("content_sha256"),
-                "the check does not bind the entry to the files being served");
-        assert!(check.contains("att_unproved"), "a failed proof is not shown");
+        assert!(
+            check.contains("\"verify_log_entry\"") && check.contains("content_sha256"),
+            "the check does not bind the entry to the files being served"
+        );
+        assert!(
+            check.contains("att_unproved"),
+            "a failed proof is not shown"
+        );
     }
 
     /// V4's window half: switching to the vendor the readings name ends this
@@ -1401,8 +1888,14 @@ the binary and its manifest would ship disagreeing about what they are"
         let ui = ui_source();
         let calls = ui.matches("await checkMismatch(").count();
         let returning = ui.matches("if(await checkMismatch(").count();
-        assert!(calls > 0, "nothing checks the named vendor against the readings");
-        assert_eq!(calls, returning, "a switch of vendor does not end the run everywhere it is offered");
+        assert!(
+            calls > 0,
+            "nothing checks the named vendor against the readings"
+        );
+        assert_eq!(
+            calls, returning,
+            "a switch of vendor does not end the run everywhere it is offered"
+        );
     }
 
     /// W12: the window's one escaper covers attribute values. It is used inside
@@ -1412,7 +1905,10 @@ the binary and its manifest would ship disagreeing about what they are"
     #[test]
     fn the_escaper_covers_attribute_values() {
         let ui = ui_source();
-        let line = ui.lines().find(|l| l.starts_with("const esc = ")).expect("the escaper is gone");
+        let line = ui
+            .lines()
+            .find(|l| l.starts_with("const esc = "))
+            .expect("the escaper is gone");
         for c in ["&amp;", "&lt;", "&gt;", "&quot;", "&#39;"] {
             assert!(line.contains(c), "the escaper does not produce {c}: {line}");
         }
@@ -1428,7 +1924,10 @@ the binary and its manifest would ship disagreeing about what they are"
             ("fetch(`${BASE}", "a direct fetch to the vendor base"),
             ("XMLHttpRequest", "a raw request object"),
         ] {
-            assert!(!ui.contains(offender), "the window bypasses the command layer: {why}");
+            assert!(
+                !ui.contains(offender),
+                "the window bypasses the command layer: {why}"
+            );
         }
     }
 
@@ -1445,19 +1944,32 @@ the binary and its manifest would ship disagreeing about what they are"
         let nsis = &conf["bundle"]["windows"]["nsis"];
         assert_eq!(nsis["installMode"], "currentUser",
                    "an installer for the whole machine needs an administrator — this client promises bounded effect");
-        let hooks = nsis["installerHooks"].as_str().expect("no installer hooks named");
-        let hooks = std::fs::read_to_string(crate_dir().join(hooks)).expect("the named hooks file is missing");
-        assert!(hooks.contains("NSIS_HOOK_POSTUNINSTALL") && hooks.contains("$DeleteAppDataCheckboxState"),
-                "uninstalling no longer honours the delete-data box");
-        let removes = hooks.lines().filter(|l| !l.trim_start().starts_with(';'))
+        let hooks = nsis["installerHooks"]
+            .as_str()
+            .expect("no installer hooks named");
+        let hooks = std::fs::read_to_string(crate_dir().join(hooks))
+            .expect("the named hooks file is missing");
+        assert!(
+            hooks.contains("NSIS_HOOK_POSTUNINSTALL")
+                && hooks.contains("$DeleteAppDataCheckboxState"),
+            "uninstalling no longer honours the delete-data box"
+        );
+        let removes = hooks
+            .lines()
+            .filter(|l| !l.trim_start().starts_with(';'))
             .any(|l| l.contains("RMDir /r \"$APPDATA\\podshl\""));
         assert!(removes, "the uninstaller does not remove %APPDATA%\\podshl");
         // The directory the hook removes is the one the client writes.
-        for (file, needle) in [("src/main.rs", ".join(\"podshl\")"), ("src/llm.rs", ".join(\"podshl\")"),
-                               ("src/identity.rs", ".join(\"podshl\")")] {
+        for (file, needle) in [
+            ("src/main.rs", ".join(\"podshl\")"),
+            ("src/llm.rs", ".join(\"podshl\")"),
+            ("src/identity.rs", ".join(\"podshl\")"),
+        ] {
             let src = std::fs::read_to_string(crate_dir().join(file)).unwrap();
-            assert!(src.contains("dirs::config_dir()") && src.contains(needle),
-                    "{file} no longer keeps its state under the config directory's podshl");
+            assert!(
+                src.contains("dirs::config_dir()") && src.contains(needle),
+                "{file} no longer keeps its state under the config directory's podshl"
+            );
         }
     }
 
@@ -1467,7 +1979,12 @@ the binary and its manifest would ship disagreeing about what they are"
     /// Every such default outside the tests has to sit behind `debug_assertions`.
     #[test]
     fn a_release_build_reads_no_key_or_directory_beside_where_it_was_started() {
-        for file in ["src/index.rs", "src/vendors.rs", "src/main.rs", "src/logproof.rs"] {
+        for file in [
+            "src/index.rs",
+            "src/vendors.rs",
+            "src/main.rs",
+            "src/logproof.rs",
+        ] {
             let src = std::fs::read_to_string(crate_dir().join(file)).unwrap();
             let body = src.split("#[cfg(test)]").next().unwrap();
             let lines: Vec<&str> = body.lines().collect();
@@ -1475,12 +1992,21 @@ the binary and its manifest would ship disagreeing about what they are"
                 if line.trim_start().starts_with("//") || !line.contains("\"../var/") {
                     continue;
                 }
-                let guarded = lines[i.saturating_sub(3)..=i].iter().any(|l| l.contains("debug_assertions"));
-                assert!(guarded, "{file}:{} reads the checkout's var/ in a release build: {}", i + 1, line.trim());
+                let guarded = lines[i.saturating_sub(3)..=i]
+                    .iter()
+                    .any(|l| l.contains("debug_assertions"));
+                assert!(
+                    guarded,
+                    "{file}:{} reads the checkout's var/ in a release build: {}",
+                    i + 1,
+                    line.trim()
+                );
             }
         }
         let main = main_source();
-        assert!(!main.contains("unwrap_or_else(|_| PathBuf::from(\".\"))"),
-                "the client's state directory defaults to wherever it was started");
+        assert!(
+            !main.contains("unwrap_or_else(|_| PathBuf::from(\".\"))"),
+            "the client's state directory defaults to wherever it was started"
+        );
     }
 }

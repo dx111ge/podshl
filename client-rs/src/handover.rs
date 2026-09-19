@@ -32,14 +32,19 @@ fn describes(id: &str) -> String {
 }
 
 pub fn channels_json() -> Value {
-    json!(REPLY_CHANNELS.iter().map(|id| json!({"id": id, "describes": describes(id)}))
+    json!(REPLY_CHANNELS
+        .iter()
+        .map(|id| json!({"id": id, "describes": describes(id)}))
         .collect::<Vec<_>>())
 }
 
 /// Reject a reply channel the client cannot honour, before the user is asked to
 /// pick it.
 pub fn usable(offered: &Value) -> Vec<String> {
-    offered.as_array().into_iter().flatten()
+    offered
+        .as_array()
+        .into_iter()
+        .flatten()
         .filter_map(|v| v.as_str())
         .filter(|c| channel_known(c))
         .map(String::from)

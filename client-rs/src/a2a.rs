@@ -104,12 +104,13 @@ pub async fn fetch_card(base: &str) -> Result<Value, DiscoveryError> {
             })
         })?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err(DiscoveryError::NoAgent(
-            m!("no_card_at_well_known"),
-        ));
+        return Err(DiscoveryError::NoAgent(m!("no_card_at_well_known")));
     }
     if !resp.status().is_success() {
-        return Err(DiscoveryError::NoAgent(m!("card_http", n = resp.status().as_u16())));
+        return Err(DiscoveryError::NoAgent(m!(
+            "card_http",
+            n = resp.status().as_u16()
+        )));
     }
     crate::http::json_capped(resp, crate::http::MAX_BODY)
         .await

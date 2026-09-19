@@ -140,7 +140,12 @@ pub(crate) fn pinned_key() -> Result<(Value, String), String> {
         .ok()
         .or_else(|| {
             std::env::var("VS_ROOT")
-                .map(|r| (PathBuf::from(r).join("log_key.json"), "VS_ROOT/log_key.json"))
+                .map(|r| {
+                    (
+                        PathBuf::from(r).join("log_key.json"),
+                        "VS_ROOT/log_key.json",
+                    )
+                })
                 .ok()
         });
     if let Some((p, what)) = named {
@@ -167,7 +172,10 @@ pub(crate) fn pinned_key() -> Result<(Value, String), String> {
         let k = serde_json::from_str(&raw).map_err(|e| format!("{DEV} is not a JWK: {e}"))?;
         // Named in full, because this is the one source a person did not choose
         // and the one that quietly made a good index look forged.
-        return Ok(announce(k, format!("{DEV} beside this checkout — a development key, not any operator's")));
+        Ok(announce(
+            k,
+            format!("{DEV} beside this checkout — a development key, not any operator's"),
+        ))
     }
     #[cfg(not(debug_assertions))]
     Err("no log key: none was named and none is compiled into this build".to_string())
@@ -211,9 +219,7 @@ pub fn verify(doc: &Value) -> Result<Index, String> {
     for e in &idx.entries {
         match e.log_seq {
             Some(seq) if seq < idx.tree_size => {}
-            _ => {
-                return Err(m!("index_entry_unproven", host = e.host))
-            }
+            _ => return Err(m!("index_entry_unproven", host = e.host)),
         }
     }
     Ok(idx)
@@ -308,7 +314,11 @@ impl Entry {
     /// `search_tokens` for the same reason; this is the other half, because the
     /// client also matched on `host` directly.
     fn haystack(&self) -> Vec<String> {
-        let mut out: Vec<String> = self.search_tokens.iter().map(|t| t.to_lowercase()).collect();
+        let mut out: Vec<String> = self
+            .search_tokens
+            .iter()
+            .map(|t| t.to_lowercase())
+            .collect();
         out.extend(self.problem_classes.iter().map(|c| c.to_lowercase()));
         if self.is_repo() {
             out.push(self.display().to_lowercase());
@@ -357,6 +367,16 @@ pub fn search(idx: &Index, query: &str) -> Vec<Entry> {
     hits
 }
 
+/// The operator these tests check themselves against. Loopback by default,
+/// which is the development loop; `PODSHL_SERVER_URL` points them at a real
+/// one — the live operator answers every route they use with a GET, so running
+/// the suite against it reads a genuinely signed index and log rather than one
+/// this machine produced for itself.
+#[cfg(test)]
+pub(crate) fn operator_base() -> String {
+    std::env::var("PODSHL_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1:8725".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,7 +423,10 @@ mod tests {
     fn what_broke_is_what_is_typed() {
         let hits = search(&idx(), "pip");
         assert_eq!(hits.len(), 2, "typing the software found nothing");
-        assert_eq!(hits[0].status, "active", "a deprecated project was offered first");
+        assert_eq!(
+            hits[0].status, "active",
+            "a deprecated project was offered first"
+        );
     }
 
     /// A hardware maker is as valid a thing to type as a program. The field is
@@ -417,7 +440,10 @@ mod tests {
 
     #[test]
     fn an_unknown_name_is_not_a_match() {
-        assert!(search(&idx(), "kodak").is_empty(), "an unrelated name matched");
+        assert!(
+            search(&idx(), "kodak").is_empty(),
+            "an unrelated name matched"
+        );
         assert!(search(&idx(), "").is_empty(), "an empty query matched");
     }
 
@@ -426,9 +452,18 @@ mod tests {
     fn a_cached_index_goes_stale_and_a_backwards_clock_is_not_freshness() {
         let mut i = idx();
         i.generated_ms = 1_000_000;
-        assert!(!is_stale(&i, 1_000_000 + MAX_AGE_MS - 1), "fresh index called stale");
-        assert!(is_stale(&i, 1_000_000 + MAX_AGE_MS), "an index past its age was called current");
-        assert!(is_stale(&i, 500_000), "a clock that went backwards was read as freshness");
+        assert!(
+            !is_stale(&i, 1_000_000 + MAX_AGE_MS - 1),
+            "fresh index called stale"
+        );
+        assert!(
+            is_stale(&i, 1_000_000 + MAX_AGE_MS),
+            "an index past its age was called current"
+        );
+        assert!(
+            is_stale(&i, 500_000),
+            "a clock that went backwards was read as freshness"
+        );
     }
 
     /// An entry from an operator that has not been updated still reads.
@@ -447,7 +482,10 @@ mod tests {
             "class_labels": {"engram.llm.model-not-pulled": "Search returns nothing"}
         }))
         .expect("an index from before the glossary did not parse");
-        assert!(old.glossary_keep.is_empty(), "a missing glossary is no terms, not a failure");
+        assert!(
+            old.glossary_keep.is_empty(),
+            "a missing glossary is no terms, not a failure"
+        );
 
         let new: Entry = serde_json::from_value(serde_json::json!({
             "host": "github.com",
@@ -455,7 +493,10 @@ mod tests {
             "glossary_keep": ["brain", ".brain"]
         }))
         .expect("an index with a glossary did not parse");
-        assert_eq!(new.glossary_keep, vec!["brain".to_string(), ".brain".to_string()]);
+        assert_eq!(
+            new.glossary_keep,
+            vec!["brain".to_string(), ".brain".to_string()]
+        );
     }
 
     /// The interop case: the index this client verifies is the one the server
@@ -469,7 +510,7 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                let base = crate::http::operator_base();
+                let base = crate::index::operator_base();
                 reqwest::get(format!("{base}/index")).await?.json::<Value>().await
             })
             .expect(
@@ -482,7 +523,7 @@ mod tests {
              registered there, so there is no entry for this case to verify. \
              Not a client defect — claim an anchor on that operator, or point \
              PODSHL_SERVER_URL at one that has entries.",
-            crate::http::operator_base()
+            crate::index::operator_base()
         );
     }
 
@@ -527,17 +568,29 @@ mod tests {
             },
         ];
 
-        assert_eq!(i.entries[0].display(), "dx111ge/engram",
-                   "a repository was shown under the forge's name");
+        assert_eq!(
+            i.entries[0].display(),
+            "dx111ge/engram",
+            "a repository was shown under the forge's name"
+        );
 
         let hits = search(&i, "engram");
-        assert_eq!(hits.len(), 1, "searching a project name found {} rows", hits.len());
+        assert_eq!(
+            hits.len(),
+            1,
+            "searching a project name found {} rows",
+            hits.len()
+        );
         assert_eq!(hits[0].display(), "dx111ge/engram");
 
-        assert!(search(&i, "github").is_empty(),
-                "the forge's own name found every repository on it at once");
-        assert!(search(&i, "github.com").is_empty(),
-                "the forge's host found every repository on it at once");
+        assert!(
+            search(&i, "github").is_empty(),
+            "the forge's own name found every repository on it at once"
+        );
+        assert!(
+            search(&i, "github.com").is_empty(),
+            "the forge's host found every repository on it at once"
+        );
 
         // And a domain is still found by its host, which is its name.
         let mut d = idx();
@@ -549,7 +602,10 @@ mod tests {
             ..Default::default()
         }];
         assert_eq!(d.entries[0].display(), "curl.se");
-        assert_eq!(search(&d, "curl").len(), 1, "a domain stopped being findable");
+        assert_eq!(
+            search(&d, "curl").len(),
+            1,
+            "a domain stopped being findable"
+        );
     }
-
 }

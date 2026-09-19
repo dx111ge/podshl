@@ -22,7 +22,13 @@ pub const MAX_DESCRIPTION: usize = 16 * 1024;
 /// database's CHECK: a word this client invents is a report the operator
 /// refuses after the person pressed send, which is the worst moment to find
 /// out.
-pub const OUTCOMES: &[&str] = &["resolved", "unresolved", "escalated", "abstained", "uncovered"];
+pub const OUTCOMES: &[&str] = &[
+    "resolved",
+    "unresolved",
+    "escalated",
+    "abstained",
+    "uncovered",
+];
 
 /// The report as the operator takes it, for a project that published files
 /// rather than running an agent.
@@ -32,8 +38,12 @@ pub const OUTCOMES: &[&str] = &["resolved", "unresolved", "escalated", "abstaine
 /// recipient keys on: a `subject` host instead of a skill, and a pseudonym per
 /// subject. Checked on the way out, so this client is never the one that sends
 /// free text without its consent or a report the operator would refuse.
-pub fn for_operator(report: &Value, subject: &str, pseudonym: &str, epoch: &str)
-    -> Result<Value, String> {
+pub fn for_operator(
+    report: &Value,
+    subject: &str,
+    pseudonym: &str,
+    epoch: &str,
+) -> Result<Value, String> {
     if subject.trim().is_empty() {
         return Err(m!("report_no_recipient"));
     }
@@ -74,9 +84,15 @@ pub fn for_operator(report: &Value, subject: &str, pseudonym: &str, epoch: &str)
         "model_class": "none",
     });
     if let Some(text) = report.get("description").and_then(|v| v.as_str()) {
-        let consent = report.get("description_consent").cloned().unwrap_or(Value::Null);
+        let consent = report
+            .get("description_consent")
+            .cloned()
+            .unwrap_or(Value::Null);
         let granted = consent.get("granted") == Some(&Value::Bool(true));
-        let named = consent.get("destination").and_then(|d| d.as_str()).map_or(false, |d| !d.trim().is_empty());
+        let named = consent
+            .get("destination")
+            .and_then(|d| d.as_str())
+            .is_some_and(|d| !d.trim().is_empty());
         if !(granted && named) {
             return Err(m!("free_text_without_consent"));
         }
@@ -135,7 +151,10 @@ fn policy(id: &str, kind: &str, has_choices: bool, op: Option<&str>) -> &'static
     if id.contains("serial") {
         return "never";
     }
-    if matches!(op, Some("program_version") | Some("container_image_version")) {
+    if matches!(
+        op,
+        Some("program_version") | Some("container_image_version")
+    ) {
         return "exact";
     }
     // A location. `python.venv.base` is the directory the interpreter lives
@@ -160,7 +179,10 @@ fn looks_like_path(s: &str) -> bool {
     let b = s.as_bytes();
     s.starts_with('/')
         || s.starts_with("\\\\")
-        || (b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/'))
+        || (b.len() >= 3
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && (b[2] == b'\\' || b[2] == b'/'))
 }
 
 /// The last component of a path, whichever separator wrote it. A trailing
@@ -179,7 +201,7 @@ fn generalise(v: &Value, how: &str) -> Option<Value> {
         // A path is a path however the id was named. This is the one policy
         // that looks at the value: a reading nobody thought of as a location
         // — a tool that prints where it was installed — is still one.
-        "exact" if v.as_str().map_or(false, looks_like_path) => generalise(v, "path"),
+        "exact" if v.as_str().is_some_and(looks_like_path) => generalise(v, "path"),
         "exact" => Some(v.clone()),
         "path" => v.as_str().and_then(basename).map(Value::String),
         "major_minor" => v.as_str().map(|s| Value::String(major(s, 2))),
@@ -188,16 +210,20 @@ fn generalise(v: &Value, how: &str) -> Option<Value> {
         // `8192 MiB` — and this used to accept only a JSON number, so every VRAM
         // reading on every path was dropped as "held back" and never travelled
         // at all. The leading integer is the value; the unit is in the id.
-        "bucket" => v.as_i64().or_else(|| {
-            v.as_str().and_then(|s| digits(s).first().and_then(|d| d.parse().ok()))
-        }).map(|n| {
-            let band = [2048, 4096, 8192, 12288, 16384, 24576]
-                .iter()
-                .find(|e| n <= **e)
-                .map(|e| format!("<={e}"))
-                .unwrap_or_else(|| ">24576".into());
-            Value::String(band)
-        }),
+        "bucket" => v
+            .as_i64()
+            .or_else(|| {
+                v.as_str()
+                    .and_then(|s| digits(s).first().and_then(|d| d.parse().ok()))
+            })
+            .map(|n| {
+                let band = [2048, 4096, 8192, 12288, 16384, 24576]
+                    .iter()
+                    .find(|e| n <= **e)
+                    .map(|e| format!("<={e}"))
+                    .unwrap_or_else(|| ">24576".into());
+                Value::String(band)
+            }),
         _ => None,
     }
 }
@@ -260,8 +286,11 @@ pub fn with_consented_text(
     // the lines around a failure; a whole log is a record of somebody's day,
     // and nobody reviews forty thousand lines before pressing "send".
     if text.chars().count() > MAX_DESCRIPTION {
-        return Err(m!("free_text_over", n = text.chars().count(), max = MAX_DESCRIPTION));
-
+        return Err(m!(
+            "free_text_over",
+            n = text.chars().count(),
+            max = MAX_DESCRIPTION
+        ));
     }
     if destination.trim().is_empty() {
         return Err(m!("consent_without_recipient"));
@@ -290,14 +319,20 @@ pub fn build(
     resolved_by: &str,
     outcome: &str,
 ) -> (Value, Vec<String>) {
-    let probes = skill.get("probes").and_then(|p| p.as_array()).cloned().unwrap_or_default();
+    let probes = skill
+        .get("probes")
+        .and_then(|p| p.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut observed = Map::new();
     let mut asserted = Map::new();
     let mut held = Vec::new();
 
     if let Some(map) = facts.as_object() {
         for (k, v) in map {
-            let p = probes.iter().find(|p| p.get("id").and_then(|i| i.as_str()) == Some(k));
+            let p = probes
+                .iter()
+                .find(|p| p.get("id").and_then(|i| i.as_str()) == Some(k));
             let declared_kind = p
                 .and_then(|p| p.get("kind"))
                 .and_then(|x| x.as_str())
@@ -311,7 +346,9 @@ pub fn build(
                     k,
                     if from_a_person { "human" } else { "machine" },
                     p.get("choices").map(|c| !c.is_null()).unwrap_or(false),
-                    p.get("read").and_then(|r| r.get("op")).and_then(|o| o.as_str()),
+                    p.get("read")
+                        .and_then(|r| r.get("op"))
+                        .and_then(|o| o.as_str()),
                 ),
                 // No declared probe: free text, and it does not travel.
                 None => "never",
@@ -382,7 +419,9 @@ pub fn build(
 pub fn observed_by_catalogue(facts: &Value) -> (Map<String, Value>, Vec<String>) {
     let catalogue = crate::reads::catalogue_all();
     let op_of = |id: &str| -> Option<String> {
-        catalogue.as_array()?.iter()
+        catalogue
+            .as_array()?
+            .iter()
             .find(|c| c.get("id").and_then(|v| v.as_str()) == Some(id))
             .and_then(|c| c.pointer("/read/op"))
             .and_then(|o| o.as_str())
@@ -411,7 +450,127 @@ pub fn observed_by_catalogue(facts: &Value) -> (Map<String, Value>, Vec<String>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actions;
     use serde_json::json;
+
+    /// A12: the whole arc, and the one nobody had written down.
+    ///
+    /// A1 to A11 each check one step — the dry run, the backup, the undo, the
+    /// refusals. Every one of them passes on a machine where the product does
+    /// not work at all, because none of them asks the question the front page
+    /// makes a promise about: **does the agent actually fix the thing, and does
+    /// the fix hold?**
+    ///
+    /// `A10` — "dry-run text against actual effect" — was marked `manual`,
+    /// which is the same gap seen from the other side: nothing compared what
+    /// the user was *told* would happen against what happened. A dry run that
+    /// under-reports its own effect defeats the entire consent design, and it
+    /// would do so silently.
+    ///
+    /// So this walks it: a broken configuration file, the remedy the publisher
+    /// proposed, the sentence the user is shown, the change, the check that the
+    /// change is real, and the undo that puts it back byte for byte. Then the
+    /// report that says it worked — because "resolved" is a claim about the
+    /// world, and it should only be made by a path that changed the world.
+    #[test]
+    fn the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back() {
+        let root = std::env::temp_dir().join(format!("vs-fix-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("app.toml");
+
+        // What a broken machine looks like: the setting that is wrong, and
+        // other lines that must survive untouched.
+        let before = "# engram\nname = \"demo\"\nmodeset = 0\nlast = \"keep me\"\n";
+        std::fs::write(&file, before).unwrap();
+
+        let params = json!({"file": "app.toml", "key": "modeset", "value": "1"});
+
+        // 1. What the user is shown before anything happens. It has to name the
+        //    file, the key and the value — a sentence that says less than the
+        //    effect is a sentence somebody consented to under a false idea of
+        //    what they were agreeing to.
+        let shown = actions::dry_run("set_config_key", &params).expect("no dry run");
+        for needle in ["app.toml", "modeset", "1"] {
+            assert!(
+                shown.contains(needle),
+                "the dry run does not name {needle:?}, so the user is consenting to \
+                     something narrower than what will happen: {shown}"
+            );
+        }
+        assert!(
+            shown.contains(".bak"),
+            "the dry run does not mention the rollback: {shown}"
+        );
+
+        // 2. Nothing has happened yet. A plan that acts is not a plan.
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            before,
+            "the dry run changed the file"
+        );
+
+        // 3. The change.
+        actions::execute("set_config_key", &params, &root).expect("the fix did not apply");
+
+        let after = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            after.contains("modeset = 1"),
+            "the fix did not take: {after}"
+        );
+        assert!(
+            after.contains("last = \"keep me\""),
+            "the fix rewrote lines it was not asked about: {after}"
+        );
+        assert!(
+            after.contains("name = \"demo\""),
+            "an unrelated key was lost: {after}"
+        );
+
+        // 4. The rollback exists *before* it is needed, which is what makes the
+        //    change reversible rather than merely regrettable.
+        let backup = root.join("app.toml.bak");
+        assert!(backup.exists(), "no backup was left beside the change");
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            before,
+            "the backup is not what was there before the change"
+        );
+
+        // 5. Undo, and the file is byte for byte what it was. Not "close
+        //    enough": a rollback that leaves the file different is a second
+        //    change wearing the word undo.
+        actions::execute("restore_backup", &json!({"file": "app.toml"}), &root)
+            .expect("the undo failed");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            before,
+            "the undo did not restore the file exactly"
+        );
+
+        // 6. And the report that says so. `resolved` is a claim about the
+        //    world, and this is the only test in which the world was changed
+        //    and changed back before it is made.
+        let skill = json!({"skill_id": "demo-fix", "version": "1",
+                           "probes": [{"id": "app.modeset", "kind": "machine"}]});
+        let facts = json!({"app.modeset": "0"});
+        let (built, _held) = build(
+            &skill,
+            &facts,
+            &[],
+            &["app.modeset".to_string()],
+            "vendor_skill",
+            "resolved",
+        );
+        assert_eq!(built["outcome"], "resolved", "{built}");
+        assert_eq!(
+            built["observed"]["app.modeset"], "0",
+            "the report does not carry the fact the fix turned on: {built}"
+        );
+        assert_eq!(built["decided_on"][0], "app.modeset", "{built}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// The skill whose probes decide the policy. A fact with no matching probe
     /// is dropped rather than passed through: an unrecognised value is exactly
@@ -440,14 +599,24 @@ mod tests {
             "serial.printed": "0324718061234",
             "symptom": "Artefakte im Bild, seit gestern"
         });
-        let (report, held) = build(&rma_skill(), &facts, &[], &[], "general_agent", "unresolved");
+        let (report, held) = build(
+            &rma_skill(),
+            &facts,
+            &[],
+            &[],
+            "general_agent",
+            "unresolved",
+        );
         let blob = serde_json::to_string(&report).unwrap();
 
         for secret in ["0324718061234", "Artefakte"] {
             assert!(!blob.contains(secret), "{secret:?} leaked into the report");
         }
         for id in ["serial.printed", "symptom"] {
-            assert!(held.iter().any(|h| h == id), "{id} was not declared as held back");
+            assert!(
+                held.iter().any(|h| h == id),
+                "{id} was not declared as held back"
+            );
         }
     }
 
@@ -463,8 +632,10 @@ mod tests {
         let facts = json!({"chart.confirmed": "SKR04"});
         let (report, held) = build(&rma_skill(), &facts, &[], &[], "vendor_skill", "resolved");
         assert_eq!(report["stated"]["chart.confirmed"], "SKR04");
-        assert!(report["observed"].get("chart.confirmed").is_none(),
-                "an answer a person chose was reported as something the machine measured");
+        assert!(
+            report["observed"].get("chart.confirmed").is_none(),
+            "an answer a person chose was reported as something the machine measured"
+        );
         assert!(!held.iter().any(|h| h == "chart.confirmed"));
     }
 
@@ -489,9 +660,15 @@ mod tests {
         let facts = json!({"engram.version": "1.2.2", "ollama.container_version": "0.3.14",
                            "python.version": "Python 3.12.14"});
         let (report, _) = build(&skill, &facts, &[], &[], "vendor_skill", "resolved");
-        assert_eq!(report["observed"]["engram.version"], "1.2.2", "the publisher's own version was coarsened");
+        assert_eq!(
+            report["observed"]["engram.version"], "1.2.2",
+            "the publisher's own version was coarsened"
+        );
         assert_eq!(report["observed"]["ollama.container_version"], "0.3.14");
-        assert_eq!(report["observed"]["python.version"], "3.12.x", "an interpreter reading travelled exactly");
+        assert_eq!(
+            report["observed"]["python.version"], "3.12.x",
+            "an interpreter reading travelled exactly"
+        );
     }
 
     /// Memory sizes travel as a band, never as a number.
@@ -504,8 +681,10 @@ mod tests {
         // accepted, so this — the real reading — was always dropped.
         let facts = json!({"gpu.vram_total_mib": "12282 MiB"});
         let (report, held) = build(&rma_skill(), &facts, &[], &[], "vendor_skill", "resolved");
-        assert_eq!(report["observed"]["gpu.vram_total_mib"], "<=12288",
-                   "the reading nvidia-smi prints did not travel: held back {held:?}");
+        assert_eq!(
+            report["observed"]["gpu.vram_total_mib"], "<=12288",
+            "the reading nvidia-smi prints did not travel: held back {held:?}"
+        );
     }
 
     /// T6: no timestamp and no identifier. A report that can be linked back to
@@ -515,13 +694,29 @@ mod tests {
         let facts = json!({"gpu.name": "RTX 2070 SUPER"});
         let (report, _) = build(&rma_skill(), &facts, &[], &[], "general_agent", "resolved");
         let o = report.as_object().unwrap();
-        for forbidden in ["incident_id", "opened_at", "closed_at", "at", "timestamp", "id"] {
+        for forbidden in [
+            "incident_id",
+            "opened_at",
+            "closed_at",
+            "at",
+            "timestamp",
+            "id",
+        ] {
             assert!(!o.contains_key(forbidden), "the report carries {forbidden}");
         }
         assert_eq!(
             o.keys().cloned().collect::<Vec<_>>(),
-            vec!["decided_on", "dropped", "failed_actions", "observed", "outcome",
-                 "resolved_by", "skill_id", "skill_version", "stated"],
+            vec![
+                "decided_on",
+                "dropped",
+                "failed_actions",
+                "observed",
+                "outcome",
+                "resolved_by",
+                "skill_id",
+                "skill_version",
+                "stated"
+            ],
             "the report's shape changed — every field here is one a vendor sees"
         );
     }
@@ -534,10 +729,15 @@ mod tests {
         let facts = json!({"gpu.name": "RTX", "gpu.driver_version": "610.57.04",
                            "serial.printed": "0324718061234"});
         let (built, _) = build(&rma_skill(), &facts, &[], &[], "vendor_skill", "resolved");
-        let parsed: crate::wire::Report = serde_json::from_value(built.clone())
-            .unwrap_or_else(|e| panic!("this client's own report does not match the schema: {e}\n{built}"));
+        let parsed: crate::wire::Report =
+            serde_json::from_value(built.clone()).unwrap_or_else(|e| {
+                panic!("this client's own report does not match the schema: {e}\n{built}")
+            });
         assert_eq!(parsed.resolved_by, "vendor_skill");
-        assert!(parsed.pseudonym.is_none(), "build() must not invent an identity");
+        assert!(
+            parsed.pseudonym.is_none(),
+            "build() must not invent an identity"
+        );
         assert!(parsed.dropped.iter().any(|d| d == "serial.printed"));
     }
 
@@ -547,7 +747,10 @@ mod tests {
     fn a_fact_the_skill_did_not_ask_for_is_dropped() {
         let facts = json!({"gpu.name": "RTX", "browser.history": "everything"});
         let (report, held) = build(&rma_skill(), &facts, &[], &[], "general_agent", "resolved");
-        assert!(report["observed"].get("browser.history").is_none(), "an unasked fact travelled");
+        assert!(
+            report["observed"].get("browser.history").is_none(),
+            "an unasked fact travelled"
+        );
         assert!(held.iter().any(|h| h == "browser.history"));
     }
 
@@ -565,25 +768,53 @@ mod tests {
         let facts = json!({"gpu.name":"RTX 4090","which.one":"a"});
 
         let (measured, _) = build(&skill, &facts, &[], &[], "vendor_skill", "resolved");
-        assert_eq!(measured["observed"]["gpu.name"], "RTX 4090", "a real reading was dropped");
+        assert_eq!(
+            measured["observed"]["gpu.name"], "RTX 4090",
+            "a real reading was dropped"
+        );
         // A probe the skill declared `human` is a person's answer however it
         // arrived, so it is never a measurement.
-        assert!(measured["observed"].get("which.one").is_none(),
-                "a declared human answer was reported as a measurement");
-        assert_eq!(measured["stated"]["which.one"], "a", "a bounded answer was lost");
+        assert!(
+            measured["observed"].get("which.one").is_none(),
+            "a declared human answer was reported as a measurement"
+        );
+        assert_eq!(
+            measured["stated"]["which.one"], "a",
+            "a bounded answer was lost"
+        );
 
         // The same reading, this time typed by a person.
-        let (claimed, held) = build(&skill, &facts, &["gpu.name".into()], &[], "vendor_skill", "resolved");
-        assert!(claimed["observed"].get("gpu.name").is_none(),
-                "a value somebody typed was reported as a machine reading");
+        let (claimed, held) = build(
+            &skill,
+            &facts,
+            &["gpu.name".into()],
+            &[],
+            "vendor_skill",
+            "resolved",
+        );
+        assert!(
+            claimed["observed"].get("gpu.name").is_none(),
+            "a value somebody typed was reported as a machine reading"
+        );
         // Typed free text does not travel — T4 — but the recipient is still
         // told that a person supplied it, because that is what decides whether
         // the outcome says anything about their rule.
-        assert!(claimed["stated"].as_object().unwrap().contains_key("gpu.name"),
-                "the recipient cannot tell this fact came from a person");
-        assert_eq!(claimed["stated"]["gpu.name"], Value::Null,
-                   "a typed free-text value travelled");
-        assert!(held.contains(&"gpu.name".to_string()), "withheld without saying so");
+        assert!(
+            claimed["stated"]
+                .as_object()
+                .unwrap()
+                .contains_key("gpu.name"),
+            "the recipient cannot tell this fact came from a person"
+        );
+        assert_eq!(
+            claimed["stated"]["gpu.name"],
+            Value::Null,
+            "a typed free-text value travelled"
+        );
+        assert!(
+            held.contains(&"gpu.name".to_string()),
+            "withheld without saying so"
+        );
 
         // The two maps never overlap: a key is measured or supplied, not both.
         for k in claimed["stated"].as_object().unwrap().keys() {
@@ -604,17 +835,31 @@ mod tests {
         ]});
 
         // Read on this machine: a measurement.
-        let (read, _) = build(&skill, &json!({"pip.version":"23.2"}), &[], &[],
-                              "vendor_skill", "resolved");
+        let (read, _) = build(
+            &skill,
+            &json!({"pip.version":"23.2"}),
+            &[],
+            &[],
+            "vendor_skill",
+            "resolved",
+        );
         assert_eq!(read["observed"]["pip.version"], "23.2");
         assert!(read["stated"].as_object().unwrap().is_empty());
 
         // Not readable, so the publisher's question was asked instead. The same
         // fact, and the recipient can tell.
-        let (asked, _) = build(&skill, &json!({"pip.version":"23.x or newer"}),
-                               &["pip.version".into()], &[], "vendor_skill", "resolved");
-        assert!(asked["observed"].as_object().unwrap().is_empty(),
-                "an answer was reported as a measurement");
+        let (asked, _) = build(
+            &skill,
+            &json!({"pip.version":"23.x or newer"}),
+            &["pip.version".into()],
+            &[],
+            "vendor_skill",
+            "resolved",
+        );
+        assert!(
+            asked["observed"].as_object().unwrap().is_empty(),
+            "an answer was reported as a measurement"
+        );
         assert_eq!(asked["stated"]["pip.version"], "23.x or newer",
                    "a bounded answer to an authored question did not travel — without it the publisher never learns this fact at all");
     }
@@ -630,43 +875,67 @@ mod tests {
     #[test]
     fn a_published_report_reaches_the_operator_in_its_own_shape() {
         let card = json!({"id": "engram.install.no-build-for-this-platform", "version": "v1.2.0",
-            "probes": [
-                {"id": "os.name", "kind": "machine", "read": {"op": "os_fact", "name": "os"}},
-                {"id": "engram.version", "kind": "machine",
-                 "read": {"op": "program_version", "program": "engram"}},
-                {"id": "engram.symptom", "kind": "human", "choices": ["the binary will not start at all"]},
-                {"id": "error.text", "kind": "human"}
-            ]});
+        "probes": [
+            {"id": "os.name", "kind": "machine", "read": {"op": "os_fact", "name": "os"}},
+            {"id": "engram.version", "kind": "machine",
+             "read": {"op": "program_version", "program": "engram"}},
+            {"id": "engram.symptom", "kind": "human", "choices": ["the binary will not start at all"]},
+            {"id": "error.text", "kind": "human"}
+        ]});
         let facts = json!({"os.name": "macos", "engram.version": "1.2.2",
                            "engram.symptom": "the binary will not start at all",
                            "error.text": "zsh: bad CPU type in executable: engram"});
-        let (built, _) = build(&card, &facts, &["error.text".into()], &["os.name".into()],
-                               "vendor_skill", "resolved");
+        let (built, _) = build(
+            &card,
+            &facts,
+            &["error.text".into()],
+            &["os.name".into()],
+            "vendor_skill",
+            "resolved",
+        );
         let body = for_operator(&built, "engram.localhost", "p-123", "2026-09").unwrap();
 
         assert_eq!(body["subject"], "engram.localhost");
         assert_eq!(body["pseudonym"], "p-123");
-        assert_eq!(body["model_class"], "none", "nothing was generated on this path");
+        assert_eq!(
+            body["model_class"], "none",
+            "nothing was generated on this path"
+        );
         assert_eq!(body["observed"]["os.name"], "macos");
         // Read by running the program the user pointed at: a measurement — and
         // exact, because it is the publisher's own version. "1.2.x" could not
         // tell a maintainer whether their 1.2.2 fix reached anybody.
         assert_eq!(body["observed"]["engram.version"], "1.2.2");
-        assert_eq!(body["stated"]["engram.symptom"], "the binary will not start at all");
-        assert_eq!(body["stated"]["error.text"], Value::Null, "free text travelled unasked");
+        assert_eq!(
+            body["stated"]["engram.symptom"],
+            "the binary will not start at all"
+        );
+        assert_eq!(
+            body["stated"]["error.text"],
+            Value::Null,
+            "free text travelled unasked"
+        );
         assert!(body.get("description").is_none());
 
         // With its own consent it travels, and not without.
         let mut with = built.clone();
-        with_consented_text(&mut with, "zsh: bad CPU type", "engram.localhost via operator", "2026-09").unwrap();
+        with_consented_text(
+            &mut with,
+            "zsh: bad CPU type",
+            "engram.localhost via operator",
+            "2026-09",
+        )
+        .unwrap();
         let body = for_operator(&with, "engram.localhost", "p-123", "2026-09").unwrap();
         assert_eq!(body["description"], "zsh: bad CPU type");
         assert_eq!(body["description_consent"]["granted"], true);
 
         let mut forged = built.clone();
         forged["description"] = json!("typed but never agreed to");
-        assert!(for_operator(&forged, "engram.localhost", "p", "2026-09").is_err(),
-                "free text without its consent was sent");
+        assert!(
+            for_operator(&forged, "engram.localhost", "p", "2026-09").is_err(),
+            "free text without its consent was sent"
+        );
 
         let mut bad = built.clone();
         bad["outcome"] = json!("maybe");
@@ -700,14 +969,23 @@ mod tests {
                            "app.install_dir": "C:\\Program Files\\Engram\\",
                            "gpu.name": "RTX 4090"});
         let (report, held) = build(&skill, &facts, &[], &[], "vendor_skill", "resolved");
-        assert_eq!(report["observed"]["python.venv.base"], "Scripts", "{report}");
+        assert_eq!(
+            report["observed"]["python.venv.base"], "Scripts",
+            "{report}"
+        );
         assert_eq!(report["observed"]["env.HF_HOME"], "huggingface", "{report}");
         // Named as nothing in particular, and still a path.
         assert_eq!(report["observed"]["app.install_dir"], "Engram", "{report}");
-        assert_eq!(report["observed"]["gpu.name"], "RTX 4090", "a plain value was cut");
+        assert_eq!(
+            report["observed"]["gpu.name"], "RTX 4090",
+            "a plain value was cut"
+        );
         assert!(held.is_empty(), "{held:?}");
         let blob = report.to_string();
-        assert!(!blob.contains("jdoe") && !blob.contains("Users"), "the account survived: {blob}");
+        assert!(
+            !blob.contains("jdoe") && !blob.contains("Users"),
+            "the account survived: {blob}"
+        );
         assert_eq!(basename("/"), None);
         assert_eq!(basename("/usr/bin/"), Some("bin".into()));
     }
@@ -724,9 +1002,13 @@ mod tests {
             {"id":"app.node","kind":"machine"},
             {"id":"which.one","kind":"human","choices":["a"]}
         ]});
-        let user = ["USERNAME", "USER", "LOGNAME"].iter()
-            .find_map(|k| std::env::var(k).ok()).filter(|u| u.chars().count() >= 3);
-        let host = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).ok()
+        let user = ["USERNAME", "USER", "LOGNAME"]
+            .iter()
+            .find_map(|k| std::env::var(k).ok())
+            .filter(|u| u.chars().count() >= 3);
+        let host = std::env::var("COMPUTERNAME")
+            .or_else(|_| std::env::var("HOSTNAME"))
+            .ok()
             .filter(|h| h.chars().count() >= 3);
         let facts = json!({
             "app.owner": format!("built by {}", user.clone().unwrap_or_else(|| "nobody".into())),
@@ -736,17 +1018,25 @@ mod tests {
         });
         let (report, _) = build(&skill, &facts, &[], &[], "vendor_skill", "resolved");
         let blob = report.to_string();
-        assert!(!blob.contains("3f2b1c9e"), "a machine GUID travelled: {blob}");
+        assert!(
+            !blob.contains("3f2b1c9e"),
+            "a machine GUID travelled: {blob}"
+        );
         assert_eq!(report["observed"]["app.machine_id"], "<uuid>");
         match user {
             Some(u) => {
                 assert!(!blob.contains(&u), "the account name travelled: {blob}");
                 assert_eq!(report["observed"]["app.owner"], "built by <user>");
             }
-            None => eprintln!("no account name of three characters or more here — that half not attempted"),
+            None => eprintln!(
+                "no account name of three characters or more here — that half not attempted"
+            ),
         }
         match host {
-            Some(h) => assert!(!blob.to_lowercase().contains(&h.to_lowercase()), "the host name travelled: {blob}"),
+            Some(h) => assert!(
+                !blob.to_lowercase().contains(&h.to_lowercase()),
+                "the host name travelled: {blob}"
+            ),
             None => eprintln!("no host name here — that half not attempted"),
         }
         assert_eq!(report["stated"]["which.one"], "a");
@@ -771,11 +1061,23 @@ mod tests {
         let (observed, held) = observed_by_catalogue(&facts);
         assert_eq!(observed["os"], "windows");
         assert_eq!(observed["gpu.name"], "NVIDIA GeForce RTX 2070 SUPER");
-        assert_eq!(observed["gpu.driver_version"], "610.57.x", "a driver build travelled exactly");
-        assert_eq!(observed["gpu.vram_total_mib"], "<=8192", "memory travelled as a number");
+        assert_eq!(
+            observed["gpu.driver_version"], "610.57.x",
+            "a driver build travelled exactly"
+        );
+        assert_eq!(
+            observed["gpu.vram_total_mib"], "<=8192",
+            "memory travelled as a number"
+        );
         assert_eq!(observed["gpu.bf16_native"], false);
-        assert_eq!(observed["python.venv.base"], ".venv", "a path travelled whole");
-        assert!(observed.get("browser.history").is_none(), "a fact the catalogue does not know travelled");
+        assert_eq!(
+            observed["python.venv.base"], ".venv",
+            "a path travelled whole"
+        );
+        assert!(
+            observed.get("browser.history").is_none(),
+            "a fact the catalogue does not know travelled"
+        );
         assert!(observed.get("gpu.serial").is_none(), "a serial travelled");
         assert_eq!(held, vec!["browser.history", "gpu.serial"]);
     }
@@ -785,11 +1087,19 @@ mod tests {
     #[test]
     fn consented_text_is_bounded_and_anonymised_by_the_binary() {
         let mut r = json!({});
-        let long: String = (0..300).map(|i| format!("line {i} from sven@example.org\n")).collect();
+        let long: String = (0..300)
+            .map(|i| format!("line {i} from sven@example.org\n"))
+            .collect();
         with_consented_text(&mut r, &long, "acme.example", "2026-09").unwrap();
         let d = r["description"].as_str().unwrap();
-        assert!(d.lines().count() <= crate::redact::MAX_LINES, "the whole log was attached");
-        assert!(d.ends_with("line 299 from <email>"), "the end of the log is where the failure is: {d:?}");
+        assert!(
+            d.lines().count() <= crate::redact::MAX_LINES,
+            "the whole log was attached"
+        );
+        assert!(
+            d.ends_with("line 299 from <email>"),
+            "the end of the log is where the failure is: {d:?}"
+        );
         assert!(!d.contains("sven@example.org"), "an address travelled: {d}");
     }
 
@@ -798,8 +1108,10 @@ mod tests {
     fn free_text_is_bounded() {
         let mut r = json!({});
         let long = "x".repeat(MAX_DESCRIPTION + 1);
-        assert!(with_consented_text(&mut r, &long, "d", "2026-09").is_err(),
-                "a whole log was attached as a description");
+        assert!(
+            with_consented_text(&mut r, &long, "d", "2026-09").is_err(),
+            "a whole log was attached as a description"
+        );
         assert!(r.get("description").is_none());
     }
 
@@ -818,20 +1130,37 @@ mod tests {
         ]});
         let facts = json!({"error.text":"ERROR: could not build wheels for lxml"});
 
-        let (mut r, held) = build(&skill, &facts, &["error.text".into()], &[],
-                                  "vendor_skill", "unresolved");
+        let (mut r, held) = build(
+            &skill,
+            &facts,
+            &["error.text".into()],
+            &[],
+            "vendor_skill",
+            "unresolved",
+        );
         // Nothing yet. The words are not in the report, and the recipient can
         // still see that the question was asked and went unanswered to them.
-        assert!(r.get("description").is_none(), "free text travelled unasked");
+        assert!(
+            r.get("description").is_none(),
+            "free text travelled unasked"
+        );
         assert_eq!(r["stated"]["error.text"], Value::Null);
         assert!(held.contains(&"error.text".to_string()));
 
         // Consent with nobody named is not consent.
         assert!(with_consented_text(&mut r, "ERROR: …", "  ", "2026-09").is_err());
-        assert!(r.get("description").is_none(), "text attached despite a refused consent");
+        assert!(
+            r.get("description").is_none(),
+            "text attached despite a refused consent"
+        );
 
-        with_consented_text(&mut r, facts["error.text"].as_str().unwrap(),
-                            "acme.example", "2026-09").unwrap();
+        with_consented_text(
+            &mut r,
+            facts["error.text"].as_str().unwrap(),
+            "acme.example",
+            "2026-09",
+        )
+        .unwrap();
         assert_eq!(r["description"], "ERROR: could not build wheels for lxml");
         let c = &r["description_consent"];
         assert_eq!(c["granted"], true);

@@ -224,7 +224,12 @@ mod tests {
 
     /// The field names a struct declares, in the order serde would emit them.
     fn declared(v: &Value) -> Vec<String> {
-        let mut k: Vec<String> = v["properties"].as_object().unwrap().keys().cloned().collect();
+        let mut k: Vec<String> = v["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
         k.sort();
         k
     }
@@ -242,40 +247,71 @@ mod tests {
     #[test]
     fn every_struct_matches_its_published_schema() {
         let probe = Probe {
-            id: "gpu.name".into(), kind: "machine".into(), describes: String::new(),
-            why: String::new(), read: Some(json!({"op": "os_fact", "name": "version"})),
-            derived: false, prompt: Some(String::new()), example: Some(String::new()),
-            pattern: Some(String::new()), choices: Some(vec![]),
-            when_missing: Some(String::new()), log: Some(json!({})), required: true,
+            id: "gpu.name".into(),
+            kind: "machine".into(),
+            describes: String::new(),
+            why: String::new(),
+            read: Some(json!({"op": "os_fact", "name": "version"})),
+            derived: false,
+            prompt: Some(String::new()),
+            example: Some(String::new()),
+            pattern: Some(String::new()),
+            choices: Some(vec![]),
+            when_missing: Some(String::new()),
+            log: Some(json!({})),
+            required: true,
         };
         assert_eq!(serialised(&probe), declared(&schema("probe")), "probe");
 
         let remedy = Remedy {
-            skill_id: "x".into(), skill_version: "1".into(), model_id: String::new(),
-            nonce: Some(String::new()), facts_sha256: Some(String::new()),
-            findings: vec![], plan: vec![], verify: vec![], abstained: false,
+            skill_id: "x".into(),
+            skill_version: "1".into(),
+            model_id: String::new(),
+            nonce: Some(String::new()),
+            facts_sha256: Some(String::new()),
+            findings: vec![],
+            plan: vec![],
+            verify: vec![],
+            abstained: false,
             abstain_reason: Some(String::new()),
             escalate: Some(Escalation {
-                reason: String::new(), queue: String::new(), target: Some(String::new()),
-                require: vec![], reply_via: vec![],
+                reason: String::new(),
+                queue: String::new(),
+                target: Some(String::new()),
+                require: vec![],
+                reply_via: vec![],
             }),
-            need: vec![], need_reason: Some(String::new()),
+            need: vec![],
+            need_reason: Some(String::new()),
         };
         assert_eq!(serialised(&remedy), declared(&schema("remedy")), "remedy");
 
         let report = Report {
-            skill_id: json!("x"), skill_version: json!("1"), resolved_by: "human".into(),
-            outcome: "resolved".into(), observed: json!({}), stated: json!({}), dropped: vec![],
-            decided_on: vec![], description: Some(String::new()),
+            skill_id: json!("x"),
+            skill_version: json!("1"),
+            resolved_by: "human".into(),
+            outcome: "resolved".into(),
+            observed: json!({}),
+            stated: json!({}),
+            dropped: vec![],
+            decided_on: vec![],
+            description: Some(String::new()),
             description_consent: Some(json!({})),
-            failed_actions: vec![], pseudonym: Some(String::new()), epoch: Some(String::new()),
+            failed_actions: vec![],
+            pseudonym: Some(String::new()),
+            epoch: Some(String::new()),
         };
         assert_eq!(serialised(&report), declared(&schema("report")), "report");
 
         let skill = Skill {
-            id: "x".into(), version: "1".into(), title: String::new(),
-            applies_to: json!({}), probes: vec![], lang: "en".into(),
-            static_kb_url: Some(String::new()), static_kb_says: Some(String::new()),
+            id: "x".into(),
+            version: "1".into(),
+            title: String::new(),
+            applies_to: json!({}),
+            probes: vec![],
+            lang: "en".into(),
+            static_kb_url: Some(String::new()),
+            static_kb_says: Some(String::new()),
         };
         assert_eq!(serialised(&skill), declared(&schema("skill")), "skill");
     }
@@ -307,7 +343,10 @@ mod tests {
         let r: Remedy = serde_json::from_value(raw).unwrap();
         assert_eq!(r.need.len(), 1);
         assert_eq!(r.need[0].choices.as_ref().unwrap().len(), 3);
-        assert!(r.findings.is_empty() && !r.abstained, "a need is not a finding and not an abstention");
+        assert!(
+            r.findings.is_empty() && !r.abstained,
+            "a need is not a finding and not an abstention"
+        );
     }
 
     /// The real card from the counterparty parses into these types. A schema
@@ -315,12 +354,14 @@ mod tests {
     #[test]
     fn the_counterpartys_own_skills_parse() {
         let Ok(raw) = std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../var/test_card.json"))
-        else {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../var/test_card.json"),
+        ) else {
             panic!("../var/test_card.json is missing — run `mise run services` and the jws tests first");
         };
         let card: Value = serde_json::from_str(&raw).unwrap();
-        let skills = card["skills"].as_array().expect("the card carries no skills");
+        let skills = card["skills"]
+            .as_array()
+            .expect("the card carries no skills");
         assert!(!skills.is_empty());
         for s in skills {
             // The card's skill summaries carry ids and descriptions rather than

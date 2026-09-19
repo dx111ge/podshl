@@ -15,6 +15,25 @@ decision reads is written by code: versions come from the package manager,
 paths are resolved, digests are computed. A `note` is kept and shown, and
 nothing reads it.
 
+## Getting it on its own (Linux, Omarchy first)
+
+The record does not need the rest of PODSHL: no window, no WebKitGTK, no
+root. One program, into your own `~/.local/bin`:
+
+```
+cd "$(mktemp -d)"
+curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.7/podshl-repairs-0.1.7-linux-x86_64
+curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.7/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+install -Dm755 podshl-repairs-0.1.7-linux-x86_64 ~/.local/bin/podshl-repairs
+podshl-repairs install-hook          # a review after every update (Omarchy), or daily
+podshl-repairs install-agent-hook    # Omarchy: record what your default agent writes
+```
+
+It is not a package, so nothing asks the AUR about it. Removing it is
+`podshl-repairs remove-agent-hook`, `podshl-repairs remove-hook`, and deleting
+the file; the record itself is in `~/.config/podshl`.
+
 ## What gets recorded
 
 * **Changes the client makes itself.** Every change the window makes is written
@@ -31,6 +50,45 @@ nothing reads it.
 Any record can name an upstream issue or pull request and the version that
 fixes it (`--fixed-in`). Once that version is installed, the record is flagged
 with "may no longer be needed, or the fix did not hold".
+
+## What a coding agent changes
+
+An agent that fixes something on this machine does not write it down, and
+neither does the person at midnight. So the agent's own hooks do it:
+
+```
+podshl-repairs install-agent-hook            # on Omarchy: the default agent
+podshl-repairs install-agent-hook --agent claude
+podshl-repairs install-agent-hook --print    # what it would write, and nothing else
+podshl-repairs remove-agent-hook
+```
+
+Before the agent writes a file, a copy is kept; after, the record is finished
+under the agent's name. **One record per file per session**: the copy is from
+before the agent first touched the file, so Undo goes back to before all of it.
+A file the agent creates is recorded without a copy — there was nothing before.
+
+**Not recorded:** anything inside a git working tree (it has a better history
+already, and every edit to source code would bury the one change to
+`~/.config` that matters), temporary files, the agent's own directory, and this
+record itself. **Not seen:** a change the agent makes through a shell command
+(`sed -i`, `tee`, a script) — only its file tools pass through its hooks.
+
+The hook only writes down. It never stops the agent and never changes what it
+writes; anything that goes wrong is a line on stderr and exit 0.
+
+Installing it writes two entries into the agent's settings and changes nothing
+else there (the file's keys come back in alphabetical order); installing twice
+leaves one, and `remove-agent-hook` takes out only its own. That change to the
+settings file is itself recorded, with a copy, so it can be undone like any
+other.
+
+**Measured for Claude Code only** (`~/.claude/settings.json`, or
+`CLAUDE_CONFIG_DIR`). Every agent has its own hook format; another agent is
+refused by name until its format has been walked, rather than written from
+documentation. Walked on Omarchy on 2026-09-19 with Claude Code 2.1.278: a real
+edit to a file in `~/.config` was recorded and then restored, and the same edit
+in a git repository left no record (`RR21`, `RR22`).
 
 ## Watching an upstream issue on GitHub
 
@@ -112,9 +170,23 @@ podshl-client repairs remove-hook [--print]
 Exit codes: `0` nothing to look at, `3` something to look at, `1` error. `review
 --offline` never asks GitHub.
 
+**`podshl-repairs` is the same thing without the rest of PODSHL.** It takes
+the same commands without the word `repairs` in front (`podshl-repairs review`,
+`podshl-repairs begin …`), runs the same code, and reads and writes the same
+`repairs.json` — a fix recorded by one program is seen by the other (`RR17`).
+What it leaves out is the window: no WebKitGTK (`RR18`). For a hook or an
+agent it is the one to call.
+
+**`podshl-repairs` is offered on Linux, Omarchy first.** On Omarchy one agent
+is the defined one, so what it writes can be recorded through its hooks and
+walked end to end. Windows has no such default; the record on its own comes
+there later, as a whole. The code for it stays — the build still writes a
+console `podshl-repairs.exe`, and `RR18` checks it is one — but nothing
+installs it.
+
 On Windows the installed client is a window program. It prints into the
 terminal it was started from, but `cmd` and PowerShell do not wait for a window
-program, so a script that needs the exit code starts it with
+program, so a script that needs the exit code from the client starts it with
 `Start-Process podshl-client -ArgumentList 'repairs','review' -Wait -PassThru`
 and reads `ExitCode`.
 

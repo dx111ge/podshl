@@ -144,7 +144,20 @@ pub fn epoch() -> String {
         y += 1;
     }
     let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let months = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut m = 1;
     for len in months {
         if d < len {
@@ -202,7 +215,10 @@ mod tests {
     #[test]
     fn stable_within_vendor_and_epoch() {
         let _guard = serially();
-        assert_eq!(pseudonym("nvidia.com").unwrap(), pseudonym("nvidia.com").unwrap());
+        assert_eq!(
+            pseudonym("nvidia.com").unwrap(),
+            pseudonym("nvidia.com").unwrap()
+        );
     }
 
     /// And stable under concurrency, which is how it stopped being stable.
@@ -223,7 +239,10 @@ mod tests {
         let hands: Vec<_> = (0..8)
             .map(|_| std::thread::spawn(|| pseudonym("nvidia.com")))
             .collect();
-        let got: Vec<String> = hands.into_iter().map(|h| h.join().unwrap().unwrap()).collect();
+        let got: Vec<String> = hands
+            .into_iter()
+            .map(|h| h.join().unwrap().unwrap())
+            .collect();
         assert!(
             got.windows(2).all(|w| w[0] == w[1]),
             "concurrent first use minted more than one identity for this machine: {got:?}"
@@ -237,8 +256,16 @@ mod tests {
     fn the_suite_does_not_touch_this_machines_real_identity() {
         let real = dirs::config_dir().map(|d| d.join("podshl").join("client_secret"));
         let used = path().expect("no path");
-        assert_ne!(Some(used.clone()), real, "the tests use the installed client's secret");
-        assert!(used.starts_with(std::env::temp_dir()), "the test secret is not in a scratch directory: {}", used.display());
+        assert_ne!(
+            Some(used.clone()),
+            real,
+            "the tests use the installed client's secret"
+        );
+        assert!(
+            used.starts_with(std::env::temp_dir()),
+            "the test secret is not in a scratch directory: {}",
+            used.display()
+        );
     }
 
     #[test]

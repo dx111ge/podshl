@@ -37,7 +37,11 @@ struct Rule {
 }
 
 fn rules() -> Vec<Rule> {
-    let r = |kind, pat: &str, with| Rule { kind, re: Regex::new(pat).expect("redaction pattern"), with };
+    let r = |kind, pat: &str, with| Rule {
+        kind,
+        re: Regex::new(pat).expect("redaction pattern"),
+        with,
+    };
     vec![
         // Credentials first: a token inside a URL or after `password=` must go
         // whole, before any later rule nibbles a piece of it off as an address
@@ -46,34 +50,78 @@ fn rules() -> Vec<Rule> {
         // A PEM block before anything else. Its lines are base64, which the
         // token rule would take one line at a time and leave the armour
         // standing around the holes — and a key pasted into a log is a key.
-        r("secret", r"(?s)-----BEGIN [A-Z ]+-----.*?-----END [A-Z ]+-----", "<key-block>"),
-        r("jwt", r"\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}", "<jwt>"),
-        r("credentials", r"(?i)\b([a-z][a-z0-9+.-]{1,15}://)[^\s/:@]+:[^\s/@]+@", "${1}<credentials>@"),
+        r(
+            "secret",
+            r"(?s)-----BEGIN [A-Z ]+-----.*?-----END [A-Z ]+-----",
+            "<key-block>",
+        ),
+        r(
+            "jwt",
+            r"\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}",
+            "<jwt>",
+        ),
+        r(
+            "credentials",
+            r"(?i)\b([a-z][a-z0-9+.-]{1,15}://)[^\s/:@]+:[^\s/@]+@",
+            "${1}<credentials>@",
+        ),
         // `Bearer <token>` before the `authorization:` rule. The other way
         // round, `Authorization: Bearer abc…` matched `authorization: Bearer`
         // as key and value — the word *Bearer* was redacted and the token
         // after it stood untouched.
-        r("secret", r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}", "${1} <redacted>"),
-        r("secret",
-          r#"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|private[_-]?key|session[_-]?id|cookie|authorization)(["']?\s*[:=]\s*["']?)([^\s"',;&]+)"#,
-          "${1}${2}<redacted>"),
+        r(
+            "secret",
+            r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}",
+            "${1} <redacted>",
+        ),
+        r(
+            "secret",
+            r#"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|private[_-]?key|session[_-]?id|cookie|authorization)(["']?\s*[:=]\s*["']?)([^\s"',;&]+)"#,
+            "${1}${2}<redacted>",
+        ),
         // Keys that announce themselves by prefix are recognised at twenty
         // characters, where a run of ordinary base64 needs forty: the prefix
         // is the identification, and a truncated `sk-…` in a log is still
         // most of a key.
-        r("secret", r"\b(?:sk-|sk_live_|AKIA|ghp_|gho_|xox[abp]-|AIza)[A-Za-z0-9+/_-]{16,}", "<token>"),
-        r("email", r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b", "<email>"),
+        r(
+            "secret",
+            r"\b(?:sk-|sk_live_|AKIA|ghp_|gho_|xox[abp]-|AIza)[A-Za-z0-9+/_-]{16,}",
+            "<token>",
+        ),
+        r(
+            "email",
+            r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b",
+            "<email>",
+        ),
         // A home directory names its owner, on every platform.
-        r("user", r"(?i)\b([A-Z]:\\(?:Users|Documents and Settings)\\)[^\\/\s:*?<>|]+", "${1}<user>"),
+        r(
+            "user",
+            r"(?i)\b([A-Z]:\\(?:Users|Documents and Settings)\\)[^\\/\s:*?<>|]+",
+            "${1}<user>",
+        ),
         r("user", r"(/home/|/Users/)[^/\s:]+", "${1}<user>"),
-        r("uuid", r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<uuid>"),
+        r(
+            "uuid",
+            r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+            "<uuid>",
+        ),
         r("mac", r"(?i)\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b", "<mac>"),
         // Times before addresses: `14:23:05` is also three groups of hex.
-        r("time",
-          r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:[.,]\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?\b",
-          "<time>"),
-        r("time", r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2}\b", "<time>"),
-        r("time", r"\b\d{2}/\d{2}/\d{4}[ :]\d{2}:\d{2}(?::\d{2})?\b", "<time>"),
+        r(
+            "time",
+            r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:[.,]\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?\b",
+            "<time>",
+        ),
+        r(
+            "time",
+            r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2}\b",
+            "<time>",
+        ),
+        r(
+            "time",
+            r"\b\d{2}/\d{2}/\d{4}[ :]\d{2}:\d{2}(?::\d{2})?\b",
+            "<time>",
+        ),
         r("time", r"\b\d{1,2}:\d{2}:\d{2}(?:[.,]\d{1,9})?\b", "<time>"),
         r("time", r"\b\d{4}-\d{2}-\d{2}\b", "<date>"),
         // Go's `log` and Gin write the date with slashes: `[GIN] 2026/09/11 - …`.
@@ -94,8 +142,10 @@ fn rules() -> Vec<Rule> {
 /// with `/`, `.` or `~`, it carries no `://`, no `\` and no `//`, and it is
 /// long enough that no word in a log is that long by accident.
 fn slashed_tokens(text: &str, counts: &mut BTreeMap<&'static str, usize>) -> String {
-    let re = Regex::new(r#"(?:^|[\s"'=:,;(\[{])([A-Za-z0-9+_-][A-Za-z0-9+/_-]{39,}={0,2})(?:$|[\s"',;)\]}])"#)
-        .expect("slashed token");
+    let re = Regex::new(
+        r#"(?:^|[\s"'=:,;(\[{])([A-Za-z0-9+_-][A-Za-z0-9+/_-]{39,}={0,2})(?:$|[\s"',;)\]}])"#,
+    )
+    .expect("slashed token");
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
     for c in re.captures_iter(text) {
@@ -143,7 +193,10 @@ fn ipv4(text: &str, counts: &mut BTreeMap<&'static str, usize>) -> String {
 /// has at least five. `::1` is loopback and stays.
 fn ipv6(text: &str, counts: &mut BTreeMap<&'static str, usize>) -> String {
     let re = Regex::new(r"(?i)(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}").expect("ipv6");
-    let touching = |c: Option<char>| c.map(|c| c.is_ascii_alphanumeric() || c == '_').unwrap_or(false);
+    let touching = |c: Option<char>| {
+        c.map(|c| c.is_ascii_alphanumeric() || c == '_')
+            .unwrap_or(false)
+    };
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
     for m in re.find_iter(text) {
@@ -219,8 +272,10 @@ pub fn anonymise(text: &str) -> (String, BTreeMap<&'static str, usize>) {
     anonymise_with(text, &own_names())
 }
 
-fn anonymise_with(text: &str, names: &[(&'static str, String, &'static str)])
-    -> (String, BTreeMap<&'static str, usize>) {
+fn anonymise_with(
+    text: &str,
+    names: &[(&'static str, String, &'static str)],
+) -> (String, BTreeMap<&'static str, usize>) {
     let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut out = text.replace("\r\n", "\n");
 
@@ -274,10 +329,14 @@ pub fn anonymise_value_counting(v: &Value, counts: &mut BTreeMap<&'static str, u
             Value::String(out)
         }
         Value::Array(a) => Value::Array(
-            a.iter().map(|x| anonymise_value_counting(x, counts)).collect(),
+            a.iter()
+                .map(|x| anonymise_value_counting(x, counts))
+                .collect(),
         ),
         Value::Object(o) => Value::Object(
-            o.iter().map(|(k, x)| (k.clone(), anonymise_value_counting(x, counts))).collect(),
+            o.iter()
+                .map(|(k, x)| (k.clone(), anonymise_value_counting(x, counts)))
+                .collect(),
         ),
         other => other.clone(),
     }
@@ -288,7 +347,11 @@ pub fn anonymise_value_counting(v: &Value, counts: &mut BTreeMap<&'static str, u
 pub fn bound(text: &str) -> (String, bool) {
     let lines: Vec<&str> = text.lines().collect();
     let mut cut = lines.len() > MAX_LINES;
-    let kept = if cut { &lines[lines.len() - MAX_LINES..] } else { &lines[..] };
+    let kept = if cut {
+        &lines[lines.len() - MAX_LINES..]
+    } else {
+        &lines[..]
+    };
     let mut s = kept.join("\n");
     if s.chars().count() > MAX_CHARS {
         cut = true;
@@ -316,8 +379,14 @@ mod tests {
     use super::*;
 
     fn clean(s: &str) -> String {
-        anonymise_with(s, &[("user", "jdoe".into(), "<user>"),
-                            ("host", "WORKSTATION-7".into(), "<host>")]).0
+        anonymise_with(
+            s,
+            &[
+                ("user", "jdoe".into(), "<user>"),
+                ("host", "WORKSTATION-7".into(), "<host>"),
+            ],
+        )
+        .0
     }
 
     /// LX7: the entry the window actually calls removes *this* machine's own
@@ -335,16 +404,22 @@ mod tests {
     #[test]
     fn this_machines_own_names_are_found_and_removed() {
         let names = own_names();
-        let user = names.iter().find(|(k, _, _)| *k == "user").map(|(_, v, _)| v.clone());
+        let user = names
+            .iter()
+            .find(|(k, _, _)| *k == "user")
+            .map(|(_, v, _)| v.clone());
         let Some(user) = user else {
             // Said rather than skipped. A suite that quietly tests nothing
             // where the environment is thin is worse than one that is red.
-            let named = ["USERNAME", "USER", "LOGNAME"].iter()
+            let named = ["USERNAME", "USER", "LOGNAME"]
+                .iter()
                 .filter_map(|k| std::env::var(k).ok())
                 .find(|v| v.chars().count() >= SHORTEST_OWN_NAME);
-            assert!(named.is_none(),
-                    "the environment names an account of at least {SHORTEST_OWN_NAME} \
-                     characters and `own_names` did not find it");
+            assert!(
+                named.is_none(),
+                "the environment names an account of at least {SHORTEST_OWN_NAME} \
+                     characters and `own_names` did not find it"
+            );
             return;
         };
 
@@ -352,21 +427,33 @@ mod tests {
         // `anonymise_text` calls, and the wiring is the thing under test.
         let text = format!("loaded C:\\Users\\{user}\\proj\\app.toml for {user}");
         let (out, counts) = anonymise(&text);
-        assert!(!out.to_lowercase().contains(&user.to_lowercase()),
-                "this machine's account name survived anonymising ({} occurrences replaced)",
-                counts.get("user").copied().unwrap_or(0));
-        assert_eq!(counts.get("user").copied().unwrap_or(0), 2,
-                   "not every occurrence of the account name was counted");
-        assert!(out.contains("<user>"), "the account name was removed without saying so");
+        assert!(
+            !out.to_lowercase().contains(&user.to_lowercase()),
+            "this machine's account name survived anonymising ({} occurrences replaced)",
+            counts.get("user").copied().unwrap_or(0)
+        );
+        assert_eq!(
+            counts.get("user").copied().unwrap_or(0),
+            2,
+            "not every occurrence of the account name was counted"
+        );
+        assert!(
+            out.contains("<user>"),
+            "the account name was removed without saying so"
+        );
         // The rest of the line is the diagnosis and must survive.
-        assert!(out.contains("app.toml") && out.contains("proj"),
-                "anonymising took the path apart: {out}");
+        assert!(
+            out.contains("app.toml") && out.contains("proj"),
+            "anonymising took the path apart: {out}"
+        );
 
         // And the host, where the machine has one worth hiding.
         if let Some((_, host, _)) = names.iter().find(|(k, _, _)| *k == "host") {
             let (out, _) = anonymise(&format!("Sep 11 14:23:06 {host} ollama[812]: ready"));
-            assert!(!out.to_lowercase().contains(&host.to_lowercase()),
-                    "this machine's host name survived anonymising");
+            assert!(
+                !out.to_lowercase().contains(&host.to_lowercase()),
+                "this machine's host name survived anonymising"
+            );
         }
     }
 
@@ -383,22 +470,65 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP
 session 3f2b1c9e-8a7d-4e6f-9b0a-1c2d3e4f5a6b from fe80::1ff:fe23:4567:890a on aa:bb:cc:dd:ee:ff
 /home/jdoe/projects/x.brain  still on 127.0.0.1:11434 and 0.0.0.0:3030
 [GIN] 2026/09/11 - 09:14:22 | 404 | 412.3µs | 192.168.0.40 | POST \"/api/chat\"";
-        let (out, counts) = anonymise_with(log, &[("user", "jdoe".into(), "<user>"),
-                                                  ("host", "WORKSTATION-7".into(), "<host>")]);
-        for gone in ["jdoe", "WORKSTATION-7", "192.168.0.26", "hunter2", "10.0.0.5",
-                     "ghp_abcdefghij", "sven@example.org", "eyJhbGci", "3f2b1c9e",
-                     "fe80::1ff", "aa:bb:cc", "14:23:05", "2026-09-11", "2026/09/11",
-                     "09:14:22", "192.168.0.40"] {
+        let (out, counts) = anonymise_with(
+            log,
+            &[
+                ("user", "jdoe".into(), "<user>"),
+                ("host", "WORKSTATION-7".into(), "<host>"),
+            ],
+        );
+        for gone in [
+            "jdoe",
+            "WORKSTATION-7",
+            "192.168.0.26",
+            "hunter2",
+            "10.0.0.5",
+            "ghp_abcdefghij",
+            "sven@example.org",
+            "eyJhbGci",
+            "3f2b1c9e",
+            "fe80::1ff",
+            "aa:bb:cc",
+            "14:23:05",
+            "2026-09-11",
+            "2026/09/11",
+            "09:14:22",
+            "192.168.0.40",
+        ] {
             assert!(!out.contains(gone), "{gone:?} survived:\n{out}");
         }
         // Diagnosis survives: loopback, the unspecified address, ports, and
         // the words around them.
-        for kept in ["127.0.0.1:11434", "0.0.0.0:3030", ":11434", "listening on",
-                     "default.brain", "connect", "failed", "INFO engram"] {
-            assert!(out.contains(kept), "{kept:?} was removed and it is diagnosis:\n{out}");
+        for kept in [
+            "127.0.0.1:11434",
+            "0.0.0.0:3030",
+            ":11434",
+            "listening on",
+            "default.brain",
+            "connect",
+            "failed",
+            "INFO engram",
+        ] {
+            assert!(
+                out.contains(kept),
+                "{kept:?} was removed and it is diagnosis:\n{out}"
+            );
         }
-        for kind in ["user", "host", "ip", "email", "secret", "credentials", "uuid", "mac", "time"] {
-            assert!(counts.get(kind).copied().unwrap_or(0) > 0, "{kind} was not counted: {counts:?}");
+        for kind in [
+            "user",
+            "host",
+            "ip",
+            "email",
+            "secret",
+            "credentials",
+            "uuid",
+            "mac",
+            "time",
+        ] {
+            assert!(
+                counts.get(kind).copied().unwrap_or(0) > 0,
+                "{kind} was not counted: {counts:?}"
+            );
         }
     }
 
@@ -430,25 +560,45 @@ session 3f2b1c9e-8a7d-4e6f-9b0a-1c2d3e4f5a6b from fe80::1ff:fe23:4567:890a on aa
     fn keys_in_every_shape_are_taken_out() {
         let s = "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ";
         let out = clean(s);
-        assert!(!out.contains("abcdefghij"), "the bearer token survived: {out}");
-        assert!(out.contains("Authorization"), "the header name is diagnosis: {out}");
+        assert!(
+            !out.contains("abcdefghij"),
+            "the bearer token survived: {out}"
+        );
+        assert!(
+            out.contains("Authorization"),
+            "the header name is diagnosis: {out}"
+        );
 
         let pem = "loaded key\n-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\nVJTUt9Us8cKj\n-----END PRIVATE KEY-----\ndone";
         let out = clean(pem);
-        assert!(!out.contains("MIIEvQ") && !out.contains("BEGIN PRIVATE"), "{out}");
-        assert!(out.starts_with("loaded key\n") && out.ends_with("\ndone"), "{out}");
+        assert!(
+            !out.contains("MIIEvQ") && !out.contains("BEGIN PRIVATE"),
+            "{out}"
+        );
+        assert!(
+            out.starts_with("loaded key\n") && out.ends_with("\ndone"),
+            "{out}"
+        );
 
         let slashed = "key=abcdefghijklmnop/qrstuvwxyz0123456789/ABCDEFGHIJKLMNOP== next";
         let out = clean(slashed);
-        assert!(!out.contains("qrstuvwxyz0123456789"), "base64 with a solidus survived: {out}");
+        assert!(
+            !out.contains("qrstuvwxyz0123456789"),
+            "base64 with a solidus survived: {out}"
+        );
         // A path of the same length is a path, and stays.
         let path = "/home/<user>/projects/a-long-directory-name-for-a-project/src/lib/module.rs";
         assert_eq!(clean(path), path);
         let url = "https://example.org/a/very/long/path/that/goes/on/and/on/and/on/for/a/while/x";
         assert_eq!(clean(url), url);
 
-        for short in ["sk-abcdefghijklmnopqrstuv", "AKIAIOSFODNN7EXAMPLEXY", "ghp_0123456789abcdefghij",
-                      "xoxb-1234567890-abcdefghijkl", "AIzaSyA1234567890abcdefgh"] {
+        for short in [
+            "sk-abcdefghijklmnopqrstuv",
+            "AKIAIOSFODNN7EXAMPLEXY",
+            "ghp_0123456789abcdefghij",
+            "xoxb-1234567890-abcdefghijkl",
+            "AIzaSyA1234567890abcdefgh",
+        ] {
             let out = clean(&format!("using {short} now"));
             assert_eq!(out, "using <token> now", "a prefixed key survived: {out}");
         }
@@ -475,7 +625,10 @@ session 3f2b1c9e-8a7d-4e6f-9b0a-1c2d3e4f5a6b from fe80::1ff:fe23:4567:890a on aa
         let (s, cut) = bound(&long);
         assert!(cut);
         assert_eq!(s.lines().count(), MAX_LINES);
-        assert!(s.ends_with("line 499"), "the end of the log is where the failure is");
+        assert!(
+            s.ends_with("line 499"),
+            "the end of the log is where the failure is"
+        );
         let p = preview(&long);
         assert_eq!(p["cut"], true);
     }

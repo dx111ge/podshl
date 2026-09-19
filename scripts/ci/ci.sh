@@ -20,15 +20,17 @@
 #   * the client builds for a real operator, and the operator and log key are
 #     actually in the binary — checked by asking the binary and by fetching the
 #     operator's signed index with the key that was compiled in
+#   * `cargo fmt --check` and `cargo clippy -D warnings` over the client
 #   * every Rust test, through `RS1`
 #   * every case in `run_testcases.py`, which includes the window's contract,
 #     the builder's own writer run in node, and the publication scan
 #
-# What it reports and does not gate on: `cargo fmt` and `cargo clippy`. There
-# are 588 formatting differences and 23 clippy warnings in this tree today.
-# Turning either into a gate would make CI red on its first run and every run
-# after it, and a suite that is always red teaches people to read past red —
-# which is the failure this file exists to prevent, not one to introduce.
+# fmt and clippy were only *reported* here until 2026-09-19, on the grounds
+# that a suite red from its first run teaches people to read past red. The
+# grounds were right and the conclusion was not: while the step reported, the
+# formatting count went from 588 to 884 and the comment quoting 588 went stale.
+# A number that only gets printed drifts. The tree was formatted in one commit
+# (listed in `.git-blame-ignore-revs`), the warnings fixed, and both now gate.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -88,6 +90,19 @@ dc() { "${COMPOSE[@]}" "$@"; }
 say "building the image"
 dc build podshl
 
+say "format and lint"
+# First, because it takes seconds and everything after it takes minutes.
+# `-D warnings` rather than counting lines: a count once printed "0 places
+# differ" for a tree with 588 of them, because `cargo fmt` was not installed,
+# it errored, the grep matched nothing and `|| true` made that a number. Here a
+# missing tool fails the step like any other error.
+dc run --rm --no-deps --entrypoint sh podshl -c '
+  set -e
+  cd /app/client-rs
+  cargo fmt --check
+  cargo clippy --quiet --all-targets -- -D warnings
+'
+
 say "building a client for $OPERATOR, and checking what landed in it"
 # `--no-deps`: this needs no database, and starting one here only makes the
 # failure modes wider.
@@ -130,22 +145,5 @@ dc run --rm --no-deps --entrypoint sh podshl \
       WS=''
       node -e 'process.exit(typeof WebSocket===\"function\"?0:1)' || WS=--experimental-websocket
       node \$WS --test 'tests/flow-decisions.test.mjs' 'tests/flow-headless.test.mjs'"
-
-say "format and lint, reported"
-# The tools have to be there. This step once printed "0 places differ" for a
-# tree with 588 of them: `cargo fmt` was not installed, it errored, the grep
-# matched nothing and `|| true` made that a number. A report nobody can
-# distinguish from a clean result is worse than no report.
-dc run --rm --no-deps --entrypoint sh podshl -c '
-  set -e
-  cd /app/client-rs
-  cargo fmt --version >/dev/null 2>&1 || { echo "rustfmt is not in this image" >&2; exit 1; }
-  cargo clippy --version >/dev/null 2>&1 || { echo "clippy is not in this image" >&2; exit 1; }
-  fmt=$(cargo fmt --check 2>/dev/null | grep -c "^Diff in" || true)
-  warn=$(cargo clippy --quiet --all-targets 2>&1 | grep -c "^warning" || true)
-  echo "  cargo fmt:    $fmt places differ"
-  echo "  cargo clippy: $warn warnings"
-  echo "  Neither gates. See the header of scripts/ci/ci.sh for why."
-'
 
 say "green"

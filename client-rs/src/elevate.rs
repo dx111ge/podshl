@@ -115,9 +115,13 @@ fn launch(_exe: &std::path::Path, _args: &[String]) -> Result<i32, String> {
 #[cfg(windows)]
 fn launch(exe: &std::path::Path, args: &[String]) -> Result<i32, String> {
     use elevated::wide;
-    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_CANCELLED, WAIT_OBJECT_0};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, ERROR_CANCELLED, WAIT_OBJECT_0,
+    };
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
-    use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
+    use windows_sys::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
     let file = wide(&exe.to_string_lossy());
@@ -161,7 +165,10 @@ mod tests {
     use super::*;
 
     fn p(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     /// L5: the client never writes what needs privilege. The calls that do are
@@ -169,8 +176,14 @@ mod tests {
     #[test]
     fn nothing_privileged_is_written_in_process() {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let writes = ["ChangeServiceConfigW", "ControlService(", "StartServiceW",
-                      "RegSetValueExW", "RegDeleteValueW", "SERVICE_CHANGE_CONFIG"];
+        let writes = [
+            "ChangeServiceConfigW",
+            "ControlService(",
+            "StartServiceW",
+            "RegSetValueExW",
+            "RegDeleteValueW",
+            "SERVICE_CHANGE_CONFIG",
+        ];
         for entry in std::fs::read_dir(&src).unwrap() {
             let path = entry.unwrap().path();
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
@@ -184,16 +197,34 @@ mod tests {
                 text
             };
             for w in writes {
-                assert!(!text.contains(w), "{} calls {w}, which only the helper may", path.display());
+                assert!(
+                    !text.contains(w),
+                    "{} calls {w}, which only the helper may",
+                    path.display()
+                );
             }
         }
         let helper = std::fs::read_to_string(src.join("bin").join("podshl-elevate.rs")).unwrap();
-        for w in ["ChangeServiceConfigW", "ControlService(", "StartServiceW", "RegSetValueExW"] {
+        for w in [
+            "ChangeServiceConfigW",
+            "ControlService(",
+            "StartServiceW",
+            "RegSetValueExW",
+        ] {
             assert!(helper.contains(w), "the helper no longer performs {w}");
         }
-        for never in ["Command::new", "std::fs::", "TcpStream", "reqwest", "File::"] {
-            assert!(!helper.contains(never), "the helper uses {never}; it reads no file, \
-                     writes none, starts nothing and opens no connection");
+        for never in [
+            "Command::new",
+            "std::fs::",
+            "TcpStream",
+            "reqwest",
+            "File::",
+        ] {
+            assert!(
+                !helper.contains(never),
+                "the helper uses {never}; it reads no file, \
+                     writes none, starts nothing and opens no connection"
+            );
         }
     }
 
@@ -202,23 +233,58 @@ mod tests {
     #[test]
     fn a_change_is_what_the_second_reading_shows_and_its_undo_is_the_first() {
         let svc = p(&[("service", "Spooler"), ("start", "disabled")]);
-        let before = State::Service { running: true, start: "demand".into() };
+        let before = State::Service {
+            running: true,
+            start: "demand".into(),
+        };
         assert_eq!(holds("set_service_start", &svc, &before), Some(false));
-        assert_eq!(holds("set_service_start", &svc,
-                         &State::Service { running: false, start: "disabled".into() }), Some(true));
-        assert_eq!(undo_for("set_service_start", &svc, &before),
-                   json!({"action": "set_service_start", "params": {"service": "Spooler", "start": "demand"}}));
-        assert_eq!(undo_for("set_service_start", &svc,
-                            &State::Service { running: true, start: "boot".into() }), Value::Null,
-                   "an undo into a start type the helper will not set was offered");
+        assert_eq!(
+            holds(
+                "set_service_start",
+                &svc,
+                &State::Service {
+                    running: false,
+                    start: "disabled".into()
+                }
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            undo_for("set_service_start", &svc, &before),
+            json!({"action": "set_service_start", "params": {"service": "Spooler", "start": "demand"}})
+        );
+        assert_eq!(
+            undo_for(
+                "set_service_start",
+                &svc,
+                &State::Service {
+                    running: true,
+                    start: "boot".into()
+                }
+            ),
+            Value::Null,
+            "an undo into a start type the helper will not set was offered"
+        );
 
         let env = p(&[("name", "OLLAMA_HOST"), ("value", "0.0.0.0:11434")]);
-        assert_eq!(undo_for("set_machine_env", &env, &State::Env(None)),
-                   json!({"action": "set_machine_env", "params": {"name": "OLLAMA_HOST", "value": ""}}),
-                   "undoing a variable that did not exist is removing it");
-        assert_eq!(holds("set_machine_env", &p(&[("name", "X"), ("value", "")]), &State::Env(None)), Some(true));
+        assert_eq!(
+            undo_for("set_machine_env", &env, &State::Env(None)),
+            json!({"action": "set_machine_env", "params": {"name": "OLLAMA_HOST", "value": ""}}),
+            "undoing a variable that did not exist is removing it"
+        );
+        assert_eq!(
+            holds(
+                "set_machine_env",
+                &p(&[("name", "X"), ("value", "")]),
+                &State::Env(None)
+            ),
+            Some(true)
+        );
         assert_eq!(holds("set_machine_env", &env, &State::Missing), None);
-        assert_eq!(undo_for("restart_service", &p(&[("service", "Spooler")]), &before), Value::Null);
+        assert_eq!(
+            undo_for("restart_service", &p(&[("service", "Spooler")]), &before),
+            Value::Null
+        );
     }
 
     /// Refused before Windows is asked anything.
@@ -245,12 +311,23 @@ mod tests {
         // beside the test program itself; the walk uses the one that ships.
         let out = run("set_machine_env", &set).expect("the change was not made");
         println!("changed: {out}");
-        assert_eq!(elevated::read("set_machine_env", &set), State::Env(Some("walked".into())));
+        assert_eq!(
+            elevated::read("set_machine_env", &set),
+            State::Env(Some("walked".into()))
+        );
         let undo = &out["undo"];
-        let params: BTreeMap<String, String> = undo["params"].as_object().unwrap().iter()
-            .map(|(k, v)| (k.clone(), v.as_str().unwrap().to_string())).collect();
+        let params: BTreeMap<String, String> = undo["params"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().unwrap().to_string()))
+            .collect();
         run(undo["action"].as_str().unwrap(), &params).expect("the undo was not made");
-        assert_eq!(elevated::read("set_machine_env", &set), before, "the undo did not restore it");
+        assert_eq!(
+            elevated::read("set_machine_env", &set),
+            before,
+            "the undo did not restore it"
+        );
     }
 
     /// Reading needs no privilege, and a service that is not there is said.
@@ -262,11 +339,18 @@ mod tests {
             State::Missing => {} // a machine without the print spooler
             other => panic!("{other:?}"),
         }
-        assert_eq!(elevated::read("restart_service", &p(&[("service", "PodshlNoSuchService")])),
-                   State::Missing);
+        assert_eq!(
+            elevated::read("restart_service", &p(&[("service", "PodshlNoSuchService")])),
+            State::Missing
+        );
         let err = run("restart_service", &p(&[("service", "PodshlNoSuchService")])).unwrap_err();
         assert!(crate::msg::is("elevated_not_found", &err), "{err}");
-        assert!(matches!(elevated::read("set_machine_env", &p(&[("name", "OS"), ("value", "")])),
-                         State::Env(Some(_))), "the machine's OS variable was not read");
+        assert!(
+            matches!(
+                elevated::read("set_machine_env", &p(&[("name", "OS"), ("value", "")])),
+                State::Env(Some(_))
+            ),
+            "the machine's OS variable was not read"
+        );
     }
 }

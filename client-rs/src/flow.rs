@@ -87,7 +87,11 @@ pub async fn discover(
         a2a::untrusted(m!("no_oob_key", host = host, source = resolver.source())).to_string()
     })?;
 
-    let sigs = card.get("signatures").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let sigs = card
+        .get("signatures")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     let sig = sigs
         .first()
         .ok_or_else(|| a2a::untrusted(m!("card_unsigned")).to_string())?;
@@ -96,7 +100,8 @@ pub async fn discover(
         o.remove("signatures");
     }
 
-    let verified = jws::verify_detached(&jwk, &body, sig).map_err(|e| a2a::untrusted(e).to_string())?;
+    let verified =
+        jws::verify_detached(&jwk, &body, sig).map_err(|e| a2a::untrusted(e).to_string())?;
 
     let p = &verified.protected;
     let get = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -151,12 +156,24 @@ pub fn refusal_kind(reason: &str) -> &'static str {
     let any = |codes: &[&str]| codes.iter().any(|c| is(c, reason));
     if any(&["tool_absent"]) {
         "absent"
-    } else if any(&["denied", "denied_even_with_consent", "key_denied", "program_never_run",
-                    "gpu_field_identifying", "registry_name_identifying", "env_var_not_allowed"]) {
+    } else if any(&[
+        "denied",
+        "denied_even_with_consent",
+        "key_denied",
+        "program_never_run",
+        "gpu_field_identifying",
+        "registry_name_identifying",
+        "env_var_not_allowed",
+    ]) {
         "denied"
     } else if any(&["system_program"]) {
         "system"
-    } else if any(&["path_backstep", "path_outside", "path_relative_no_project", "glob_path_change"]) {
+    } else if any(&[
+        "path_backstep",
+        "path_outside",
+        "path_relative_no_project",
+        "glob_path_change",
+    ]) {
         "outside"
     } else {
         "invalid"
@@ -232,8 +249,12 @@ pub fn perform_reads(probes_in: &[Value], allow: &[String]) -> Value {
         .take(reads::MAX_READS)
         .collect();
     for p in machine {
-        let id = p.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-        if !allow.iter().any(|a| *a == id) {
+        let id = p
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if !allow.contains(&id) {
             missing.push(id);
             continue;
         }
@@ -281,7 +302,8 @@ pub async fn diagnose(
     // well, and a party on the wire could replay one. The nonce is fresh per
     // request; the hash binds the answer to exactly these facts.
     let nonce = fresh_nonce();
-    let facts_sha256 = sha256_hex(&jcs::canonicalize(&facts).map_err(|e| m!("facts_not_canonical", e = e))?);
+    let facts_sha256 =
+        sha256_hex(&jcs::canonicalize(&facts).map_err(|e| m!("facts_not_canonical", e = e))?);
     // The language travels with the diagnosis as it does with triage. Without
     // it the vendor could not know which language a finding should be in, and
     // the walk through the window got a German finding on an English screen.
@@ -297,11 +319,17 @@ pub async fn diagnose(
 /// Sixteen random bytes, as hex. Enough that nobody guesses one, small
 /// enough to read in a log.
 fn fresh_nonce() -> String {
-    rand::random::<[u8; 16]>().iter().map(|b| format!("{b:02x}")).collect()
+    rand::random::<[u8; 16]>()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// The vendor's answer, accepted only if it is *this* request's answer.
@@ -310,12 +338,19 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// shape, and then held to the request: the same skill, the same nonce, the
 /// same facts. A remedy that fails the last of those is signed by the right
 /// vendor and is still not an answer to what was asked.
-pub fn accept_remedy(res: &Value, jwk: &Value, skill_id: &str, nonce: &str, facts_sha256: &str)
-    -> Result<Value, String> {
+pub fn accept_remedy(
+    res: &Value,
+    jwk: &Value,
+    skill_id: &str,
+    nonce: &str,
+    facts_sha256: &str,
+) -> Result<Value, String> {
     let remedy = res.get("remedy").cloned().ok_or_else(|| m!("no_remedy"))?;
-    let sig = res.get("signature").cloned().ok_or_else(|| m!("finding_unsigned"))?;
-    jws::verify_detached(jwk, &remedy, &sig)
-        .map_err(|e| m!("finding_signature_invalid", e = e))?;
+    let sig = res
+        .get("signature")
+        .cloned()
+        .ok_or_else(|| m!("finding_unsigned"))?;
+    jws::verify_detached(jwk, &remedy, &sig).map_err(|e| m!("finding_signature_invalid", e = e))?;
 
     // Signed is not the same as well formed. A remedy that verifies but does not
     // match the published shape used to reach the window and fail there, as a
@@ -330,13 +365,21 @@ pub fn accept_remedy(res: &Value, jwk: &Value, skill_id: &str, nonce: &str, fact
         .map_err(|e| m!("finding_malformed", e = e))?;
     // What a step says about the software it is for is checked here too, so a
     // malformed one names the vendor rather than failing at the consent button.
-    for step in remedy.get("plan").and_then(|p| p.as_array()).into_iter().flatten() {
+    for step in remedy
+        .get("plan")
+        .and_then(|p| p.as_array())
+        .into_iter()
+        .flatten()
+    {
         crate::repair::Upstream::from_value(step.get("upstream"))
             .map_err(|e| m!("finding_malformed", e = e))?;
     }
 
     let carries = |k: &str, want: &str| remedy.get(k).and_then(|v| v.as_str()) == Some(want);
-    if !carries("skill_id", skill_id) || !carries("nonce", nonce) || !carries("facts_sha256", facts_sha256) {
+    if !carries("skill_id", skill_id)
+        || !carries("nonce", nonce)
+        || !carries("facts_sha256", facts_sha256)
+    {
         return Err(m!("finding_not_for_this_request", skill = skill_id));
     }
 
@@ -346,15 +389,25 @@ pub fn accept_remedy(res: &Value, jwk: &Value, skill_id: &str, nonce: &str, fact
 /// Send a report, and stamp it with the per-vendor per-epoch pseudonym on the
 /// way out. The recipient can count, rate-limit and block; it cannot link this
 /// client to what it sent anyone else, or to itself next month.
-pub async fn send_report(base: &str, mut report: Value, domain: &str, lang: &str)
-    -> Result<Value, String> {
+pub async fn send_report(
+    base: &str,
+    mut report: Value,
+    domain: &str,
+    lang: &str,
+) -> Result<Value, String> {
     // Free text only under its own consent, naming who receives it — the
     // rule `for_operator` already enforces on the published path. This path
     // validated the shape and sent whatever `description` it was handed.
     if report.get("description").is_some() {
-        let consent = report.get("description_consent").cloned().unwrap_or(Value::Null);
+        let consent = report
+            .get("description_consent")
+            .cloned()
+            .unwrap_or(Value::Null);
         let granted = consent.get("granted") == Some(&Value::Bool(true));
-        let named = consent.get("destination").and_then(|d| d.as_str()).map_or(false, |d| !d.trim().is_empty());
+        let named = consent
+            .get("destination")
+            .and_then(|d| d.as_str())
+            .is_some_and(|d| !d.trim().is_empty());
         if !(granted && named) {
             return Err(m!("free_text_without_consent"));
         }
@@ -374,7 +427,11 @@ pub async fn send_report(base: &str, mut report: Value, domain: &str, lang: &str
 
     // The language beside the report, not in it: it is how the receipt is
     // worded, and it says nothing about the machine.
-    let res = a2a::send_message(base, json!({ "kind": "report", "report": report, "lang": lang })).await?;
+    let res = a2a::send_message(
+        base,
+        json!({ "kind": "report", "report": report, "lang": lang }),
+    )
+    .await?;
     Ok(res.get("receipt").cloned().unwrap_or(json!({})))
 }
 
@@ -440,9 +497,17 @@ mod tests {
         };
 
         for (base, why, expect) in [
-            (PLAIN.to_string(), "a 404 at the well-known URI", "Agent Card"),
+            (
+                PLAIN.to_string(),
+                "a 404 at the well-known URI",
+                "Agent Card",
+            ),
             (dead, "a host that refuses the connection", ""),
-            (format!("{PLAIN}/nonjson"), "a 200 that is not a card", "not an Agent Card"),
+            (
+                format!("{PLAIN}/nonjson"),
+                "a 200 that is not a card",
+                "not an Agent Card",
+            ),
             (format!("{PLAIN}/broken"), "a 500", "500"),
         ] {
             let (d, jwk) = discover(&base, &pinned())
@@ -488,10 +553,8 @@ mod tests {
         let stop = Arc::clone(&done);
         let held = std::thread::spawn(move || {
             let mut open = Vec::new();
-            for stream in listener.incoming().take(1) {
-                if let Ok(s) = stream {
-                    open.push(s);
-                }
+            for s in listener.incoming().take(1).flatten() {
+                open.push(s);
             }
             while !stop.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -506,7 +569,10 @@ mod tests {
         let took = began.elapsed();
         done.store(true, Ordering::Relaxed);
 
-        assert!(d.no_agent, "a host that never answers was not 'nobody there'");
+        assert!(
+            d.no_agent,
+            "a host that never answers was not 'nobody there'"
+        );
         assert!(!d.ok);
         assert!(jwk.is_none());
         assert!(!d.reason.is_empty(), "the user was given no reason");
@@ -524,7 +590,8 @@ mod tests {
     #[tokio::test]
     async fn without_an_out_of_band_key_a_card_is_refused_not_accepted() {
         require_services().await;
-        let missing = trust::Resolver::Pinned(std::path::PathBuf::from("../var/does-not-exist.json"));
+        let missing =
+            trust::Resolver::Pinned(std::path::PathBuf::from("../var/does-not-exist.json"));
         let err = discover(ACME, &missing)
             .await
             .expect_err("a self-asserted card was accepted");
@@ -543,12 +610,16 @@ mod tests {
         let (_, jwk) = discover(ACME, &pinned()).await.unwrap();
         let jwk = jwk.unwrap();
         let tr = triage(ACME, "training is slow, bf16?", "de").await.unwrap();
-        let skill = tr.get("skill").expect("no skill for a problem the vendor handles");
+        let skill = tr
+            .get("skill")
+            .expect("no skill for a problem the vendor handles");
         let skill_id = skill["id"].as_str().unwrap();
 
         let facts = json!({"gpu.name": "NVIDIA GeForce RTX 2070 SUPER",
                            "gpu.compute_capability": "7.5", "gpu.bf16_native": false});
-        let out = diagnose(ACME, skill_id, &facts, &jwk, "en").await.expect("diagnose failed");
+        let out = diagnose(ACME, skill_id, &facts, &jwk, "en")
+            .await
+            .expect("diagnose failed");
         assert_eq!(out["signature_valid"], true);
         assert!(
             !out["remedy"]["findings"].as_array().unwrap().is_empty(),
@@ -574,13 +645,23 @@ mod tests {
             let raw = std::fs::read_to_string(format!("../src/podshl/vendor/content/{lang}.json"))
                 .expect("the demo vendor's content is missing");
             let v: Value = serde_json::from_str(&raw).unwrap();
-            v["skills"][&skill_id]["text"]["emulated"].as_str().unwrap()
-                .replace("{name}", "RTX 2070 SUPER").replace("{cc}", "7.5")
+            v["skills"][&skill_id]["text"]["emulated"]
+                .as_str()
+                .unwrap()
+                .replace("{name}", "RTX 2070 SUPER")
+                .replace("{cc}", "7.5")
         };
         for lang in ["en", "de"] {
             let out = diagnose(ACME, &skill_id, &facts, &jwk, lang).await.unwrap();
-            let text = out["remedy"]["findings"][0]["summary"].as_str().unwrap().to_string();
-            assert_eq!(text, expected(lang), "asked in {lang}, answered in another language");
+            let text = out["remedy"]["findings"][0]["summary"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            assert_eq!(
+                text,
+                expected(lang),
+                "asked in {lang}, answered in another language"
+            );
         }
     }
 
@@ -627,25 +708,51 @@ mod tests {
             a2a::send_message(ACME, req)
         };
         let res = ask(Some(&nonce)).await.expect("the vendor did not answer");
-        let out = accept_remedy(&res, &jwk, &skill_id, &nonce, &hash).expect("the vendor's own answer was refused");
-        assert_eq!(out["remedy"]["nonce"], nonce, "the vendor did not sign the nonce back");
+        let out = accept_remedy(&res, &jwk, &skill_id, &nonce, &hash)
+            .expect("the vendor's own answer was refused");
+        assert_eq!(
+            out["remedy"]["nonce"], nonce,
+            "the vendor did not sign the nonce back"
+        );
         assert_eq!(out["remedy"]["facts_sha256"], hash);
 
         for (why, skill, n, h) in [
-            ("another nonce", skill_id.as_str(), fresh_nonce(), hash.clone()),
-            ("another skill", "warranty.rma.precheck", nonce.clone(), hash.clone()),
-            ("other facts", skill_id.as_str(), nonce.clone(), sha256_hex(b"{}")),
+            (
+                "another nonce",
+                skill_id.as_str(),
+                fresh_nonce(),
+                hash.clone(),
+            ),
+            (
+                "another skill",
+                "warranty.rma.precheck",
+                nonce.clone(),
+                hash.clone(),
+            ),
+            (
+                "other facts",
+                skill_id.as_str(),
+                nonce.clone(),
+                sha256_hex(b"{}"),
+            ),
         ] {
-            let e = accept_remedy(&res, &jwk, skill, &n, &h).expect_err(&format!("accepted with {why}"));
-            assert!(crate::msg::is("finding_not_for_this_request", &e), "{why}: refused for the wrong reason: {e}");
+            let e = accept_remedy(&res, &jwk, skill, &n, &h)
+                .expect_err(&format!("accepted with {why}"));
+            assert!(
+                crate::msg::is("finding_not_for_this_request", &e),
+                "{why}: refused for the wrong reason: {e}"
+            );
         }
         // And one that carries no nonce at all — a vendor that predates the
         // binding, or an answer replayed from before it.
         let without = ask(None).await.unwrap();
-        let e = accept_remedy(&without, &jwk, &skill_id, &nonce, &hash).expect_err("a remedy without a nonce was accepted");
+        let e = accept_remedy(&without, &jwk, &skill_id, &nonce, &hash)
+            .expect_err("a remedy without a nonce was accepted");
         assert!(crate::msg::is("finding_not_for_this_request", &e), "{e}");
         // The whole path still works end to end, with the binding in it.
-        diagnose(ACME, &skill_id, &facts, &jwk, "en").await.expect("diagnose failed with the binding");
+        diagnose(ACME, &skill_id, &facts, &jwk, "en")
+            .await
+            .expect("diagnose failed with the binding");
     }
 
     /// X1: a base off this machine is spoken to over TLS or not at all. A
@@ -655,17 +762,25 @@ mod tests {
     #[tokio::test]
     async fn a_plain_http_base_off_this_machine_is_refused() {
         for (base, fine) in [
-            ("http://127.0.0.1:8721", true), ("http://localhost:8721", true), ("http://[::1]:8721", true),
-            ("http://127.5.5.5", true), ("https://support.example.org", true),
-            ("http://support.example.org", false), ("http://10.0.0.5:8721", false),
-            ("http://192.168.0.26", false), ("ftp://example.org", false), ("example.org", false),
+            ("http://127.0.0.1:8721", true),
+            ("http://localhost:8721", true),
+            ("http://[::1]:8721", true),
+            ("http://127.5.5.5", true),
+            ("https://support.example.org", true),
+            ("http://support.example.org", false),
+            ("http://10.0.0.5:8721", false),
+            ("http://192.168.0.26", false),
+            ("ftp://example.org", false),
+            ("example.org", false),
         ] {
             assert_eq!(a2a::insecure_base(base).is_none(), fine, "{base}");
         }
-        let e = discover("http://support.example.org", &pinned()).await
+        let e = discover("http://support.example.org", &pinned())
+            .await
             .expect_err("a plain-text base off this machine was discovered");
         assert!(crate::msg::is("https_required", &e), "{e}");
-        let e = triage("http://10.0.0.5:8721", "x", "en").await
+        let e = triage("http://10.0.0.5:8721", "x", "en")
+            .await
             .expect_err("readings were offered to a plain-text base off this machine");
         assert!(crate::msg::is("https_required", &e), "{e}");
     }
@@ -678,11 +793,15 @@ mod tests {
         let mut forged = json!({"skill_id": "s", "skill_version": "1", "resolved_by": "vendor_skill",
                                 "outcome": "resolved", "observed": {}, "stated": {}, "dropped": []});
         forged["description"] = json!("typed but never agreed to");
-        let e = send_report(ACME, forged.clone(), "127.0.0.1", "en").await
+        let e = send_report(ACME, forged.clone(), "127.0.0.1", "en")
+            .await
             .expect_err("free text without its consent was sent");
         assert!(crate::msg::is("free_text_without_consent", &e), "{e}");
         forged["description_consent"] = json!({"granted": true, "destination": "  "});
-        assert!(send_report(ACME, forged, "127.0.0.1", "en").await.is_err(), "consent naming nobody was enough");
+        assert!(
+            send_report(ACME, forged, "127.0.0.1", "en").await.is_err(),
+            "consent naming nobody was enough"
+        );
     }
 
     /// A signed remedy that does not match the published shape is refused here,
@@ -711,7 +830,10 @@ mod tests {
     async fn an_unmatched_problem_routes_to_a_human() {
         require_services().await;
         let tr = triage(ACME, "my printer smells odd", "de").await.unwrap();
-        assert!(tr.get("skill").map_or(true, |s| s.is_null()), "a skill was invented for an unrelated problem");
+        assert!(
+            tr.get("skill").is_none_or(|s| s.is_null()),
+            "a skill was invented for an unrelated problem"
+        );
         assert!(
             tr.get("escalate").is_some() || tr.get("reason").is_some(),
             "no skill, and no destination either — that is a dead end: {tr}"
@@ -724,14 +846,21 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_machine_fact_arms_a_question() {
         require_services().await;
-        let tr = triage(ACME, "graphics card defect, warranty?", "de").await.unwrap();
-        let probes_in: Vec<Value> =
-            tr["skill"]["probes"].as_array().cloned().expect("no probes on the RMA skill");
+        let tr = triage(ACME, "graphics card defect, warranty?", "de")
+            .await
+            .unwrap();
+        let probes_in: Vec<Value> = tr["skill"]["probes"]
+            .as_array()
+            .cloned()
+            .expect("no probes on the RMA skill");
         let gated: Vec<&Value> = probes_in
             .iter()
-            .filter(|p| p.get("when_missing").map_or(false, |v| !v.is_null()))
+            .filter(|p| p.get("when_missing").is_some_and(|v| !v.is_null()))
             .collect();
-        assert!(!gated.is_empty(), "nothing is gated on a machine probe coming back empty");
+        assert!(
+            !gated.is_empty(),
+            "nothing is gated on a machine probe coming back empty"
+        );
         for g in &gated {
             let on = g["when_missing"].as_str().unwrap();
             assert!(
@@ -752,9 +881,12 @@ mod tests {
         let skill = tr["skill"].clone();
         let facts = json!({"gpu.name": "NVIDIA GeForce RTX 2070 SUPER",
                            "gpu.compute_capability": "7.5"});
-        let (built, _held) = crate::report::build(&skill, &facts, &[], &[], "general_agent", "resolved");
+        let (built, _held) =
+            crate::report::build(&skill, &facts, &[], &[], "general_agent", "resolved");
 
-        let receipt = send_report(ACME, built, "127.0.0.1", "en").await.expect("the report was refused");
+        let receipt = send_report(ACME, built, "127.0.0.1", "en")
+            .await
+            .expect("the report was refused");
         assert!(
             receipt.get("state").is_some(),
             "a report was accepted without a receipt — the receipt is the entire reward: {receipt}"
@@ -800,10 +932,16 @@ mod tests {
             refused["facts"].as_object().unwrap().is_empty(),
             "a reading happened without consent"
         );
-        let missing: Vec<&str> = refused["missing"].as_array().unwrap().iter()
-            .filter_map(|m| m.as_str()).collect();
-        assert!(missing.contains(&"gpu.name") && missing.contains(&"os.version"),
-                "a withheld fact was not declared missing: {missing:?}");
+        let missing: Vec<&str> = refused["missing"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m.as_str())
+            .collect();
+        assert!(
+            missing.contains(&"gpu.name") && missing.contains(&"os.version"),
+            "a withheld fact was not declared missing: {missing:?}"
+        );
 
         let granted = perform_reads(&probes_in, &["os.version".to_string()]);
         assert!(
@@ -844,7 +982,10 @@ mod tests {
             "read": {"op": "read_file_key", "path": ".ssh/id_ed25519", "key": "x"}
         })];
         let plan = plan_reads(&probes_in);
-        assert_eq!(plan["plan"][0]["refused"], true, "a denied path was offered to the user");
+        assert_eq!(
+            plan["plan"][0]["refused"], true,
+            "a denied path was offered to the user"
+        );
 
         let out = perform_reads(&probes_in, &["secrets".to_string()]);
         assert!(
@@ -860,12 +1001,30 @@ mod tests {
     fn every_refusal_has_a_kind_the_window_can_translate() {
         let _g = crate::reads::grants_held();
         for (read, kind) in [
-            (json!({"op": "run_tool", "tool": "podshl-nonexistent-tool"}), "invalid"),
-            (json!({"op": "read_file_key", "path": ".ssh/config", "key": "k"}), "denied"),
-            (json!({"op": "program_version", "program": "bash"}), "denied"),
-            (json!({"op": "read_ini_key", "path": "project/../../.npmrc", "key": "k"}), "outside"),
-            (json!({"op": "read_ini_key", "path": ".venv/pyvenv.cfg", "key": "version"}), "outside"),
-            (json!({"op": "program_version", "program": "engram", "flag": "-c"}), "invalid"),
+            (
+                json!({"op": "run_tool", "tool": "podshl-nonexistent-tool"}),
+                "invalid",
+            ),
+            (
+                json!({"op": "read_file_key", "path": ".ssh/config", "key": "k"}),
+                "denied",
+            ),
+            (
+                json!({"op": "program_version", "program": "bash"}),
+                "denied",
+            ),
+            (
+                json!({"op": "read_ini_key", "path": "project/../../.npmrc", "key": "k"}),
+                "outside",
+            ),
+            (
+                json!({"op": "read_ini_key", "path": ".venv/pyvenv.cfg", "key": "version"}),
+                "outside",
+            ),
+            (
+                json!({"op": "program_version", "program": "engram", "flag": "-c"}),
+                "invalid",
+            ),
             (json!({"op": "run_powershell"}), "invalid"),
         ] {
             crate::reads::end_incident();
@@ -874,7 +1033,8 @@ mod tests {
         }
         // Absence of a tool is its own kind wherever the tool is absent.
         if let Err(e) = reads::precheck(&json!({"op": "run_tool", "tool": "system_profiler",
-                                                "args": ["SPDisplaysDataType"]})) {
+                                                "args": ["SPDisplaysDataType"]}))
+        {
             assert_eq!(refusal_kind(&e), "absent", "{e}");
         }
     }
@@ -884,12 +1044,17 @@ mod tests {
     #[test]
     fn an_unreasonable_number_of_reads_is_refused_outright() {
         let probes_in: Vec<Value> = (0..reads::MAX_READS + 1)
-            .map(|i| json!({"id": format!("x{i}"), "kind": "machine",
-                            "read": {"op": "os_fact", "name": "version"}}))
+            .map(|i| {
+                json!({"id": format!("x{i}"), "kind": "machine",
+                            "read": {"op": "os_fact", "name": "version"}})
+            })
             .collect();
         let plan = plan_reads(&probes_in);
         assert_eq!(plan["ok"], false, "{} reads were accepted", probes_in.len());
-        assert!(crate::msg::is("too_many_reads", plan["reason"].as_str().unwrap()));
+        assert!(crate::msg::is(
+            "too_many_reads",
+            plan["reason"].as_str().unwrap()
+        ));
     }
 
     /// The trust anchor is per host, not per endpoint — so a port never selects
@@ -897,7 +1062,10 @@ mod tests {
     #[test]
     fn the_key_is_looked_up_by_host_alone() {
         assert_eq!(host_of("http://127.0.0.1:8721"), "127.0.0.1");
-        assert_eq!(host_of("https://support.example.org/a2a"), "support.example.org");
+        assert_eq!(
+            host_of("https://support.example.org/a2a"),
+            "support.example.org"
+        );
         assert_eq!(host_of("https://example.org:443/x/y"), "example.org");
     }
 }

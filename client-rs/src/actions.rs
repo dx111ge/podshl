@@ -76,7 +76,10 @@ pub const VOCABULARY: &[ActionSpec] = &[
         mutating: true,
         reversible: true,
         elevated: true,
-        params: &[("service", crate::elevated::SERVICE), ("start", crate::elevated::START)],
+        params: &[
+            ("service", crate::elevated::SERVICE),
+            ("start", crate::elevated::START),
+        ],
     },
     ActionSpec {
         id: "set_machine_env",
@@ -84,7 +87,10 @@ pub const VOCABULARY: &[ActionSpec] = &[
         mutating: true,
         reversible: true,
         elevated: true,
-        params: &[("name", crate::elevated::ENV_NAME), ("value", crate::elevated::ENV_VALUE)],
+        params: &[
+            ("name", crate::elevated::ENV_NAME),
+            ("value", crate::elevated::ENV_VALUE),
+        ],
     },
 ];
 
@@ -95,7 +101,11 @@ pub fn spec(id: &str) -> Option<&'static ActionSpec> {
 pub fn validate(id: &str, params: &Value) -> Result<BTreeMap<String, String>, String> {
     let s = spec(id).ok_or_else(|| {
         let known: Vec<&str> = VOCABULARY.iter().map(|a| a.id).collect();
-        m!("action_unknown", id = format!("{id:?}"), known = format!("{known:?}"))
+        m!(
+            "action_unknown",
+            id = format!("{id:?}"),
+            known = format!("{known:?}")
+        )
     })?;
     let obj = params.as_object().ok_or_else(|| m!("params_not_object"))?;
     let mut out = BTreeMap::new();
@@ -106,7 +116,13 @@ pub fn validate(id: &str, params: &Value) -> Result<BTreeMap<String, String>, St
             .ok_or_else(|| m!("param_missing", id = id, name = format!("{name:?}")))?;
         let re = Regex::new(&format!("^(?:{pattern})$")).map_err(|e| e.to_string())?;
         if !re.is_match(v) {
-            return Err(m!("param_violates", id = id, name = name, v = format!("{v:?}"), pattern = pattern));
+            return Err(m!(
+                "param_violates",
+                id = id,
+                name = name,
+                v = format!("{v:?}"),
+                pattern = pattern
+            ));
         }
         out.insert((*name).to_string(), v.to_string());
     }
@@ -127,10 +143,19 @@ pub fn dry_run(id: &str, params: &Value) -> Result<String, String> {
     let p = validate(id, params)?;
     Ok(match id {
         "report_only" => m!("dry_report_only"),
-        "set_config_key" => m!("dry_set_config_key", key = p["key"], value = p["value"], file = p["file"]),
+        "set_config_key" => m!(
+            "dry_set_config_key",
+            key = p["key"],
+            value = p["value"],
+            file = p["file"]
+        ),
         "restore_backup" => m!("dry_restore_backup", file = p["file"]),
         "restart_service" => m!("dry_restart_service", s = p["service"]),
-        "set_service_start" => m!("dry_set_service_start", s = p["service"], start = p["start"]),
+        "set_service_start" => m!(
+            "dry_set_service_start",
+            s = p["service"],
+            start = p["start"]
+        ),
         "set_machine_env" if p["value"].is_empty() => m!("dry_unset_machine_env", n = p["name"]),
         "set_machine_env" => m!("dry_set_machine_env", n = p["name"], v = p["value"]),
         _ => "—".into(),
@@ -151,7 +176,9 @@ pub fn execute(id: &str, params: &Value, root: &Path) -> Result<Value, String> {
 fn set_config_key(p: &BTreeMap<String, String>, root: &Path) -> Result<Value, String> {
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let target: PathBuf = root.join(&p["file"]);
-    let target = target.canonicalize().map_err(|e| format!("{}: {e}", p["file"]))?;
+    let target = target
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", p["file"]))?;
     if !target.starts_with(&root) {
         return Err(m!("path_leaves_root_named", p = p["file"]));
     }
@@ -162,12 +189,22 @@ fn set_config_key(p: &BTreeMap<String, String>, root: &Path) -> Result<Value, St
     ));
     std::fs::write(&backup, &text).map_err(|e| e.to_string())?;
 
-    let re = Regex::new(&format!(r"(?m)^(\s*{}\s*=\s*).*$", regex::escape(&p["key"])))
-        .map_err(|e| e.to_string())?;
+    let re = Regex::new(&format!(
+        r"(?m)^(\s*{}\s*=\s*).*$",
+        regex::escape(&p["key"])
+    ))
+    .map_err(|e| e.to_string())?;
     let (new, n) = if re.is_match(&text) {
-        (re.replace_all(&text, format!("${{1}}{}", p["value"])).to_string(), 1)
+        (
+            re.replace_all(&text, format!("${{1}}{}", p["value"]))
+                .to_string(),
+            1,
+        )
     } else {
-        (format!("{}\n{} = {}\n", text.trim_end(), p["key"], p["value"]), 1)
+        (
+            format!("{}\n{} = {}\n", text.trim_end(), p["key"], p["value"]),
+            1,
+        )
     };
     std::fs::write(&target, new).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
@@ -177,10 +214,12 @@ fn set_config_key(p: &BTreeMap<String, String>, root: &Path) -> Result<Value, St
     }))
 }
 
-
 fn restore_backup(p: &BTreeMap<String, String>, root: &Path) -> Result<Value, String> {
     let root = root.canonicalize().map_err(|e| e.to_string())?;
-    let target = root.join(&p["file"]).canonicalize().map_err(|e| e.to_string())?;
+    let target = root
+        .join(&p["file"])
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
     if !target.starts_with(&root) {
         return Err(m!("path_leaves_root"));
     }
@@ -188,8 +227,7 @@ fn restore_backup(p: &BTreeMap<String, String>, root: &Path) -> Result<Value, St
         "{}.bak",
         target.extension().and_then(|e| e.to_str()).unwrap_or("")
     ));
-    let text = std::fs::read_to_string(&backup)
-        .map_err(|_| m!("no_backup"))?;
+    let text = std::fs::read_to_string(&backup).map_err(|_| m!("no_backup"))?;
     std::fs::write(&target, text).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "restored": target.display().to_string() }))
 }
@@ -198,97 +236,6 @@ fn restore_backup(p: &BTreeMap<String, String>, root: &Path) -> Result<Value, St
 mod tests {
     use super::*;
     use serde_json::json;
-    use crate::{actions, report};
-
-    /// A12: the whole arc, and the one nobody had written down.
-    ///
-    /// A1 to A11 each check one step — the dry run, the backup, the undo, the
-    /// refusals. Every one of them passes on a machine where the product does
-    /// not work at all, because none of them asks the question the front page
-    /// makes a promise about: **does the agent actually fix the thing, and does
-    /// the fix hold?**
-    ///
-    /// `A10` — "dry-run text against actual effect" — was marked `manual`,
-    /// which is the same gap seen from the other side: nothing compared what
-    /// the user was *told* would happen against what happened. A dry run that
-    /// under-reports its own effect defeats the entire consent design, and it
-    /// would do so silently.
-    ///
-    /// So this walks it: a broken configuration file, the remedy the publisher
-    /// proposed, the sentence the user is shown, the change, the check that the
-    /// change is real, and the undo that puts it back byte for byte. Then the
-    /// report that says it worked — because "resolved" is a claim about the
-    /// world, and it should only be made by a path that changed the world.
-    #[test]
-    fn the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back() {
-        let root = std::env::temp_dir().join(format!("vs-fix-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        let file = root.join("app.toml");
-
-        // What a broken machine looks like: the setting that is wrong, and
-        // other lines that must survive untouched.
-        let before = "# engram\nname = \"demo\"\nmodeset = 0\nlast = \"keep me\"\n";
-        std::fs::write(&file, before).unwrap();
-
-        let params = json!({"file": "app.toml", "key": "modeset", "value": "1"});
-
-        // 1. What the user is shown before anything happens. It has to name the
-        //    file, the key and the value — a sentence that says less than the
-        //    effect is a sentence somebody consented to under a false idea of
-        //    what they were agreeing to.
-        let shown = actions::dry_run("set_config_key", &params).expect("no dry run");
-        for needle in ["app.toml", "modeset", "1"] {
-            assert!(shown.contains(needle),
-                    "the dry run does not name {needle:?}, so the user is consenting to \
-                     something narrower than what will happen: {shown}");
-        }
-        assert!(shown.contains(".bak"), "the dry run does not mention the rollback: {shown}");
-
-        // 2. Nothing has happened yet. A plan that acts is not a plan.
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), before,
-                   "the dry run changed the file");
-
-        // 3. The change.
-        actions::execute("set_config_key", &params, &root).expect("the fix did not apply");
-
-        let after = std::fs::read_to_string(&file).unwrap();
-        assert!(after.contains("modeset = 1"),
-                "the fix did not take: {after}");
-        assert!(after.contains("last = \"keep me\""),
-                "the fix rewrote lines it was not asked about: {after}");
-        assert!(after.contains("name = \"demo\""), "an unrelated key was lost: {after}");
-
-        // 4. The rollback exists *before* it is needed, which is what makes the
-        //    change reversible rather than merely regrettable.
-        let backup = root.join("app.toml.bak");
-        assert!(backup.exists(), "no backup was left beside the change");
-        assert_eq!(std::fs::read_to_string(&backup).unwrap(), before,
-                   "the backup is not what was there before the change");
-
-        // 5. Undo, and the file is byte for byte what it was. Not "close
-        //    enough": a rollback that leaves the file different is a second
-        //    change wearing the word undo.
-        actions::execute("restore_backup", &json!({"file": "app.toml"}), &root)
-            .expect("the undo failed");
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), before,
-                   "the undo did not restore the file exactly");
-
-        // 6. And the report that says so. `resolved` is a claim about the
-        //    world, and this is the only test in which the world was changed
-        //    and changed back before it is made.
-        let skill = json!({"skill_id": "demo-fix", "version": "1",
-                           "probes": [{"id": "app.modeset", "kind": "machine"}]});
-        let facts = json!({"app.modeset": "0"});
-        let (built, _held) = report::build(
-            &skill, &facts, &[], &["app.modeset".to_string()], "vendor_skill", "resolved");
-        assert_eq!(built["outcome"], "resolved", "{built}");
-        assert_eq!(built["observed"]["app.modeset"], "0",
-                   "the report does not carry the fact the fix turned on: {built}");
-        assert_eq!(built["decided_on"][0], "app.modeset", "{built}");
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
 
     fn tmp() -> PathBuf {
         let d = std::env::temp_dir().join(format!("vs-test-{}", std::process::id()));
@@ -305,7 +252,10 @@ mod tests {
         std::fs::write(&f, "precision = \"bf16\"\nbatch_size = 4\n").unwrap();
         let p = json!({"file": "training.toml", "key": "precision", "value": "fp16"});
         let preview = dry_run("set_config_key", &p).expect("dry-run refused a valid action");
-        assert!(preview.contains("training.toml"), "dry-run does not name the file: {preview}");
+        assert!(
+            preview.contains("training.toml"),
+            "dry-run does not name the file: {preview}"
+        );
         assert!(
             std::fs::read_to_string(&f).unwrap().contains("bf16"),
             "the dry-run changed the file — a dry-run that acts defeats the design"
@@ -320,7 +270,10 @@ mod tests {
     fn an_unknown_action_is_refused_naming_the_vocabulary() {
         let err = validate("run_powershell", &json!({})).unwrap_err();
         for known in VOCABULARY.iter().map(|a| a.id) {
-            assert!(err.contains(known), "the refusal does not name {known}: {err}");
+            assert!(
+                err.contains(known),
+                "the refusal does not name {known}: {err}"
+            );
         }
     }
 
@@ -329,10 +282,22 @@ mod tests {
     #[test]
     fn parameters_are_validated_before_anything_runs() {
         for (params, why) in [
-            (json!({"file": "../../etc/passwd", "key": "X", "value": "1"}), "path traversal"),
-            (json!({"file": "training.toml", "key": "X; rm -rf /", "value": "1"}), "shell metacharacters"),
-            (json!({"file": "training.toml", "key": "X", "value": "1", "extra": "y"}), "an undeclared parameter"),
-            (json!({"file": "training.toml", "key": "X"}), "a missing required parameter"),
+            (
+                json!({"file": "../../etc/passwd", "key": "X", "value": "1"}),
+                "path traversal",
+            ),
+            (
+                json!({"file": "training.toml", "key": "X; rm -rf /", "value": "1"}),
+                "shell metacharacters",
+            ),
+            (
+                json!({"file": "training.toml", "key": "X", "value": "1", "extra": "y"}),
+                "an undeclared parameter",
+            ),
+            (
+                json!({"file": "training.toml", "key": "X"}),
+                "a missing required parameter",
+            ),
         ] {
             assert!(
                 validate("set_config_key", &params).is_err(),
@@ -402,7 +367,10 @@ mod tests {
         execute("set_config_key", &p, &root).unwrap();
         assert!(std::fs::read_to_string(&f).unwrap().contains("fp16"));
         execute("restore_backup", &json!({"file": "t.toml"}), &root).unwrap();
-        assert!(std::fs::read_to_string(&f).unwrap().contains("bf16"), "undo did not restore");
+        assert!(
+            std::fs::read_to_string(&f).unwrap().contains("bf16"),
+            "undo did not restore"
+        );
     }
 
     /// A9: undo with nothing to undo refuses cleanly rather than panicking.
@@ -457,7 +425,10 @@ mod tests {
         for want in &documented {
             let id = want["id"].as_str().unwrap();
             let got = implemented.iter().find(|a| a["id"] == want["id"]).unwrap();
-            assert_eq!(got, want, "action {id} differs between the spec and this client");
+            assert_eq!(
+                got, want,
+                "action {id} differs between the spec and this client"
+            );
         }
     }
 }

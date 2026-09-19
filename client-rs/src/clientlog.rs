@@ -49,7 +49,11 @@ pub fn line(what: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&p)
+    {
         let _ = writeln!(f, "{now} {clean}");
     }
     trim(&p);
@@ -77,11 +81,15 @@ const KEEP_BYTES: usize = 128 * 1024;
 /// Failure here is silence on purpose: a client that cannot tidy its own log
 /// must still answer the question it was asked.
 fn trim(p: &std::path::Path) {
-    let Ok(meta) = std::fs::metadata(p) else { return };
+    let Ok(meta) = std::fs::metadata(p) else {
+        return;
+    };
     if meta.len() <= MAX_BYTES {
         return;
     }
-    let Ok(body) = std::fs::read_to_string(p) else { return };
+    let Ok(body) = std::fs::read_to_string(p) else {
+        return;
+    };
     let cut = body.len().saturating_sub(KEEP_BYTES);
     let tail = match body[cut..].find('\n') {
         Some(i) => &body[cut + i + 1..],
@@ -100,7 +108,11 @@ fn trim(p: &std::path::Path) {
 pub fn start(operator: &str, index_entries: usize, index_verified: bool, model: &str) {
     line(&format!(
         "start operator={operator} directory={} entries={index_entries} model={model}",
-        if index_verified { "verified" } else { "NOT VERIFIED — nothing will be found by name" }
+        if index_verified {
+            "verified"
+        } else {
+            "NOT VERIFIED — nothing will be found by name"
+        }
     ));
 }
 
@@ -124,7 +136,9 @@ mod tests {
         let mut body = String::new();
         let mut n = 0u32;
         while body.len() < (MAX_BYTES as usize) + 4096 {
-            body.push_str(&format!("{n} line number {n} with some words after it to give it length\n"));
+            body.push_str(&format!(
+                "{n} line number {n} with some words after it to give it length\n"
+            ));
             n += 1;
         }
         let written = n;
@@ -134,27 +148,44 @@ mod tests {
         trim(&p);
 
         let after = std::fs::read_to_string(&p).expect("the log is gone");
-        assert!(after.len() <= KEEP_BYTES,
-                "kept {} bytes, which is more than the {KEEP_BYTES} it promises", after.len());
+        assert!(
+            after.len() <= KEEP_BYTES,
+            "kept {} bytes, which is more than the {KEEP_BYTES} it promises",
+            after.len()
+        );
         assert!(!after.is_empty(), "trimming emptied the log");
 
         // **The end is what is kept.** A log trimmed from the wrong end answers
         // "what happened just now" with last month.
-        assert!(after.contains(&format!("{} line number", written - 1)),
-                "the newest line did not survive");
-        assert!(!after.contains("\n0 line number 0 "), "the oldest line survived");
+        assert!(
+            after.contains(&format!("{} line number", written - 1)),
+            "the newest line did not survive"
+        );
+        assert!(
+            !after.contains("\n0 line number 0 "),
+            "the oldest line survived"
+        );
 
         // And the first surviving line is a whole one: half a line at the top of
         // a log is read as a clue for ten minutes.
         let first = after.lines().next().expect("no lines left");
-        assert!(first.split(' ').next().and_then(|w| w.parse::<u32>().ok()).is_some(),
-                "the log now starts mid-line: {first:?}");
+        assert!(
+            first
+                .split(' ')
+                .next()
+                .and_then(|w| w.parse::<u32>().ok())
+                .is_some(),
+            "the log now starts mid-line: {first:?}"
+        );
 
         // Under the cap it is left alone, bytes for bytes.
         std::fs::write(&p, "one\ntwo\n").unwrap();
         trim(&p);
-        assert_eq!(std::fs::read_to_string(&p).unwrap(), "one\ntwo\n",
-                   "a small log was rewritten for no reason");
+        assert_eq!(
+            std::fs::read_to_string(&p).unwrap(),
+            "one\ntwo\n",
+            "a small log was rewritten for no reason"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -35,7 +35,8 @@ const LOAD_BYTES: u64 = 256 * 1024;
 /// happened; the timestamps themselves are then removed, and would be removed
 /// again by the anonymiser if they were not.
 pub fn from_container(image: &str) -> Result<Value, String> {
-    let re = regex::Regex::new(&format!("^(?:{})$", reads::IMAGE_NAME)).map_err(|e| e.to_string())?;
+    let re =
+        regex::Regex::new(&format!("^(?:{})$", reads::IMAGE_NAME)).map_err(|e| e.to_string())?;
     if image.len() > 128 || !re.is_match(image) {
         return Err(m!("image_not_allowed", image = format!("{image:?}")));
     }
@@ -51,7 +52,9 @@ pub fn from_container(image: &str) -> Result<Value, String> {
         .lines()
         .filter(|l| !l.trim().is_empty())
         .map(|l| match l.split_once(' ') {
-            Some((ts, rest)) if ts.len() >= 20 && ts.as_bytes()[4] == b'-' => (ts.to_string(), rest.to_string()),
+            Some((ts, rest)) if ts.len() >= 20 && ts.as_bytes()[4] == b'-' => {
+                (ts.to_string(), rest.to_string())
+            }
             _ => (String::new(), l.to_string()),
         })
         .collect();
@@ -84,16 +87,22 @@ pub fn from_file(path: &str) -> Result<Value, String> {
     let mut f = std::fs::File::open(p).map_err(|e| format!("{}: {e}", p.display()))?;
     let len = meta.len();
     if len > LOAD_BYTES {
-        f.seek(SeekFrom::Start(len - LOAD_BYTES)).map_err(|e| e.to_string())?;
+        f.seek(SeekFrom::Start(len - LOAD_BYTES))
+            .map_err(|e| e.to_string())?;
     }
     let mut buf = Vec::new();
-    f.take(LOAD_BYTES).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    f.take(LOAD_BYTES)
+        .read_to_end(&mut buf)
+        .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&buf).replace("\r\n", "\n");
     let lines: Vec<&str> = text.lines().collect();
     // A seek into the middle of the file lands mid-line; that first fragment
     // is not a line anybody wrote.
     let from = if len > LOAD_BYTES { 1 } else { 0 };
-    let start = lines.len().saturating_sub(LOAD_LINES).max(from.min(lines.len()));
+    let start = lines
+        .len()
+        .saturating_sub(LOAD_LINES)
+        .max(from.min(lines.len()));
     let body = lines[start..].join("\n");
     Ok(json!({ "text": body, "lines": lines.len() - start, "from": p.display().to_string() }))
 }
@@ -134,18 +143,31 @@ mod tests {
         let v = from_file(&log.to_string_lossy()).expect("a plain log was refused");
         let text = v["text"].as_str().unwrap();
         assert_eq!(v["lines"], LOAD_LINES);
-        assert!(text.ends_with("line 999"), "the end of the log is where the failure is");
+        assert!(
+            text.ends_with("line 999"),
+            "the end of the log is where the failure is"
+        );
         assert!(!text.contains("line 0\n"), "the whole file was loaded");
 
         let env = dir.join(".env");
         std::fs::write(&env, "OPENAI_API_KEY=sk-x").unwrap();
         let e = from_file(&env.to_string_lossy()).unwrap_err();
-        assert!(crate::msg::is("denied_even_with_consent", &e), "a denied file was loaded: {e}");
+        assert!(
+            crate::msg::is("denied_even_with_consent", &e),
+            "a denied file was loaded: {e}"
+        );
         assert_eq!(error_kind(&e), "denied");
 
         let e = from_file(&dir.to_string_lossy()).unwrap_err();
-        assert_eq!(error_kind(&e), "not_file", "a directory was loaded as a log: {e}");
-        assert_eq!(error_kind(&from_file(&dir.join("absent.log").to_string_lossy()).unwrap_err()), "unreadable");
+        assert_eq!(
+            error_kind(&e),
+            "not_file",
+            "a directory was loaded as a log: {e}"
+        );
+        assert_eq!(
+            error_kind(&from_file(&dir.join("absent.log").to_string_lossy()).unwrap_err()),
+            "unreadable"
+        );
         assert_eq!(error_kind(&from_container("a;b").unwrap_err()), "invalid");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -176,7 +198,8 @@ mod tests {
             eprintln!("no docker on this machine — container sources not attempted");
             return;
         };
-        let Some((true, listing)) = reads::run_bounded(&docker, &["ps", "--format", "{{.Image}}"]) else {
+        let Some((true, listing)) = reads::run_bounded(&docker, &["ps", "--format", "{{.Image}}"])
+        else {
             eprintln!("docker is not answering — container sources not attempted");
             return;
         };
@@ -188,20 +211,38 @@ mod tests {
         // under test is that a container named by its image is found, and a
         // bare id names nothing.
         let is_id = |l: &str| l.len() >= 12 && l.chars().all(|c| c.is_ascii_hexdigit());
-        let Some(image) = listing.lines().map(str::trim)
-            .find(|l| !l.is_empty() && !l.contains('@') && !is_id(l)) else {
-            eprintln!("no container is running under an image name — container sources not attempted");
+        let Some(image) = listing
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.contains('@') && !is_id(l))
+        else {
+            eprintln!(
+                "no container is running under an image name — container sources not attempted"
+            );
             return;
         };
-        let repo = image.rsplit_once(':').filter(|(_, t)| !t.contains('/')).map(|(r, _)| r).unwrap_or(image);
+        let repo = image
+            .rsplit_once(':')
+            .filter(|(_, t)| !t.contains('/'))
+            .map(|(r, _)| r)
+            .unwrap_or(image);
         let found = reads::containers_of(repo);
-        assert!(!found.is_empty(), "{repo} is running and was not found by its name");
+        assert!(
+            !found.is_empty(),
+            "{repo} is running and was not found by its name"
+        );
 
         let v = reads::perform(&json!({"op": "container_image_version", "image": repo}));
-        assert!(v.is_some(), "a running {repo} gave no version or tag at all");
+        assert!(
+            v.is_some(),
+            "a running {repo} gave no version or tag at all"
+        );
 
         let r = from_container(repo).expect("the running container's output could not be loaded");
-        assert!(r["from"].as_str().unwrap().starts_with("docker logs"), "{r}");
+        assert!(
+            r["from"].as_str().unwrap().starts_with("docker logs"),
+            "{r}"
+        );
         assert!(r["lines"].as_u64().unwrap() as usize <= LOAD_LINES);
     }
 
@@ -209,9 +250,18 @@ mod tests {
     /// repository name is refused before Docker is asked anything.
     #[test]
     fn a_container_source_is_an_image_name_and_nothing_else() {
-        for bad in ["ollama; rm -rf /", "Ollama/Ollama", "ollama:latest", "../x", "a b"] {
+        for bad in [
+            "ollama; rm -rf /",
+            "Ollama/Ollama",
+            "ollama:latest",
+            "../x",
+            "a b",
+        ] {
             let e = from_container(bad).unwrap_err();
-            assert!(crate::msg::is("image_not_allowed", &e), "{bad:?} got past the image pattern: {e}");
+            assert!(
+                crate::msg::is("image_not_allowed", &e),
+                "{bad:?} got past the image pattern: {e}"
+            );
         }
     }
 }

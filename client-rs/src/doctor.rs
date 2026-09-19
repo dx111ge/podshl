@@ -52,7 +52,11 @@ pub fn print_report() {
         "  Platform      {} / {}{}",
         r["platform"]["os"].as_str().unwrap_or("?"),
         r["platform"]["arch"].as_str().unwrap_or("?"),
-        if r["platform"]["verified_here"] == true { "" } else { "   (unverified branch)" }
+        if r["platform"]["verified_here"] == true {
+            ""
+        } else {
+            "   (unverified branch)"
+        }
     );
     println!("  Readable      {n_ok} values");
     for e in r["readable"].as_array().unwrap() {
@@ -73,10 +77,17 @@ pub fn print_report() {
         println!(
             "                · {}{}",
             a["id"].as_str().unwrap_or("?"),
-            if a["mutating"] == true { "  (changes things)" } else { "" }
+            if a["mutating"] == true {
+                "  (changes things)"
+            } else {
+                ""
+            }
         );
     }
-    println!("\n  Limits        at most {} readings per diagnosis", r["limits"]["max_reads"]);
+    println!(
+        "\n  Limits        at most {} readings per diagnosis",
+        r["limits"]["max_reads"]
+    );
 }
 
 #[cfg(test)]

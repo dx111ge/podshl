@@ -42,7 +42,6 @@
 
 use std::path::{Path, PathBuf};
 
-
 /// Is this an Omarchy desktop at all?
 ///
 /// Asked before anything else here, because everything here is about *this*
@@ -67,16 +66,26 @@ pub fn is_omarchy() -> bool {
     if Path::new("/usr/share/omarchy").is_dir() {
         return true;
     }
-    if dirs::data_dir().map(|d| d.join("omarchy").is_dir()).unwrap_or(false) {
+    if dirs::data_dir()
+        .map(|d| d.join("omarchy").is_dir())
+        .unwrap_or(false)
+    {
         return true;
     }
-    if std::env::var_os("OMARCHY_PATH").map(|p| Path::new(&p).is_dir()).unwrap_or(false) {
+    if std::env::var_os("OMARCHY_PATH")
+        .map(|p| Path::new(&p).is_dir())
+        .unwrap_or(false)
+    {
         return true;
     }
-    ["DESKTOP_SESSION", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
-        .iter()
-        .filter_map(|k| std::env::var(k).ok())
-        .any(|v| v.to_ascii_lowercase().contains("omarchy"))
+    [
+        "DESKTOP_SESSION",
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+    ]
+    .iter()
+    .filter_map(|k| std::env::var(k).ok())
+    .any(|v| v.to_ascii_lowercase().contains("omarchy"))
 }
 
 /// Everywhere else this is not a question that has an answer.
@@ -101,7 +110,9 @@ pub fn default_agent() -> Option<String> {
     // is better than passing it to a process spawn to find out.
     if name.is_empty()
         || name.len() > 64
-        || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
         return None;
     }
@@ -143,7 +154,8 @@ pub fn headless(agent: &str, prompt: &str) -> Option<Headless> {
                 // full rather than by category: a category is a promise the CLI
                 // never made.
                 "Read,Write,Edit,NotebookEdit,Bash,BashOutput,KillShell,Glob,Grep,\
-                 WebFetch,WebSearch,Task,Agent".into(),
+                 WebFetch,WebSearch,Task,Agent"
+                    .into(),
             ],
             cloud: true,
             measured: "Claude Code, 2026-09-14",
@@ -154,7 +166,9 @@ pub fn headless(agent: &str, prompt: &str) -> Option<Headless> {
 
 /// Is this agent on the path?
 pub fn installed(program: &str) -> bool {
-    let Some(path) = std::env::var_os("PATH") else { return false };
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
     std::env::split_paths(&path).any(|d| d.join(program).is_file())
 }
 
@@ -181,8 +195,8 @@ pub fn offer() -> Option<(String, bool)> {
 pub fn scratch() -> Option<PathBuf> {
     for _ in 0..3 {
         let nonce: u64 = rand::random();
-        let dir = std::env::temp_dir()
-            .join(format!("podshl-agent-{}-{nonce:016x}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("podshl-agent-{}-{nonce:016x}", std::process::id()));
         if std::fs::create_dir(&dir).is_ok() {
             return Some(dir);
         }
@@ -210,8 +224,15 @@ pub async fn ask(agent: &str, prompt: &str) -> Result<String, String> {
     let out = out.map_err(|e| format!("{}: {e}", h.program))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("{} exited {}: {}", h.program, out.status,
-                           err.chars().take(200).collect::<String>()));
+        // A failure is where a newer version shows first, so it says which
+        // version the switches were measured against.
+        return Err(format!(
+            "{} exited {} (switches measured against {}): {}",
+            h.program,
+            out.status,
+            h.measured,
+            err.chars().take(200).collect::<String>()
+        ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
@@ -220,7 +241,9 @@ pub async fn ask(agent: &str, prompt: &str) -> Result<String, String> {
 /// not a letter or a digit becomes `-`, so `/tmp/podshl-agent-1-ab` is
 /// `~/.claude/projects/-tmp-podshl-agent-1-ab`.
 fn session_dir(home: &Path, cwd: &Path) -> PathBuf {
-    let slug: String = cwd.to_string_lossy().chars()
+    let slug: String = cwd
+        .to_string_lossy()
+        .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
     home.join(".claude").join("projects").join(slug)
@@ -250,7 +273,10 @@ mod tests {
         let home = std::env::temp_dir().join(format!("podshl-home-{:016x}", rand::random::<u64>()));
         let cwd = Path::new("/tmp/podshl-agent-42-00ab");
         let dir = session_dir(&home, cwd);
-        assert!(dir.ends_with(".claude/projects/-tmp-podshl-agent-42-00ab"), "{dir:?}");
+        assert!(
+            dir.ends_with(".claude/projects/-tmp-podshl-agent-42-00ab"),
+            "{dir:?}"
+        );
 
         // What the flag leaves: nothing but an empty memory/. Gone afterwards.
         std::fs::create_dir_all(dir.join("memory")).unwrap();
@@ -261,7 +287,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("session.jsonl"), "{}").unwrap();
         forget_session_in(&home, cwd);
-        assert!(dir.join("session.jsonl").exists(), "a directory with content was removed");
+        assert!(
+            dir.join("session.jsonl").exists(),
+            "a directory with content was removed"
+        );
         std::fs::remove_dir_all(&home).unwrap();
     }
 
@@ -272,12 +301,17 @@ mod tests {
     #[ignore]
     async fn asking_the_agent_leaves_no_session_behind() {
         let agent = default_agent().expect("not an Omarchy desktop with a default agent");
-        let answer = ask(&agent, "Answer with the single word: ready.").await.unwrap();
+        let answer = ask(&agent, "Answer with the single word: ready.")
+            .await
+            .unwrap();
         assert!(answer.to_lowercase().contains("ready"), "{answer}");
 
         let prefix = format!("-tmp-podshl-agent-{}-", std::process::id());
         let projects = dirs::home_dir().unwrap().join(".claude/projects");
-        let left: Vec<_> = std::fs::read_dir(&projects).into_iter().flatten().flatten()
+        let left: Vec<_> = std::fs::read_dir(&projects)
+            .into_iter()
+            .flatten()
+            .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| n.starts_with(&prefix))
             .collect();
@@ -291,12 +325,18 @@ mod tests {
         for bad in ["", "  ", "a b", "../../bin/sh", "claude; rm -rf /", "a/b"] {
             let ok = !bad.trim().is_empty()
                 && bad.trim().len() <= 64
-                && bad.trim().chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+                && bad
+                    .trim()
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
             assert!(!ok, "{bad:?} would have been accepted as an agent name");
         }
         for good in ["claude", "opencode", "cursor-agent", "my_agent"] {
-            assert!(good.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                    "{good:?} was refused");
+            assert!(
+                good.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+                "{good:?} was refused"
+            );
         }
     }
 
@@ -311,42 +351,75 @@ mod tests {
         // from the bar — which is how anybody but a developer starts it — does
         // not inherit it. A feature gated on it alone would have worked in every
         // terminal test and for nobody else.
-        assert!(cfg!(target_os = "linux") || !is_omarchy(),
-                "this is a Linux desktop's convention and must not be looked for elsewhere");
+        assert!(
+            cfg!(target_os = "linux") || !is_omarchy(),
+            "this is a Linux desktop's convention and must not be looked for elsewhere"
+        );
 
         // And the gate is asked before the file is read, so a stray
         // `omarchy/defaults/agent` under somebody's Windows AppData is not an
         // Omarchy desktop.
         let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/omarchy.rs")).unwrap();
-        let body = src.split("pub fn default_agent()").nth(1).expect("default_agent is gone");
-        let gate = body.find("is_omarchy()").expect("default_agent does not ask whether this is Omarchy");
-        let read = body.find("read_to_string").expect("default_agent stopped reading the file");
-        assert!(gate < read, "the file is read before the desktop is identified");
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/omarchy.rs"),
+        )
+        .unwrap();
+        let body = src
+            .split("pub fn default_agent()")
+            .nth(1)
+            .expect("default_agent is gone");
+        let gate = body
+            .find("is_omarchy()")
+            .expect("default_agent does not ask whether this is Omarchy");
+        let read = body
+            .find("read_to_string")
+            .expect("default_agent stopped reading the file");
+        assert!(
+            gate < read,
+            "the file is read before the desktop is identified"
+        );
     }
 
     #[test]
     fn the_only_measured_agent_is_called_with_its_tools_denied() {
         let h = headless("claude", "hello").expect("claude is the one measured agent");
         assert_eq!(h.program, "claude");
-        assert!(h.args.iter().any(|a| a == "-p"), "not asked non-interactively");
-        let deny = h.args.iter().position(|a| a == "--disallowed-tools")
+        assert!(
+            h.args.iter().any(|a| a == "-p"),
+            "not asked non-interactively"
+        );
+        let deny = h
+            .args
+            .iter()
+            .position(|a| a == "--disallowed-tools")
             .map(|i| h.args[i + 1].clone())
             .expect("no deny-list, which is the only switch measured to fence");
         for tool in ["Read", "Bash", "Glob", "Grep", "WebFetch", "Task"] {
             assert!(deny.contains(tool), "{tool} is not denied: {deny}");
         }
-        assert!(!h.args.iter().any(|a| a == "--allowed-tools"),
-                "an empty allow-list reads as a fence and is not one — measured");
-        assert!(!h.args.iter().any(|a| a == "--permission-mode"),
-                "default-deny is a directory boundary, not a tool fence — measured");
-        assert!(h.cloud, "Claude Code sends the prompt off this machine and must say so");
-        assert!(h.args.iter().any(|a| a == "--no-session-persistence"),
-                "every call would leave its transcript, readings included, under ~/.claude");
+        assert!(
+            !h.args.iter().any(|a| a == "--allowed-tools"),
+            "an empty allow-list reads as a fence and is not one — measured"
+        );
+        assert!(
+            !h.args.iter().any(|a| a == "--permission-mode"),
+            "default-deny is a directory boundary, not a tool fence — measured"
+        );
+        assert!(
+            h.cloud,
+            "Claude Code sends the prompt off this machine and must say so"
+        );
+        assert!(
+            h.args.iter().any(|a| a == "--no-session-persistence"),
+            "every call would leave its transcript, readings included, under ~/.claude"
+        );
 
-        assert!(headless("opencode", "x").is_none(),
-                "an agent nobody measured is offered");
-        assert!(headless("codex", "x").is_none(),
-                "codex's read-only sandbox bounds writes, not reads — measured, and absent");
+        assert!(
+            headless("opencode", "x").is_none(),
+            "an agent nobody measured is offered"
+        );
+        assert!(
+            headless("codex", "x").is_none(),
+            "codex's read-only sandbox bounds writes, not reads — measured, and absent"
+        );
     }
 }

@@ -20,11 +20,21 @@ use serde_json::Value;
 /// deployment resolves these through the Agent Name Service; this list is the
 /// offline fallback and covers the common case of a user typing a brand.
 const KNOWN: &[(&str, &str)] = &[
-    ("nvidia", "nvidia.com"), ("amd", "amd.com"), ("intel", "intel.com"),
-    ("microsoft", "microsoft.com"), ("apple", "apple.com"), ("dell", "dell.com"),
-    ("lenovo", "lenovo.com"), ("hp", "hp.com"), ("datev", "datev.de"),
-    ("bosch", "bosch.com"), ("siemens", "siemens.com"), ("logitech", "logitech.com"),
-    ("samsung", "samsung.com"), ("seagate", "seagate.com"), ("brother", "brother.de"),
+    ("nvidia", "nvidia.com"),
+    ("amd", "amd.com"),
+    ("intel", "intel.com"),
+    ("microsoft", "microsoft.com"),
+    ("apple", "apple.com"),
+    ("dell", "dell.com"),
+    ("lenovo", "lenovo.com"),
+    ("hp", "hp.com"),
+    ("datev", "datev.de"),
+    ("bosch", "bosch.com"),
+    ("siemens", "siemens.com"),
+    ("logitech", "logitech.com"),
+    ("samsung", "samsung.com"),
+    ("seagate", "seagate.com"),
+    ("brother", "brother.de"),
 ];
 
 /// Where a vendor's agent would live if it had one.
@@ -64,7 +74,14 @@ pub fn search(query: &str) -> Value {
     // it is a hint, and a hint must not outrank what the user actually said.
     if q.starts_with("http://") || q.starts_with("https://") {
         let base = query.trim().trim_end_matches('/').to_string();
-        let host = base.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("").to_string();
+        let host = base
+            .split("://")
+            .nth(1)
+            .unwrap_or("")
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .to_string();
         return serde_json::json!([{
             "vendor": host.clone(), "domain": host, "base": base,
             "how": m!("how_full_address")
@@ -124,15 +141,22 @@ pub fn search(query: &str) -> Value {
     let mut out: Vec<Value> = KNOWN
         .iter()
         .filter(|(name, _)| name.contains(&q) || q.contains(*name))
-        .map(|(name, domain)| serde_json::json!({
-            "vendor": name, "domain": domain, "base": agent_base(domain),
-            "how": m!("how_known_vendor")
-        }))
+        .map(|(name, domain)| {
+            serde_json::json!({
+                "vendor": name, "domain": domain, "base": agent_base(domain),
+                "how": m!("how_known_vendor")
+            })
+        })
         .collect();
 
     if q.contains('.') && !q.contains(' ') {
-        let d = q.trim_start_matches("https://").trim_start_matches("http://")
-                 .split('/').next().unwrap_or(&q).to_string();
+        let d = q
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or(&q)
+            .to_string();
         if !out.iter().any(|v| v["domain"] == d.as_str()) {
             out.push(serde_json::json!({
                 "vendor": d.clone(), "domain": d.clone(), "base": agent_base(&d),
@@ -149,7 +173,6 @@ pub fn search(query: &str) -> Value {
     serde_json::json!(out)
 }
 
-
 /// Does what was actually read contradict the vendor the user named?
 ///
 /// A person at a computer says "Intel" and an AMD card is installed. Their
@@ -161,7 +184,9 @@ pub fn search(query: &str) -> Value {
 ///
 /// This never overrides the user. It says what it saw and offers the switch.
 pub fn mismatch(chosen: &str, facts: &Value) -> Option<(String, String)> {
-    let blob = facts.as_object()?.values()
+    let blob = facts
+        .as_object()?
+        .values()
         .filter_map(|v| v.as_str())
         .collect::<Vec<_>>()
         .join(" ")
@@ -181,11 +206,13 @@ pub fn mismatch(chosen: &str, facts: &Value) -> Option<(String, String)> {
     }
     for (name, domain) in KNOWN {
         if chosen_l.contains(name) {
-            continue;                       // the vendor the user picked
+            continue; // the vendor the user picked
         }
         // Word-ish match so "amd" does not fire inside "amdgpu-adjacent" prose
         // that happens to contain it as a substring of something else.
-        let found = blob.split(|c: char| !c.is_alphanumeric()).any(|w| w == *name);
+        let found = blob
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|w| w == *name);
         if found {
             return Some((name.to_string(), domain.to_string()));
         }
@@ -208,7 +235,10 @@ mod tests {
     #[test]
     fn stays_quiet_when_the_reading_agrees() {
         let facts = json!({"gpu.name": "NVIDIA GeForce RTX 2070 SUPER"});
-        assert!(mismatch("nvidia", &facts).is_none(), "false alarm on a match");
+        assert!(
+            mismatch("nvidia", &facts).is_none(),
+            "false alarm on a match"
+        );
     }
 
     #[test]
@@ -223,8 +253,16 @@ mod tests {
     #[test]
     fn a_vendor_that_is_not_a_brand_is_not_contradicted_by_the_chip() {
         let facts = json!({"gpu.name": "NVIDIA GeForce RTX 2070 SUPER"});
-        for chosen in ["127.0.0.1", "ACME Components GmbH", "engram.localhost", "pip"] {
-            assert!(mismatch(chosen, &facts).is_none(), "{chosen} was contradicted by an NVIDIA reading");
+        for chosen in [
+            "127.0.0.1",
+            "ACME Components GmbH",
+            "engram.localhost",
+            "pip",
+        ] {
+            assert!(
+                mismatch(chosen, &facts).is_none(),
+                "{chosen} was contradicted by an NVIDIA reading"
+            );
         }
     }
 }

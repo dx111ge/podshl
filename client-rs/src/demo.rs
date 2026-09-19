@@ -24,7 +24,11 @@ const D: &str = "\x1b[2m";
 const R: &str = "\x1b[0m";
 
 fn act(n: u8, title: &str) {
-    println!("\n{B}{}\n  ACT {n}  ·  {title}\n{}{R}", "─".repeat(76), "─".repeat(76));
+    println!(
+        "\n{B}{}\n  ACT {n}  ·  {title}\n{}{R}",
+        "─".repeat(76),
+        "─".repeat(76)
+    );
 }
 
 fn beat(text: &str) {
@@ -93,7 +97,9 @@ pub async fn run() -> Result<(), String> {
             "   {} {}  {}",
             if refused { "✗" } else { "·" },
             p["describes"].as_str().unwrap_or("?"),
-            p.get("what").and_then(|v| v.as_str()).unwrap_or("(derived)")
+            p.get("what")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(derived)")
         );
         dim(&format!("  because: {}", p["why"].as_str().unwrap_or("")));
     }
@@ -112,7 +118,9 @@ pub async fn run() -> Result<(), String> {
     }
     if let Some(missing) = collected["missing"].as_array() {
         if !missing.is_empty() {
-            dim(&format!("not readable: {missing:?} — that becomes a question, not a dead end"));
+            dim(&format!(
+                "not readable: {missing:?} — that becomes a question, not a dead end"
+            ));
         }
     }
 
@@ -120,7 +128,11 @@ pub async fn run() -> Result<(), String> {
     let out = flow::diagnose(ACME, &skill_id, &collected["facts"], &jwk, "en").await?;
     let remedy = &out["remedy"];
     for f in remedy["findings"].as_array().unwrap() {
-        println!("   [{}] {}", f["severity"].as_str().unwrap_or("?"), f["summary"].as_str().unwrap_or(""));
+        println!(
+            "   [{}] {}",
+            f["severity"].as_str().unwrap_or("?"),
+            f["summary"].as_str().unwrap_or("")
+        );
         for e in f["evidence"].as_array().into_iter().flatten() {
             dim(&format!("  · {}", e.as_str().unwrap_or("")));
         }
@@ -134,7 +146,10 @@ pub async fn run() -> Result<(), String> {
         match actions::dry_run(id, params) {
             Ok(preview) => {
                 println!("   {id}: {preview}");
-                dim(&format!("  because: {}", call["because"].as_str().unwrap_or("")));
+                dim(&format!(
+                    "  because: {}",
+                    call["because"].as_str().unwrap_or("")
+                ));
             }
             Err(e) => println!("   {id}: refused — {e}"),
         }
@@ -158,7 +173,14 @@ pub async fn run() -> Result<(), String> {
     dim(&format!("offer the button: {offer}"));
 
     beat("And the user sees beforehand what would be reported — and what would NOT.");
-    let (built, held) = report::build(&skill, &collected["facts"], &[], &[], "vendor_skill", "resolved");
+    let (built, held) = report::build(
+        &skill,
+        &collected["facts"],
+        &[],
+        &[],
+        "vendor_skill",
+        "resolved",
+    );
     for (k, v) in built["observed"].as_object().unwrap() {
         println!("   {k} = {v}");
     }
@@ -172,7 +194,8 @@ pub async fn run() -> Result<(), String> {
     act(4, "Aggregation — the index no single vendor can compute");
 
     beat("A vendor that never acts loses the button — with the reason stated.");
-    let mut silent = ledger::Ledger::open(format!("../var/demo_silent_{}.json", std::process::id()));
+    let mut silent =
+        ledger::Ledger::open(format!("../var/demo_silent_{}.json", std::process::id()));
     for _ in 0..8 {
         silent.record("Schweiger AG", "received")?;
     }

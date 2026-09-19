@@ -130,3 +130,16 @@ installed_op=$("$DEST/$NAME" invoke endpoints '{}' | python3 -c 'import json,sys
   || { echo "installed client reports $installed_op, not $BASE" >&2; exit 1; }
 
 echo "built and installed $DEST/$NAME for $BASE"
+
+# **`podshl-repairs` beside it**, the record of local fixes without the window.
+# The same build wrote it; installing only the client left the one program a
+# hook or an agent should call sitting in a target directory. Not for a test
+# build, which is about the window. Asked after installing, like the client.
+if [ -z "$UITEST" ]; then
+  RBIN="${CARGO_TARGET_DIR:-client-rs/target}/release/podshl-repairs"
+  [ -f "$RBIN" ] || { echo "no podshl-repairs at $RBIN after building" >&2; exit 1; }
+  install -m755 "$RBIN" "$DEST/podshl-repairs"
+  "$DEST/podshl-repairs" help >/dev/null \
+    || { echo "the installed $DEST/podshl-repairs does not answer" >&2; exit 1; }
+  echo "installed $DEST/podshl-repairs"
+fi

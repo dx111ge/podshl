@@ -52,8 +52,14 @@ jobs:
         working-directory: client-rs
         run: |
           set -euo pipefail
-          cargo test --release --bin podshl-client repair
-          cargo test --release --bin podshl-client upstream
+          # `--lib`: since 2026-09-19 the record is a library both programs
+          # share, and its tests are the library's. `--bin podshl-client
+          # repair` would match nothing and pass — cargo exits 0 on an empty
+          # filter — so the count is checked as well.
+          cargo test --release --lib repair 2>&1 | tee lib.txt
+          grep -Eq "test result: ok\. [1-9][0-9]* passed" lib.txt
+          cargo test --release --lib upstream 2>&1 | tee up.txt
+          grep -Eq "test result: ok\. [1-9][0-9]* passed" up.txt
           cargo test --release --test cli
 
       - name: It runs at all

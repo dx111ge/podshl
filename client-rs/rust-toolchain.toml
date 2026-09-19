@@ -1,0 +1,6 @@
+# The same toolchain as the image and the macOS workflows. `scripts/ci/ci.sh`
+# gates on `cargo fmt --check`, and a newer rustfmt formats differently, so a
+# developer on another stable would be told the tree is wrong when it is not.
+[toolchain]
+channel = "1.94.0"
+components = ["rustfmt", "clippy"]

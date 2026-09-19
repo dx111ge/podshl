@@ -88,8 +88,14 @@ impl Standing {
                 };
                 // Sentences, each one a message of its own, so the window can
                 // say each in the person's language.
-                let mut line = m!("standing_network", v = self.vendor, pct = pct,
-                                  n = contributors, lo = lo, hi = hi);
+                let mut line = m!(
+                    "standing_network",
+                    v = self.vendor,
+                    pct = pct,
+                    n = contributors,
+                    lo = lo,
+                    hi = hi
+                );
                 if let Some(mine) = self.rate() {
                     if (mine * 100.0 - pct as f64).abs() >= 30.0 {
                         line.push(' ');
@@ -109,8 +115,14 @@ impl Standing {
         };
         let pct = (rate * 100.0).round() as i64;
         if pct < OFFER_FLOOR {
-            return (false, format!("{} {}", m!("standing_rate_low", v = self.vendor, pct = pct),
-                                   m!("standing_not_offered")));
+            return (
+                false,
+                format!(
+                    "{} {}",
+                    m!("standing_rate_low", v = self.vendor, pct = pct),
+                    m!("standing_not_offered")
+                ),
+            );
         }
         (true, m!("standing_rate", v = self.vendor, pct = pct))
     }
@@ -159,7 +171,11 @@ impl Ledger {
 
     pub fn standing(&self, vendor: &str) -> Standing {
         let (reports, acted) = self.rows.get(vendor).copied().unwrap_or((0, 0));
-        Standing { vendor: vendor.to_string(), reports, acted }
+        Standing {
+            vendor: vendor.to_string(),
+            reports,
+            acted,
+        }
     }
 
     /// One entry per vendor. The caller submits them **separately**; batching
@@ -186,13 +202,17 @@ impl Ledger {
 pub async fn network(vendor: &str, index_url: &str) -> Option<Value> {
     let url = format!("{}/index/{vendor}", index_url.trim_end_matches('/'));
     let resp = crate::http::client().get(&url).send().await.ok()?;
-    crate::http::json_capped(resp, crate::http::MAX_BODY).await.ok()
+    crate::http::json_capped(resp, crate::http::MAX_BODY)
+        .await
+        .ok()
 }
 
 pub async fn contribute(c: &Value, index_url: &str) -> Option<Value> {
     let url = format!("{}/contribute", index_url.trim_end_matches('/'));
     let resp = crate::http::client().post(&url).json(c).send().await.ok()?;
-    crate::http::json_capped(resp, crate::http::MAX_BODY).await.ok()
+    crate::http::json_capped(resp, crate::http::MAX_BODY)
+        .await
+        .ok()
 }
 
 #[cfg(test)]
@@ -226,7 +246,10 @@ mod tests {
         }
         let (offer, note) = led.standing("Schweiger AG").advice(None);
         assert!(!offer, "the button was still offered: {note}");
-        assert!(note.contains("0 %"), "the reason does not state the figure: {note}");
+        assert!(
+            note.contains("0 %"),
+            "the reason does not state the figure: {note}"
+        );
     }
 
     /// Too little evidence is stated as too little evidence, not as a rate.
@@ -237,7 +260,11 @@ mod tests {
             led.record("Kaum AG", "received").unwrap();
         }
         let s = led.standing("Kaum AG");
-        assert_eq!(s.rate(), None, "a rate was computed from three observations");
+        assert_eq!(
+            s.rate(),
+            None,
+            "a rate was computed from three observations"
+        );
         let (offer, note) = s.advice(None);
         assert!(offer, "a vendor with no history was pre-judged");
         assert!(crate::msg::is("standing_too_few", &note), "{note}");
@@ -267,8 +294,21 @@ mod tests {
                                "rate_pct": 20, "spread_pct": [0, 40]});
         let (offer, note) = led.standing("Streit AG").advice(Some(&published));
         assert!(offer, "20 % is above the floor");
-        assert!(note.contains(&m!("standing_network", v = "Streit AG", pct = 20, n = 9, lo = 0, hi = 40)), "{note}");
-        assert!(note.contains(&m!("standing_differs", pct = 100)), "the local contradiction was hidden: {note}");
+        assert!(
+            note.contains(&m!(
+                "standing_network",
+                v = "Streit AG",
+                pct = 20,
+                n = 9,
+                lo = 0,
+                hi = 40
+            )),
+            "{note}"
+        );
+        assert!(
+            note.contains(&m!("standing_differs", pct = 100)),
+            "the local contradiction was hidden: {note}"
+        );
     }
 
     /// G5: one vendor per contribution, and only the three declared fields.
@@ -282,10 +322,18 @@ mod tests {
             led.record("Zu Wenig AG", "received").unwrap();
         }
         let pending = led.pending_contributions();
-        assert_eq!(pending.len(), 1, "a vendor below the local basis contributed");
+        assert_eq!(
+            pending.len(),
+            1,
+            "a vendor below the local basis contributed"
+        );
         let c = pending[0].as_object().unwrap();
         let keys: Vec<&String> = c.keys().collect();
-        assert_eq!(keys, vec!["rate_pct", "vendor", "weight"], "unexpected fields: {keys:?}");
+        assert_eq!(
+            keys,
+            vec!["rate_pct", "vendor", "weight"],
+            "unexpected fields: {keys:?}"
+        );
         assert_eq!(c["vendor"], "ACME");
         assert_eq!(c["rate_pct"], 100);
     }

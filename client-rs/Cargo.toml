@@ -1,11 +1,16 @@
 [package]
 name = "podshl-client"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
-# Two programs: the client, and the helper that does what needs administrator
-# rights (`src/bin/podshl-elevate.rs`). `cargo run` means the client.
+# Three programs: the client; the helper that does what needs administrator
+# rights (`src/bin/podshl-elevate.rs`); and `podshl-repairs`, the record of
+# local fixes on its own (`src/bin/podshl-repairs.rs`). `cargo run` means the
+# client.
 default-run = "podshl-client"
-rust-version = "1.77"
+# The toolchain this is built and tested with, and the only one: the image,
+# the macOS workflows and `rust-toolchain.toml` all name 1.94.0. It said 1.77,
+# which nothing ever built, and clippy held the code to it.
+rust-version = "1.94"
 description = "Basic Agent — verifies a vendor, collects locally, asks, then acts"
 
 # **A surface that a released client does not have.**
@@ -23,6 +28,13 @@ description = "Basic Agent — verifies a vendor, collects locally, asks, then a
 # time by whoever builds — not at run time by whatever is running.
 [features]
 uitest = []
+
+# What the client and `podshl-repairs` share, and the protocol does not reach:
+# see `src/lib.rs`. Named for the record rather than for the package, because
+# that is what it is for.
+[lib]
+name = "podshl_repairs"
+path = "src/lib.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

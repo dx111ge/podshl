@@ -64,15 +64,24 @@ impl Upstream {
     /// Each field checked as the text it has to be, or refused. A field that
     /// would need escaping to be passed on is refused rather than escaped.
     pub fn from_value(v: Option<&Value>) -> Result<Upstream, String> {
-        let Some(v) = v.filter(|v| !v.is_null()) else { return Ok(Upstream::default()) };
-        let obj = v.as_object().ok_or_else(|| m!("repair_upstream_bad", k = "upstream"))?;
+        let Some(v) = v.filter(|v| !v.is_null()) else {
+            return Ok(Upstream::default());
+        };
+        let obj = v
+            .as_object()
+            .ok_or_else(|| m!("repair_upstream_bad", k = "upstream"))?;
         let mut out = Upstream::default();
         for (k, val) in obj {
-            let s = val.as_str().ok_or_else(|| m!("repair_upstream_bad", k = k))?;
+            let s = val
+                .as_str()
+                .ok_or_else(|| m!("repair_upstream_bad", k = k))?;
             let ok = match k.as_str() {
                 "package" => crate::provenance::name_ok(s),
-                "issue" => s.len() <= 300 && s.starts_with("https://")
-                    && !s.chars().any(|c| c.is_whitespace() || c.is_control()),
+                "issue" => {
+                    s.len() <= 300
+                        && s.starts_with("https://")
+                        && !s.chars().any(|c| c.is_whitespace() || c.is_control())
+                }
                 "fixed_in" => version_ok(s),
                 _ => false,
             };
@@ -91,9 +100,11 @@ impl Upstream {
 
 /// What a version string may be before it is compared or shown.
 fn version_ok(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 100
+    !s.is_empty()
+        && s.len() <= 100
         && s.starts_with(|c: char| c.is_ascii_alphanumeric())
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || ".:-+_~".contains(c))
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".:-+_~".contains(c))
 }
 
 /// What the package manager said, and which one.
@@ -231,7 +242,10 @@ pub enum Flag {
     FileChanged,
     /// A package built or pinned locally is older than the one the package
     /// manager offers: the official component moved on without this machine.
-    Frozen { installed: String, available: String },
+    Frozen {
+        installed: String,
+        available: String,
+    },
     /// The component an override stands in front of has changed underneath it.
     OriginalChanged,
     /// The upstream issue is closed.
@@ -289,7 +303,12 @@ fn read(root: &Path) -> Result<Vec<Record>, String> {
         .ok()
         .and_then(|v| v.get("records").cloned())
         .and_then(|r| serde_json::from_value(r).ok())
-        .ok_or_else(|| m!("repair_not_written", e = format!("{} is not readable", path(root).display())))
+        .ok_or_else(|| {
+            m!(
+                "repair_not_written",
+                e = format!("{} is not readable", path(root).display())
+            )
+        })
 }
 
 pub fn load(root: &Path) -> Vec<Record> {
@@ -318,7 +337,9 @@ fn now() -> u64 {
 
 fn tool(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
+    std::env::split_paths(&path)
+        .map(|d| d.join(name))
+        .find(|p| p.is_file())
 }
 
 /// The installed version of `package`, from the local package database only.
@@ -335,7 +356,10 @@ pub fn installed_version(package: &str) -> Option<Installed> {
             let mut words = out.split_whitespace();
             if words.next() == Some(package) {
                 if let Some(v) = words.next().filter(|v| version_ok(v)) {
-                    return Some(Installed { version: v.into(), source: "pacman".into() });
+                    return Some(Installed {
+                        version: v.into(),
+                        source: "pacman".into(),
+                    });
                 }
             }
         }
@@ -345,24 +369,34 @@ pub fn installed_version(package: &str) -> Option<Installed> {
             crate::reads::run_bounded(&exe, &["-W", "-f=${Version}\n", package])
         {
             if let Some(v) = out.lines().next().map(str::trim).filter(|v| version_ok(v)) {
-                return Some(Installed { version: v.into(), source: "dpkg".into() });
+                return Some(Installed {
+                    version: v.into(),
+                    source: "dpkg".into(),
+                });
             }
         }
     }
     if let Some(exe) = tool("brew") {
-        if let Some((true, out)) = crate::reads::run_bounded(&exe, &["list", "--versions", package]) {
+        if let Some((true, out)) = crate::reads::run_bounded(&exe, &["list", "--versions", package])
+        {
             // `name 1.2.3 1.2.2` — the newest is last.
             let mut words = out.lines().next().unwrap_or("").split_whitespace();
             if words.next() == Some(package) {
                 if let Some(v) = words.last().filter(|v| version_ok(v)) {
-                    return Some(Installed { version: v.into(), source: "brew".into() });
+                    return Some(Installed {
+                        version: v.into(),
+                        source: "brew".into(),
+                    });
                 }
             }
         }
     }
     #[cfg(windows)]
     if let Some(v) = windows_uninstall_version(package) {
-        return Some(Installed { version: v, source: "windows".into() });
+        return Some(Installed {
+            version: v,
+            source: "windows".into(),
+        });
     }
     None
 }
@@ -378,26 +412,35 @@ pub fn available_version(package: &str) -> Option<Installed> {
     if let Some(exe) = tool("pacman") {
         if let Some((true, out)) = crate::reads::run_bounded(&exe, &["-Si", package]) {
             if let Some(v) = field(&out, "Version").filter(|v| version_ok(v)) {
-                return Some(Installed { version: v, source: "pacman".into() });
+                return Some(Installed {
+                    version: v,
+                    source: "pacman".into(),
+                });
             }
         }
     }
     if let Some(exe) = tool("apt-cache") {
         if let Some((true, out)) = crate::reads::run_bounded(&exe, &["policy", package]) {
             if let Some(v) = field(&out, "Candidate").filter(|v| version_ok(v)) {
-                return Some(Installed { version: v, source: "apt".into() });
+                return Some(Installed {
+                    version: v,
+                    source: "apt".into(),
+                });
             }
         }
     }
     if let Some(exe) = tool("brew") {
-        if let Some((true, out)) =
-            crate::reads::run_bounded(&exe, &["info", "--json=v2", package])
+        if let Some((true, out)) = crate::reads::run_bounded(&exe, &["info", "--json=v2", package])
         {
             let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
-            let stable = v["formulae"][0]["versions"]["stable"].as_str()
+            let stable = v["formulae"][0]["versions"]["stable"]
+                .as_str()
                 .or_else(|| v["casks"][0]["version"].as_str());
             if let Some(stable) = stable.filter(|s| version_ok(s)) {
-                return Some(Installed { version: stable.into(), source: "brew".into() });
+                return Some(Installed {
+                    version: stable.into(),
+                    source: "brew".into(),
+                });
             }
         }
     }
@@ -408,7 +451,9 @@ pub fn available_version(package: &str) -> Option<Installed> {
 fn field(text: &str, key: &str) -> Option<String> {
     text.lines().find_map(|l| {
         let (k, v) = l.split_once(':')?;
-        (k.trim() == key).then(|| v.trim().to_string()).filter(|v| !v.is_empty() && v != "(none)")
+        (k.trim() == key)
+            .then(|| v.trim().to_string())
+            .filter(|v| !v.is_empty() && v != "(none)")
     })
 }
 
@@ -421,9 +466,18 @@ fn windows_uninstall_version(package: &str) -> Option<String> {
     use crate::elevated::wide;
     use windows_sys::Win32::System::Registry::*;
     const ROOTS: [(HKEY, &str); 3] = [
-        (HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            HKEY_CURRENT_USER,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
     ];
     let want = package.to_ascii_lowercase();
     let read_value = |key: HKEY, name: &str| -> Option<String> {
@@ -432,9 +486,16 @@ fn windows_uninstall_version(package: &str) -> Option<String> {
         let mut kind = 0u32;
         let n = wide(name);
         let ok = unsafe {
-            RegQueryValueExW(key, n.as_ptr(), std::ptr::null(), &mut kind,
-                             buf.as_mut_ptr() as *mut u8, &mut size)
-        } == 0 && kind == REG_SZ;
+            RegQueryValueExW(
+                key,
+                n.as_ptr(),
+                std::ptr::null(),
+                &mut kind,
+                buf.as_mut_ptr() as *mut u8,
+                &mut size,
+            )
+        } == 0
+            && kind == REG_SZ;
         ok.then(|| {
             let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
             String::from_utf16_lossy(&buf[..end])
@@ -450,8 +511,16 @@ fn windows_uninstall_version(package: &str) -> Option<String> {
             let mut name = vec![0u16; 256];
             let mut len = name.len() as u32;
             let r = unsafe {
-                RegEnumKeyExW(key, i, name.as_mut_ptr(), &mut len, std::ptr::null(),
-                              std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
+                RegEnumKeyExW(
+                    key,
+                    i,
+                    name.as_mut_ptr(),
+                    &mut len,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
             };
             if r != 0 {
                 break;
@@ -465,7 +534,11 @@ fn windows_uninstall_version(package: &str) -> Option<String> {
             let matches = sub_name.to_ascii_lowercase() == want
                 || display.to_ascii_lowercase() == want
                 || display.to_ascii_lowercase().replace(' ', "-") == want;
-            let version = if matches { read_value(sub, "DisplayVersion") } else { None };
+            let version = if matches {
+                read_value(sub, "DisplayVersion")
+            } else {
+                None
+            };
             unsafe { RegCloseKey(sub) };
             if let Some(v) = version.filter(|v| version_ok(v)) {
                 found = Some(v);
@@ -484,7 +557,10 @@ fn windows_uninstall_version(package: &str) -> Option<String> {
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// A file's digest, or a folder's: every file under it, in path order, each
@@ -526,8 +602,15 @@ pub fn digest_path(path: &Path) -> Option<String> {
         if total > MAX_BYTES {
             return None;
         }
-        let rel = f.strip_prefix(path).ok()?.to_string_lossy().replace('\\', "/");
-        listing.push_str(&format!("{rel}\t{}\n", sha256_hex(&std::fs::read(&f).ok()?)));
+        let rel = f
+            .strip_prefix(path)
+            .ok()?
+            .to_string_lossy()
+            .replace('\\', "/");
+        listing.push_str(&format!(
+            "{rel}\t{}\n",
+            sha256_hex(&std::fs::read(&f).ok()?)
+        ));
     }
     Some(sha256_hex(listing.as_bytes()))
 }
@@ -559,7 +642,11 @@ fn rpmvercmp(a: &str, b: &str) -> Ordering {
         }
         let (ai, bj) = (i, j);
         let numeric = a[i].is_ascii_digit();
-        let same: fn(&u8) -> bool = if numeric { u8::is_ascii_digit } else { u8::is_ascii_alphabetic };
+        let same: fn(&u8) -> bool = if numeric {
+            u8::is_ascii_digit
+        } else {
+            u8::is_ascii_alphabetic
+        };
         while i < a.len() && same(&a[i]) {
             i += 1;
         }
@@ -568,7 +655,11 @@ fn rpmvercmp(a: &str, b: &str) -> Ordering {
         }
         if j == bj {
             // Different kinds of run: a number is newer than letters.
-            return if numeric { Ordering::Greater } else { Ordering::Less };
+            return if numeric {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
         }
         let (mut x, mut y) = (&a[ai..i], &b[bj..j]);
         if numeric {
@@ -617,7 +708,9 @@ fn split_evr(s: &str) -> (&str, &str, Option<&str>) {
 /// commit, and no release number can be said to be before or after it.
 pub fn is_vcs(package: Option<&str>, version: &str) -> bool {
     let vcs_package = package.is_some_and(|p| {
-        ["-git", "-svn", "-hg", "-bzr", "-darcs", "-fossil"].iter().any(|s| p.ends_with(s))
+        ["-git", "-svn", "-hg", "-bzr", "-darcs", "-fossil"]
+            .iter()
+            .any(|s| p.ends_with(s))
     });
     let vcs_version = Regex::new(r"(?i)(\.r\d+\.g[0-9a-f]{7,}|[+~.]git|[+~]svn|[+~]hg)")
         .map(|re| re.is_match(version))
@@ -629,8 +722,14 @@ pub fn is_vcs(package: Option<&str>, version: &str) -> bool {
 /// Anything that is still not a version stays unordered.
 pub fn tag_version(tag: &str) -> Option<String> {
     let t = tag.trim();
-    let t = t.strip_prefix("release-").or_else(|| t.strip_prefix("release/")).unwrap_or(t);
-    let t = t.strip_prefix(['v', 'V']).filter(|r| r.starts_with(|c: char| c.is_ascii_digit())).unwrap_or(t);
+    let t = t
+        .strip_prefix("release-")
+        .or_else(|| t.strip_prefix("release/"))
+        .unwrap_or(t);
+    let t = t
+        .strip_prefix(['v', 'V'])
+        .filter(|r| r.starts_with(|c: char| c.is_ascii_digit()))
+        .unwrap_or(t);
     version_ok(t).then(|| t.to_string())
 }
 
@@ -666,7 +765,10 @@ pub struct Context<'a> {
 }
 
 fn resolve(root: &Path, file: &str) -> Option<PathBuf> {
-    root.canonicalize().ok().map(|r| r.join(file)).and_then(|p| p.canonicalize().ok())
+    root.canonicalize()
+        .ok()
+        .map(|r| r.join(file))
+        .and_then(|p| p.canonicalize().ok())
 }
 
 fn backup_of(target: &Path) -> PathBuf {
@@ -689,8 +791,9 @@ pub fn execute(
     ctx: Context,
     installed: &dyn Fn(&str) -> Option<Installed>,
 ) -> Result<Value, String> {
-    execute_with(id, params, root, state_dir, ctx, installed,
-                 &|| crate::actions::execute(id, params, root))
+    execute_with(id, params, root, state_dir, ctx, installed, &|| {
+        crate::actions::execute(id, params, root)
+    })
 }
 
 /// `execute`, with the step that changes the machine passed in — so the suite
@@ -728,7 +831,9 @@ fn execute_with(
         at: now(),
         action: id.into(),
         params: checked.clone(),
-        backup: target.as_deref().map(|t| backup_of(t).display().to_string()),
+        backup: target
+            .as_deref()
+            .map(|t| backup_of(t).display().to_string()),
         target: target.as_deref().map(|t| t.display().to_string()),
         reversible: spec.is_some_and(|s| s.reversible),
         subject: ctx.subject.into(),
@@ -755,7 +860,12 @@ fn execute_with(
     if let Some(r) = records.iter_mut().find(|r| r.id == rid) {
         match &result {
             Ok(v) => {
-                r.state = if ctx.undoes.is_some() { "undo" } else { "applied" }.into();
+                r.state = if ctx.undoes.is_some() {
+                    "undo"
+                } else {
+                    "applied"
+                }
+                .into();
                 r.undo = v.get("undo").filter(|u| !u.is_null()).cloned();
             }
             Err(e) => {
@@ -780,7 +890,10 @@ fn execute_with(
 
 fn mark_undone_by_id(state_dir: &Path, id: &str) -> Result<(), String> {
     let mut records = read(state_dir)?;
-    if let Some(r) = records.iter_mut().find(|r| r.id == id && r.state == "applied") {
+    if let Some(r) = records
+        .iter_mut()
+        .find(|r| r.id == id && r.state == "applied")
+    {
         r.state = "undone".into();
         return save(state_dir, &records);
     }
@@ -792,7 +905,9 @@ fn mark_undone_by_id(state_dir: &Path, id: &str) -> Result<(), String> {
 /// Compared as resolved paths on both sides: on Windows one spelling of a path
 /// carries `\\?\` and another does not, and they are the same file.
 fn mark_undone(state_dir: &Path, root: &Path, file: &str) -> Result<(), String> {
-    let Some(target) = resolve(root, file) else { return Ok(()) };
+    let Some(target) = resolve(root, file) else {
+        return Ok(());
+    };
     let same = |t: &str| Path::new(t).canonicalize().is_ok_and(|p| p == target);
     let mut records = read(state_dir)?;
     if let Some(r) = records
@@ -840,7 +955,11 @@ pub struct Lookups<'a> {
 impl Lookups<'static> {
     /// The machine's own answers, and no network at all.
     pub fn offline() -> Lookups<'static> {
-        Lookups { installed: &installed_version, available: &available_version, issue: None }
+        Lookups {
+            installed: &installed_version,
+            available: &available_version,
+            issue: None,
+        }
     }
 }
 
@@ -849,7 +968,10 @@ pub const ISSUE_RECHECK_SECS: u64 = 24 * 3600;
 
 fn wants_issue_lookup(r: &Record, now_s: u64) -> bool {
     r.watch_issue
-        && r.upstream.issue.as_deref().is_some_and(|u| crate::upstream::parse(u).is_some())
+        && r.upstream
+            .issue
+            .as_deref()
+            .is_some_and(|u| crate::upstream::parse(u).is_some())
         && match &r.issue_state {
             None => true,
             Some(st) => !st.settled() && now_s.saturating_sub(st.checked_at) >= ISSUE_RECHECK_SECS,
@@ -860,7 +982,11 @@ fn wants_issue_lookup(r: &Record, now_s: u64) -> bool {
 /// release code found the merged change in.
 fn effective_fixed_in(r: &Record) -> Option<String> {
     r.upstream.fixed_in.clone().or_else(|| {
-        r.issue_state.as_ref()?.released_in.as_deref().and_then(tag_version)
+        r.issue_state
+            .as_ref()?
+            .released_in
+            .as_deref()
+            .and_then(tag_version)
     })
 }
 
@@ -882,7 +1008,8 @@ fn flags_for(r: &Record, look: &Lookups) -> (Vec<Flag>, String) {
     if r.reversible && r.backup.as_deref().is_some_and(|b| !Path::new(b).exists()) {
         flags.push(Flag::BackupGone);
     }
-    if r.target.is_none() && crate::elevated::is_elevated(&r.action)
+    if r.target.is_none()
+        && crate::elevated::is_elevated(&r.action)
         && crate::elevate::still_holds(&r.action, &r.params) == Some(false)
     {
         flags.push(Flag::NoLongerSet);
@@ -896,7 +1023,10 @@ fn flags_for(r: &Record, look: &Lookups) -> (Vec<Flag>, String) {
             why: m!("repair_not_installed", p = package.unwrap_or("")),
         }),
         (Some(from), Some(to)) if from != &to.version => {
-            flags.push(Flag::Updated { from: from.clone(), to: to.version.clone() });
+            flags.push(Flag::Updated {
+                from: from.clone(),
+                to: to.version.clone(),
+            });
         }
         _ => {}
     }
@@ -911,18 +1041,28 @@ fn flags_for(r: &Record, look: &Lookups) -> (Vec<Flag>, String) {
             if let Some(avail) = (look.available)(p) {
                 let recorded = r.original.as_ref().and_then(|o| o.version.as_deref());
                 let moved = recorded.is_some_and(|was| was != avail.version);
-                let ahead = vercmp(Some(p), &avail.version, &now.version) == Some(Ordering::Greater);
+                let ahead =
+                    vercmp(Some(p), &avail.version, &now.version) == Some(Ordering::Greater);
                 if moved || ahead {
-                    flags.push(Flag::Frozen { installed: now.version.clone(), available: avail.version });
+                    flags.push(Flag::Frozen {
+                        installed: now.version.clone(),
+                        available: avail.version,
+                    });
                 }
             }
         }
     }
 
     if let Some(orig) = r.original.as_ref().filter(|_| r.kind != "package") {
-        let path_moved = orig.path.as_deref().zip(orig.sha256.as_deref())
+        let path_moved = orig
+            .path
+            .as_deref()
+            .zip(orig.sha256.as_deref())
             .is_some_and(|(p, want)| digest_path(Path::new(p)).as_deref() != Some(want));
-        let package_moved = orig.package.as_deref().zip(orig.version.as_deref())
+        let package_moved = orig
+            .package
+            .as_deref()
+            .zip(orig.version.as_deref())
             .is_some_and(|(p, was)| (look.installed)(p).map(|i| i.version).as_deref() != Some(was));
         if path_moved || package_moved {
             flags.push(Flag::OriginalChanged);
@@ -946,7 +1086,9 @@ fn flags_for(r: &Record, look: &Lookups) -> (Vec<Flag>, String) {
                 fixed_in: fixed,
                 installed: now.version.clone(),
             }),
-            None => flags.push(Flag::CannotCompare { why: m!("repair_vcs", v = &now.version) }),
+            None => flags.push(Flag::CannotCompare {
+                why: m!("repair_vcs", v = &now.version),
+            }),
         }
     }
     (flags, now.map(|n| n.version).unwrap_or_default())
@@ -993,7 +1135,10 @@ pub fn review(state_dir: &Path, look: &Lookups) -> Vec<Review> {
 /// afresh, and so does anything they were not shown.
 pub fn looked_at(state_dir: &Path, id: &str, look: &Lookups) -> Result<(), String> {
     let mut records = read(state_dir)?;
-    let r = records.iter_mut().find(|r| r.id == id).ok_or_else(|| m!("repair_unknown"))?;
+    let r = records
+        .iter_mut()
+        .find(|r| r.id == id)
+        .ok_or_else(|| m!("repair_unknown"))?;
     let (flags, version) = flags_for(r, look);
     r.looked_at = Some(version);
     r.seen = flags.iter().map(|f| f.kind().to_string()).collect();
@@ -1004,8 +1149,16 @@ pub fn looked_at(state_dir: &Path, id: &str, look: &Lookups) -> Result<(), Strin
 /// review ask GitHub about it, so it is the person's switch and nobody else's.
 pub fn set_watch(state_dir: &Path, id: &str, on: bool) -> Result<(), String> {
     let mut records = read(state_dir)?;
-    let r = records.iter_mut().find(|r| r.id == id).ok_or_else(|| m!("repair_unknown"))?;
-    if on && !r.upstream.issue.as_deref().is_some_and(|u| crate::upstream::parse(u).is_some()) {
+    let r = records
+        .iter_mut()
+        .find(|r| r.id == id)
+        .ok_or_else(|| m!("repair_unknown"))?;
+    if on
+        && r.upstream
+            .issue
+            .as_deref()
+            .is_none_or(|u| crate::upstream::parse(u).is_none())
+    {
         return Err(m!("repair_no_issue_to_watch"));
     }
     r.watch_issue = on;
@@ -1049,7 +1202,8 @@ fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, 
         return Err(m!("repair_external_bad", k = "note"));
     }
     let abs = |p: &Path| -> Result<PathBuf, String> {
-        p.canonicalize().map_err(|_| m!("repair_external_path", p = crate::reads::display_path(p)))
+        p.canonicalize()
+            .map_err(|_| m!("repair_external_path", p = crate::reads::display_path(p)))
     };
     let mut rec = Record {
         id,
@@ -1076,16 +1230,27 @@ fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, 
         forgotten_at: None,
     };
     if ext.watch_issue {
-        if !rec.upstream.issue.as_deref().is_some_and(|u| crate::upstream::parse(u).is_some()) {
+        if rec
+            .upstream
+            .issue
+            .as_deref()
+            .is_none_or(|u| crate::upstream::parse(u).is_none())
+        {
             return Err(m!("repair_no_issue_to_watch"));
         }
         rec.watch_issue = true;
     }
     match ext.kind.as_str() {
         "file" => {
-            let p = abs(ext.path.as_deref().ok_or_else(|| m!("repair_external_bad", k = "path"))?)?;
+            let p = abs(ext
+                .path
+                .as_deref()
+                .ok_or_else(|| m!("repair_external_bad", k = "path"))?)?;
             if !p.is_file() {
-                return Err(m!("repair_external_path", p = crate::reads::display_path(&p)));
+                return Err(m!(
+                    "repair_external_path",
+                    p = crate::reads::display_path(&p)
+                ));
             }
             rec.file_sha256 = digest_path(&p);
             rec.target = Some(p.display().to_string());
@@ -1104,7 +1269,10 @@ fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, 
             });
         }
         "overlay" => {
-            let p = abs(ext.path.as_deref().ok_or_else(|| m!("repair_external_bad", k = "path"))?)?;
+            let p = abs(ext
+                .path
+                .as_deref()
+                .ok_or_else(|| m!("repair_external_bad", k = "path"))?)?;
             rec.file_sha256 = digest_path(&p);
             rec.target = Some(p.display().to_string());
             let mut orig = Original::default();
@@ -1127,7 +1295,11 @@ fn external_record(ext: External, id: String, look: &Lookups) -> Result<Record, 
         }
         _ => return Err(m!("repair_external_bad", k = "kind")),
     }
-    rec.installed = rec.upstream.package.as_deref().and_then(|p| (look.installed)(p));
+    rec.installed = rec
+        .upstream
+        .package
+        .as_deref()
+        .and_then(|p| (look.installed)(p));
     Ok(rec)
 }
 
@@ -1171,11 +1343,30 @@ pub fn begin_external(state_dir: &Path, ext: External, look: &Lookups) -> Result
 /// The change announced by `begin_external` is made: its digest is taken now.
 pub fn finish_external(state_dir: &Path, id: &str) -> Result<Record, String> {
     let mut records = read(state_dir)?;
-    let r = records.iter_mut().find(|r| r.id == id && r.state == "pending")
+    let r = records
+        .iter_mut()
+        .find(|r| r.id == id && r.state == "pending")
         .ok_or_else(|| m!("repair_unknown"))?;
     let target = PathBuf::from(r.target.clone().unwrap_or_default());
     r.file_sha256 = digest_path(&target);
     r.state = "applied".into();
+    let out = r.clone();
+    save(state_dir, &records)?;
+    Ok(out)
+}
+
+/// A finished record's file was changed again by whoever made the change —
+/// an agent editing the same file a second time in one session. The digest
+/// is taken again; the copy stays the one from before the first change,
+/// because going back means going back to before all of it.
+pub fn refresh_digest(state_dir: &Path, id: &str) -> Result<Record, String> {
+    let mut records = read(state_dir)?;
+    let r = records
+        .iter_mut()
+        .find(|r| r.id == id && r.state == "applied")
+        .ok_or_else(|| m!("repair_unknown"))?;
+    let target = PathBuf::from(r.target.clone().unwrap_or_default());
+    r.file_sha256 = digest_path(&target);
     let out = r.clone();
     save(state_dir, &records)?;
     Ok(out)
@@ -1196,7 +1387,8 @@ pub fn finish_external(state_dir: &Path, id: &str) -> Result<Record, String> {
 /// from outside, and they are not the same thing.
 pub fn forget(state_dir: &Path, id: &str) -> Result<Record, String> {
     let mut records = read(state_dir)?;
-    let r = records.iter_mut()
+    let r = records
+        .iter_mut()
         .find(|r| r.id == id && r.state != "forgotten")
         .ok_or_else(|| m!("repair_unknown"))?;
     let was = r.clone();
@@ -1241,7 +1433,8 @@ pub fn forget(state_dir: &Path, id: &str) -> Result<Record, String> {
 /// stays, as `undone`.
 pub fn restore_external(state_dir: &Path, id: &str) -> Result<Record, String> {
     let mut records = read(state_dir)?;
-    let r = records.iter_mut()
+    let r = records
+        .iter_mut()
         .find(|r| r.id == id && r.kind == "file" && (r.state == "applied" || r.state == "pending"))
         .ok_or_else(|| m!("repair_unknown"))?;
     let (Some(target), Some(backup)) = (r.target.clone(), r.backup.clone()) else {
@@ -1281,7 +1474,12 @@ mod tests {
     }
 
     fn at(v: &str) -> impl Fn(&str) -> Option<Installed> + '_ {
-        move |_| Some(Installed { version: v.into(), source: "pacman".into() })
+        move |_| {
+            Some(Installed {
+                version: v.into(),
+                source: "pacman".into(),
+            })
+        }
     }
 
     fn nothing(_: &str) -> Option<Installed> {
@@ -1290,7 +1488,11 @@ mod tests {
 
     /// Only what is installed, no package database and no network.
     fn lk<'a>(installed: &'a dyn Fn(&str) -> Option<Installed>) -> Lookups<'a> {
-        Lookups { installed, available: &nothing, issue: None }
+        Lookups {
+            installed,
+            available: &nothing,
+            issue: None,
+        }
     }
 
     /// RR1: the record is on disk before the file is touched, and says what a
@@ -1307,20 +1509,36 @@ mod tests {
         let seen_before = RefCell::new(None);
         let reader = |_: &str| {
             *seen_before.borrow_mut() = Some(std::fs::read_to_string(&file).unwrap());
-            Some(Installed { version: "1:2.4.0-3".into(), source: "pacman".into() })
+            Some(Installed {
+                version: "1:2.4.0-3".into(),
+                source: "pacman".into(),
+            })
         };
         let params = json!({"file": "app.toml", "key": "modeset", "value": "1"});
         let on_disk = RefCell::new(vec![]);
-        let out = execute_with("set_config_key", &params, &root, &root,
-                               ctx("app", Some("2.5.0")), &reader, &|| {
-            *on_disk.borrow_mut() = load(&root);
-            crate::actions::execute("set_config_key", &params, &root)
-        }).unwrap();
-        assert_eq!(seen_before.borrow().as_deref(), Some("modeset = 0\n"),
-                   "the version was read after the change, not before it");
+        let out = execute_with(
+            "set_config_key",
+            &params,
+            &root,
+            &root,
+            ctx("app", Some("2.5.0")),
+            &reader,
+            &|| {
+                *on_disk.borrow_mut() = load(&root);
+                crate::actions::execute("set_config_key", &params, &root)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            seen_before.borrow().as_deref(),
+            Some("modeset = 0\n"),
+            "the version was read after the change, not before it"
+        );
         let pending = on_disk.borrow();
-        assert!(pending.len() == 1 && pending[0].state == "pending",
-                "the change started without its record on disk: {pending:?}");
+        assert!(
+            pending.len() == 1 && pending[0].state == "pending",
+            "the change started without its record on disk: {pending:?}"
+        );
 
         let records = load(&root);
         assert_eq!(records.len(), 1);
@@ -1330,11 +1548,20 @@ mod tests {
         assert_eq!(r.action, "set_config_key");
         assert_eq!(r.installed.as_ref().unwrap().version, "1:2.4.0-3");
         let target = file.canonicalize().unwrap();
-        assert_eq!(r.target.as_deref(), Some(target.display().to_string().as_str()),
-                   "the path is not the resolved one");
-        assert!(r.backup.as_deref().is_some_and(|b| Path::new(b).exists()), "{r:?}");
+        assert_eq!(
+            r.target.as_deref(),
+            Some(target.display().to_string().as_str()),
+            "the path is not the resolved one"
+        );
+        assert!(
+            r.backup.as_deref().is_some_and(|b| Path::new(b).exists()),
+            "{r:?}"
+        );
         assert!(r.reversible);
-        assert_eq!(r.upstream.issue.as_deref(), Some("https://github.com/example/app/issues/12"));
+        assert_eq!(
+            r.upstream.issue.as_deref(),
+            Some("https://github.com/example/app/issues/12")
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1347,26 +1574,50 @@ mod tests {
         // A file where the state directory should be: nothing can be written.
         let blocked = root.join("state-is-a-file");
         std::fs::write(&blocked, "").unwrap();
-        let err = execute("set_config_key",
-                          &json!({"file": "app.toml", "key": "modeset", "value": "1"}),
-                          &root, &blocked, ctx("app", None), &at("1.0-1")).unwrap_err();
+        let err = execute(
+            "set_config_key",
+            &json!({"file": "app.toml", "key": "modeset", "value": "1"}),
+            &root,
+            &blocked,
+            ctx("app", None),
+            &at("1.0-1"),
+        )
+        .unwrap_err();
         assert!(crate::msg::is("repair_not_written", &err), "{err}");
-        assert_eq!(std::fs::read_to_string(root.join("app.toml")).unwrap(), "modeset = 0\n",
-                   "the change was made without a record");
-        assert!(!root.join("app.toml.bak").exists(), "the action ran as far as its backup");
+        assert_eq!(
+            std::fs::read_to_string(root.join("app.toml")).unwrap(),
+            "modeset = 0\n",
+            "the change was made without a record"
+        );
+        assert!(
+            !root.join("app.toml.bak").exists(),
+            "the action ran as far as its backup"
+        );
 
         // A list that cannot be read is not an empty one: nothing is changed,
         // and the file is left as it was for a person to look at.
         let state = root.join("state");
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join(FILE), "{ not json").unwrap();
-        let err = execute("set_config_key",
-                          &json!({"file": "app.toml", "key": "modeset", "value": "1"}),
-                          &root, &state, ctx("app", None), &at("1.0-1")).unwrap_err();
+        let err = execute(
+            "set_config_key",
+            &json!({"file": "app.toml", "key": "modeset", "value": "1"}),
+            &root,
+            &state,
+            ctx("app", None),
+            &at("1.0-1"),
+        )
+        .unwrap_err();
         assert!(crate::msg::is("repair_not_written", &err), "{err}");
-        assert_eq!(std::fs::read_to_string(state.join(FILE)).unwrap(), "{ not json",
-                   "an unreadable list was written over");
-        assert_eq!(std::fs::read_to_string(root.join("app.toml")).unwrap(), "modeset = 0\n");
+        assert_eq!(
+            std::fs::read_to_string(state.join(FILE)).unwrap(),
+            "{ not json",
+            "an unreadable list was written over"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("app.toml")).unwrap(),
+            "modeset = 0\n"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1378,31 +1629,68 @@ mod tests {
         let root = dir("rr3");
         let file = root.join("app.toml");
         std::fs::write(&file, "modeset = 0\n").unwrap();
-        execute("set_config_key", &json!({"file": "app.toml", "key": "modeset", "value": "1"}),
-                &root, &root, ctx("app", Some("2.5.0")), &at("2.4.0-3")).unwrap();
+        execute(
+            "set_config_key",
+            &json!({"file": "app.toml", "key": "modeset", "value": "1"}),
+            &root,
+            &root,
+            ctx("app", Some("2.5.0")),
+            &at("2.4.0-3"),
+        )
+        .unwrap();
         let changed = std::fs::read_to_string(&file).unwrap();
         let backup = std::fs::read_to_string(root.join("app.toml.bak")).unwrap();
 
-        assert!(review(&root, &lk(&at("2.4.0-3"))).is_empty(), "nothing changed, yet a flag");
+        assert!(
+            review(&root, &lk(&at("2.4.0-3"))).is_empty(),
+            "nothing changed, yet a flag"
+        );
 
-        let flags = |v: &str| review(&root, &lk(&at(v))).pop().map(|r| r.flags).unwrap_or_default();
-        assert_eq!(flags("2.4.0-4"), vec![Flag::Updated { from: "2.4.0-3".into(), to: "2.4.0-4".into() }],
-                   "a new pkgrel is an update and nothing more");
+        let flags = |v: &str| {
+            review(&root, &lk(&at(v)))
+                .pop()
+                .map(|r| r.flags)
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            flags("2.4.0-4"),
+            vec![Flag::Updated {
+                from: "2.4.0-3".into(),
+                to: "2.4.0-4".into()
+            }],
+            "a new pkgrel is an update and nothing more"
+        );
         let fixed = flags("2.5.0-1");
-        assert!(fixed.contains(&Flag::UpstreamSaysFixed { fixed_in: "2.5.0".into(), installed: "2.5.0-1".into() }),
-                "{fixed:?}");
-        assert!(matches!(flags("2.6.r12.g1a2b3c4-1")[..], [Flag::Updated { .. }, Flag::CannotCompare { .. }]),
-                "a build from head was compared as if it were a release");
+        assert!(
+            fixed.contains(&Flag::UpstreamSaysFixed {
+                fixed_in: "2.5.0".into(),
+                installed: "2.5.0-1".into()
+            }),
+            "{fixed:?}"
+        );
+        assert!(
+            matches!(
+                flags("2.6.r12.g1a2b3c4-1")[..],
+                [Flag::Updated { .. }, Flag::CannotCompare { .. }]
+            ),
+            "a build from head was compared as if it were a release"
+        );
 
         // Nothing was touched by any of that.
         assert_eq!(std::fs::read_to_string(&file).unwrap(), changed);
-        assert_eq!(std::fs::read_to_string(root.join("app.toml.bak")).unwrap(), backup);
+        assert_eq!(
+            std::fs::read_to_string(root.join("app.toml.bak")).unwrap(),
+            backup
+        );
 
         // Looked at, at 2.5.0-1: quiet at that version, raised again at the next.
         let id = load(&root)[0].id.clone();
         looked_at(&root, &id, &lk(&at("2.5.0-1"))).unwrap();
         assert!(flags("2.5.0-1").is_empty(), "{:?}", flags("2.5.0-1"));
-        assert!(!flags("2.5.1-1").is_empty(), "an update after the look raised nothing");
+        assert!(
+            !flags("2.5.1-1").is_empty(),
+            "an update after the look raised nothing"
+        );
 
         // An update that rewrote the file: new, so shown although the
         // version is the one the person looked at.
@@ -1416,16 +1704,27 @@ mod tests {
         std::fs::write(&file, "modeset = 1\n").unwrap();
 
         // And an undo takes the record off the list, without deleting it.
-        execute("restore_backup", &json!({"file": "app.toml"}), &root, &root,
-                ctx("app", None), &at("2.5.0-1")).unwrap();
+        execute(
+            "restore_backup",
+            &json!({"file": "app.toml"}),
+            &root,
+            &root,
+            ctx("app", None),
+            &at("2.5.0-1"),
+        )
+        .unwrap();
         assert!(review(&root, &lk(&at("9.9-1"))).is_empty());
         assert_eq!(load(&root)[0].state, "undone");
         let _ = std::fs::remove_dir_all(&root);
     }
 
     fn ext(kind: &str, path: Option<&Path>) -> External {
-        External { kind: kind.into(), by: "an agent".into(), path: path.map(Path::to_path_buf),
-                   ..External::default() }
+        External {
+            kind: kind.into(),
+            by: "an agent".into(),
+            path: path.map(Path::to_path_buf),
+            ..External::default()
+        }
     }
 
     /// RR6: a file another tool changes is recorded around the change — a copy
@@ -1442,26 +1741,44 @@ mod tests {
         let rec = begin_external(&state, ext("file", Some(&file)), &look).unwrap();
         assert_eq!(rec.state, "pending");
         assert!(rec.reversible);
-        assert_eq!(std::fs::read_to_string(rec.backup.as_deref().unwrap()).unwrap(),
-                   "monitor=,preferred,auto,1\n", "the copy is not what was there before");
-        assert!(review(&state, &look).is_empty(), "a change not yet made was reviewed");
+        assert_eq!(
+            std::fs::read_to_string(rec.backup.as_deref().unwrap()).unwrap(),
+            "monitor=,preferred,auto,1\n",
+            "the copy is not what was there before"
+        );
+        assert!(
+            review(&state, &look).is_empty(),
+            "a change not yet made was reviewed"
+        );
 
         std::fs::write(&file, "monitor=,preferred,auto,1.25\n").unwrap();
         let done = finish_external(&state, &rec.id).unwrap();
         assert_eq!(done.state, "applied");
-        assert_eq!(done.file_sha256.as_deref(), Some(sha256_hex(b"monitor=,preferred,auto,1.25\n").as_str()));
-        assert!(review(&state, &look).is_empty(), "the change as made was flagged");
+        assert_eq!(
+            done.file_sha256.as_deref(),
+            Some(sha256_hex(b"monitor=,preferred,auto,1.25\n").as_str())
+        );
+        assert!(
+            review(&state, &look).is_empty(),
+            "the change as made was flagged"
+        );
 
         // An update writes the file again.
         std::fs::write(&file, "monitor=,preferred,auto,auto\n").unwrap();
         let found = review(&state, &look);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].flags, vec![Flag::FileChanged]);
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "monitor=,preferred,auto,auto\n",
-                   "looking again touched the file");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "monitor=,preferred,auto,auto\n",
+            "looking again touched the file"
+        );
 
         restore_external(&state, &rec.id).unwrap();
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "monitor=,preferred,auto,1\n");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "monitor=,preferred,auto,1\n"
+        );
         assert_eq!(load(&state)[0].state, "undone");
         assert!(review(&state, &look).is_empty());
 
@@ -1471,15 +1788,33 @@ mod tests {
         assert!(restore_external(&state, &late.id).is_err());
 
         for (bad, why) in [
-            (External { by: String::new(), ..ext("file", Some(&file)) }, "by"),
+            (
+                External {
+                    by: String::new(),
+                    ..ext("file", Some(&file))
+                },
+                "by",
+            ),
             (ext("script", Some(&file)), "kind"),
             (ext("file", None), "path"),
-            (ext("file", Some(&root.join("missing.conf"))), "missing path"),
+            (
+                ext("file", Some(&root.join("missing.conf"))),
+                "missing path",
+            ),
             (ext("package", None), "package"),
             (ext("overlay", Some(&file)), "original"),
-            (External { note: Some("x".repeat(3000)), ..ext("file", Some(&file)) }, "note"),
+            (
+                External {
+                    note: Some("x".repeat(3000)),
+                    ..ext("file", Some(&file))
+                },
+                "note",
+            ),
         ] {
-            assert!(add_external(&state, bad, &look).is_err(), "accepted without {why}");
+            assert!(
+                add_external(&state, bad, &look).is_err(),
+                "accepted without {why}"
+            );
         }
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1491,30 +1826,58 @@ mod tests {
     fn a_package_held_back_is_flagged_when_the_official_one_moves_on() {
         let root = dir("rr7");
         let offered = std::cell::RefCell::new("0.45.0-1".to_string());
-        let available = |_: &str| Some(Installed { version: offered.borrow().clone(), source: "pacman".into() });
+        let available = |_: &str| {
+            Some(Installed {
+                version: offered.borrow().clone(),
+                source: "pacman".into(),
+            })
+        };
         let installed = at("9999-1");
-        let look = Lookups { installed: &installed, available: &available, issue: None };
+        let look = Lookups {
+            installed: &installed,
+            available: &available,
+            issue: None,
+        };
 
         let mut e = ext("package", None);
         e.upstream.package = Some("hyprland".into());
         let rec = add_external(&root, e, &look).unwrap();
         assert_eq!(rec.installed.as_ref().unwrap().version, "9999-1");
-        assert_eq!(rec.original.as_ref().unwrap().version.as_deref(), Some("0.45.0-1"));
+        assert_eq!(
+            rec.original.as_ref().unwrap().version.as_deref(),
+            Some("0.45.0-1")
+        );
         assert!(review(&root, &look).is_empty(), "nothing moved, yet a flag");
 
         *offered.borrow_mut() = "0.45.2-1".into();
         let found = review(&root, &look);
-        assert_eq!(found[0].flags, vec![Flag::Frozen { installed: "9999-1".into(), available: "0.45.2-1".into() }]);
+        assert_eq!(
+            found[0].flags,
+            vec![Flag::Frozen {
+                installed: "9999-1".into(),
+                available: "0.45.2-1".into()
+            }]
+        );
 
         // Without a recorded offer, a newer official version is enough.
         let installed = at("0.44.0-1");
-        let look = Lookups { installed: &installed, available: &available, issue: None };
+        let look = Lookups {
+            installed: &installed,
+            available: &available,
+            issue: None,
+        };
         let mut e = ext("package", None);
         e.upstream.package = Some("waybar".into());
         let mut rec = external_record(e, "x".into(), &look).unwrap();
         rec.original = None;
         let (flags, _) = flags_for(&rec, &look);
-        assert!(flags.contains(&Flag::Frozen { installed: "0.44.0-1".into(), available: "0.45.2-1".into() }), "{flags:?}");
+        assert!(
+            flags.contains(&Flag::Frozen {
+                installed: "0.44.0-1".into(),
+                available: "0.45.2-1".into()
+            }),
+            "{flags:?}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1531,21 +1894,32 @@ mod tests {
             std::fs::write(d.join("lib/util.lua"), "return 2\n").unwrap();
         }
         let version = std::cell::RefCell::new("1.0-1".to_string());
-        let installed = |_: &str| Some(Installed { version: version.borrow().clone(), source: "pacman".into() });
+        let installed = |_: &str| {
+            Some(Installed {
+                version: version.borrow().clone(),
+                source: "pacman".into(),
+            })
+        };
         let look = lk(&installed);
         let mut e = ext("overlay", Some(&copy));
         e.original_path = Some(official.clone());
         e.original_package = Some("some-plugin".into());
         let rec = add_external(&root.join("state"), e, &look).unwrap();
         let orig = rec.original.clone().unwrap();
-        assert!(orig.sha256.is_some() && orig.version.as_deref() == Some("1.0-1"), "{orig:?}");
+        assert!(
+            orig.sha256.is_some() && orig.version.as_deref() == Some("1.0-1"),
+            "{orig:?}"
+        );
         let state = root.join("state");
         assert!(review(&state, &look).is_empty());
 
         std::fs::write(official.join("lib/util.lua"), "return 3\n").unwrap();
         assert_eq!(review(&state, &look)[0].flags, vec![Flag::OriginalChanged]);
         std::fs::write(official.join("lib/util.lua"), "return 2\n").unwrap();
-        assert!(review(&state, &look).is_empty(), "the same files, and still flagged");
+        assert!(
+            review(&state, &look).is_empty(),
+            "the same files, and still flagged"
+        );
 
         *version.borrow_mut() = "1.1-1".into();
         assert_eq!(review(&state, &look)[0].flags, vec![Flag::OriginalChanged]);
@@ -1564,22 +1938,46 @@ mod tests {
         let file = root.join("app.conf");
         std::fs::write(&file, "x = 1\n").unwrap();
         let calls = std::cell::Cell::new(0);
-        let answer = std::cell::RefCell::new(IssueState { state: "merged".into(), is_pull: true,
-                                                          ..IssueState::default() });
-        let ask = |_: &str| { calls.set(calls.get() + 1); answer.borrow().clone() };
+        let answer = std::cell::RefCell::new(IssueState {
+            state: "merged".into(),
+            is_pull: true,
+            ..IssueState::default()
+        });
+        let ask = |_: &str| {
+            calls.set(calls.get() + 1);
+            answer.borrow().clone()
+        };
         let installed = at("2.1.0-1");
-        let look = Lookups { installed: &installed, available: &nothing, issue: Some(&ask) };
+        let look = Lookups {
+            installed: &installed,
+            available: &nothing,
+            issue: Some(&ask),
+        };
 
         let mut e = ext("file", Some(&file));
         e.upstream.package = Some("app".into());
         e.upstream.issue = Some("https://gitlab.com/o/r/-/issues/5".into());
-        assert!(add_external(&root, External { watch_issue: true, ..e.clone() }, &look).is_err(),
-                "a link nobody can look up was watched");
+        assert!(
+            add_external(
+                &root,
+                External {
+                    watch_issue: true,
+                    ..e.clone()
+                },
+                &look
+            )
+            .is_err(),
+            "a link nobody can look up was watched"
+        );
         e.upstream.issue = Some("https://github.com/o/r/pull/5".into());
         let rec = add_external(&root, e, &look).unwrap();
 
         review(&root, &look);
-        assert_eq!(calls.get(), 0, "an issue nobody chose to watch was asked about");
+        assert_eq!(
+            calls.get(),
+            0,
+            "an issue nobody chose to watch was asked about"
+        );
 
         set_watch(&root, &rec.id, true).unwrap();
         let found = review(&root, &look);
@@ -1595,9 +1993,21 @@ mod tests {
         answer.borrow_mut().released_in = Some("v2.1.0".into());
         let found = review(&root, &look);
         assert_eq!(calls.get(), 2);
-        assert!(found[0].flags.contains(&Flag::ReleasedIn { tag: "v2.1.0".into() }), "{:?}", found[0].flags);
-        assert!(found[0].flags.contains(&Flag::UpstreamSaysFixed { fixed_in: "2.1.0".into(), installed: "2.1.0-1".into() }),
-                "{:?}", found[0].flags);
+        assert!(
+            found[0].flags.contains(&Flag::ReleasedIn {
+                tag: "v2.1.0".into()
+            }),
+            "{:?}",
+            found[0].flags
+        );
+        assert!(
+            found[0].flags.contains(&Flag::UpstreamSaysFixed {
+                fixed_in: "2.1.0".into(),
+                installed: "2.1.0-1".into()
+            }),
+            "{:?}",
+            found[0].flags
+        );
 
         // Settled: never asked again. Offline: never asked, nothing written.
         let mut records = load(&root);
@@ -1610,7 +2020,10 @@ mod tests {
         assert_eq!(std::fs::read_to_string(root.join(FILE)).unwrap(), before);
 
         set_watch(&root, &rec.id, false).unwrap();
-        assert!(load(&root)[0].issue_state.is_none(), "stopping kept what GitHub said");
+        assert!(
+            load(&root)[0].issue_state.is_none(),
+            "stopping kept what GitHub said"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1618,9 +2031,13 @@ mod tests {
     #[test]
     fn an_older_list_is_read() {
         let root = dir("rr-old");
-        std::fs::write(root.join(FILE), r#"{"records":[{"id":"1-1","at":1,"action":"set_config_key",
+        std::fs::write(
+            root.join(FILE),
+            r#"{"records":[{"id":"1-1","at":1,"action":"set_config_key",
             "params":{"file":"a.toml","key":"k","value":"v"},"reversible":true,"subject":"x",
-            "state":"applied"}]}"#).unwrap();
+            "state":"applied"}]}"#,
+        )
+        .unwrap();
         let recs = load(&root);
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].kind, "action");
@@ -1632,7 +2049,11 @@ mod tests {
     fn a_tag_is_read_as_the_version_it_names() {
         assert_eq!(tag_version("v2.1.0").as_deref(), Some("2.1.0"));
         assert_eq!(tag_version("release-0.45.0").as_deref(), Some("0.45.0"));
-        assert_eq!(tag_version("vendor").as_deref(), Some("vendor"), "a word starting with v lost its v");
+        assert_eq!(
+            tag_version("vendor").as_deref(),
+            Some("vendor"),
+            "a word starting with v lost its v"
+        );
         assert_eq!(tag_version("v 1"), None);
     }
 
@@ -1641,10 +2062,20 @@ mod tests {
     #[test]
     fn a_windows_program_s_version_is_read_from_its_uninstall_entry() {
         // Something every Windows machine that runs this suite has.
-        let found = ["Git", "PODSHL", "Microsoft-Edge", "Microsoft-Edge-WebView2-Runtime"]
-            .iter().find_map(|p| installed_version(p));
-        assert!(found.as_ref().is_some_and(|i| i.source == "windows" && version_ok(&i.version)),
-                "no uninstall entry answered: {found:?}");
+        let found = [
+            "Git",
+            "PODSHL",
+            "Microsoft-Edge",
+            "Microsoft-Edge-WebView2-Runtime",
+        ]
+        .iter()
+        .find_map(|p| installed_version(p));
+        assert!(
+            found
+                .as_ref()
+                .is_some_and(|i| i.source == "windows" && version_ok(&i.version)),
+            "no uninstall entry answered: {found:?}"
+        );
         assert_eq!(installed_version("PodshlNoSuchProgram"), None);
     }
 
@@ -1693,8 +2124,11 @@ mod tests {
         for vcs in ["2.6.r12.g1a2b3c4-1", "1.0+git20240101-1", "0.9~git3-2"] {
             assert_eq!(vercmp(None, vcs, "1.0"), None, "{vcs} was ordered");
         }
-        assert_eq!(vercmp(Some("hyprland-git"), "0.45.0-1", "0.45.0"), None,
-                   "a -git package's version was trusted as a release");
+        assert_eq!(
+            vercmp(Some("hyprland-git"), "0.45.0-1", "0.45.0"),
+            None,
+            "a -git package's version was trusted as a release"
+        );
         assert_eq!(vercmp(None, "1.0; rm -rf", "1.0"), None);
     }
 
@@ -1704,11 +2138,17 @@ mod tests {
     fn a_publisher_s_upstream_is_checked_as_text() {
         let ok = Upstream::from_value(Some(&json!({
             "package": "hyprland", "issue": "https://github.com/hyprwm/Hyprland/issues/1",
-            "fixed_in": "0.45.0"}))).unwrap();
+            "fixed_in": "0.45.0"})))
+        .unwrap();
         assert_eq!(ok.package.as_deref(), Some("hyprland"));
-        for bad in [json!({"package": "a b"}), json!({"issue": "http://x"}),
-                    json!({"fixed_in": "1.0; x"}), json!({"version": "1"}),
-                    json!({"package": 3}), json!("hyprland")] {
+        for bad in [
+            json!({"package": "a b"}),
+            json!({"issue": "http://x"}),
+            json!({"fixed_in": "1.0; x"}),
+            json!({"version": "1"}),
+            json!({"package": 3}),
+            json!("hyprland"),
+        ] {
             assert!(Upstream::from_value(Some(&bad)).is_err(), "accepted {bad}");
         }
         assert_eq!(Upstream::from_value(None).unwrap(), Upstream::default());

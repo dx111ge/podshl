@@ -25,7 +25,8 @@ use std::sync::OnceLock;
 fn table() -> &'static Value {
     static T: OnceLock<Value> = OnceLock::new();
     T.get_or_init(|| {
-        serde_json::from_str(include_str!("../ui/i18n/en.json")).expect("ui/i18n/en.json is not JSON")
+        serde_json::from_str(include_str!("../ui/i18n/en.json"))
+            .expect("ui/i18n/en.json is not JSON")
     })
 }
 
@@ -55,7 +56,9 @@ pub fn is(code: &str, s: &str) -> bool {
     }
     pattern.push_str(&regex::escape(rest));
     pattern.push('$');
-    regex::Regex::new(&pattern).map(|re| re.is_match(s)).unwrap_or(false)
+    regex::Regex::new(&pattern)
+        .map(|re| re.is_match(s))
+        .unwrap_or(false)
 }
 
 /// The sentence for `code`, with its placeholders filled in one pass — a value
@@ -75,7 +78,11 @@ pub fn fill(code: &str, args: &[(&str, String)]) -> String {
         out.push_str(&rest[..open]);
         let after = &rest[open + 1..];
         match after.find('}') {
-            Some(close) if after[..close].chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => {
+            Some(close)
+                if after[..close]
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_') =>
+            {
                 let name = &after[..close];
                 match args.iter().find(|(k, _)| *k == name) {
                     Some((_, v)) => out.push_str(v),
@@ -99,13 +106,17 @@ pub fn fill(code: &str, args: &[(&str, String)]) -> String {
     out.push_str(rest);
     #[cfg(test)]
     for (k, _) in args {
-        assert!(used.contains(k), "{key} has no {{{k}}}, and the call gives it");
+        assert!(
+            used.contains(k),
+            "{key} has no {{{k}}}, and the call gives it"
+        );
     }
     out
 }
 
 /// `m!("not_a_dir", p = path.display())` — the sentence `m_not_a_dir`, filled.
 /// Values are `Display`; pass `format!("{x:?}")` for a quoted one.
+#[macro_export]
 macro_rules! m {
     ($code:literal $(, $k:ident = $v:expr)* $(,)?) => {
         $crate::msg::fill($code, &[$((stringify!($k), ($v).to_string())),*])
@@ -142,12 +153,23 @@ mod tests {
     #[test]
     fn every_message_the_binary_says_has_a_sentence() {
         let codes = codes_in_source();
-        assert!(codes.len() > 40, "suspiciously few messages found: {codes:?}");
+        assert!(
+            codes.len() > 40,
+            "suspiciously few messages found: {codes:?}"
+        );
         let missing: Vec<&String> = codes
             .iter()
-            .filter(|c| table().get(format!("m_{c}")).and_then(|v| v.as_str()).is_none())
+            .filter(|c| {
+                table()
+                    .get(format!("m_{c}"))
+                    .and_then(|v| v.as_str())
+                    .is_none()
+            })
             .collect();
-        assert!(missing.is_empty(), "no m_* sentence in en.json for {missing:?}");
+        assert!(
+            missing.is_empty(),
+            "no m_* sentence in en.json for {missing:?}"
+        );
     }
 
     /// M2: and no sentence is kept for a message nothing says. A dead entry is
@@ -163,7 +185,10 @@ mod tests {
             .filter(|k| !codes.contains(*k))
             .map(str::to_string)
             .collect();
-        assert!(dead.is_empty(), "en.json carries m_* sentences nothing says: {dead:?}");
+        assert!(
+            dead.is_empty(),
+            "en.json carries m_* sentences nothing says: {dead:?}"
+        );
     }
 
     /// `is` recognises a message whatever it was filled with, and nothing else.
@@ -180,14 +205,21 @@ mod tests {
     /// one value ends; a sentence that is only a placeholder matches anything.
     #[test]
     fn every_sentence_can_be_recognised_again() {
+        let placeholder = regex::Regex::new(r"\{\w+\}").unwrap();
         for (k, v) in table().as_object().unwrap() {
             let Some(s) = v.as_str() else { continue };
             if !k.starts_with("m_") {
                 continue;
             }
-            assert!(!s.contains("}{"), "{k}: two placeholders touch, so the window cannot split them");
-            let literal: String = regex::Regex::new(r"\{\w+\}").unwrap().replace_all(s, "").into();
-            assert!(literal.trim().len() >= 4, "{k} is almost only placeholders: {s:?}");
+            assert!(
+                !s.contains("}{"),
+                "{k}: two placeholders touch, so the window cannot split them"
+            );
+            let literal: String = placeholder.replace_all(s, "").into();
+            assert!(
+                literal.trim().len() >= 4,
+                "{k} is almost only placeholders: {s:?}"
+            );
         }
     }
 

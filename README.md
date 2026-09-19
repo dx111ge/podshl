@@ -31,14 +31,14 @@ project's own answer, and the notes to take to the project:
     omarchy plugin add https://github.com/dx111ge/omarchy-podshl --enable
 
     # Debian or Ubuntu: the .deb declares what it needs
-    sudo apt install ./PODSHL_0.1.6_amd64.deb
+    sudo apt install ./PODSHL_0.1.7_amd64.deb
 
     # the bare binary, on any Linux that already has WebKitGTK
     # (libwebkit2gtk-4.1-0 and libgtk-3-0 — it is not self-contained, on purpose)
-    chmod +x podshl-client-0.1.6-linux-x86_64 && ./podshl-client-0.1.6-linux-x86_64
+    chmod +x podshl-client-0.1.7-linux-x86_64 && ./podshl-client-0.1.7-linux-x86_64
 
 Windows, Linux and macOS:
-**[download 0.1.6](https://github.com/dx111ge/podshl/releases/latest)**. Nothing
+**[download 0.1.7](https://github.com/dx111ge/podshl/releases/latest)**. Nothing
 is signed — [INSTALL.md](docs/INSTALL.md) says how to start them anyway, and
 exactly what they send.
 

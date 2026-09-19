@@ -49,7 +49,13 @@ fn node_hash(left: &[u8], right: &[u8]) -> [u8; 32] {
 /// ragged right edge, where the sibling supplied is on the left — which is
 /// exactly where a fresh append lands, so getting it wrong fails the newest
 /// entries first.
-pub fn verify_inclusion(index: u64, size: u64, leaf: &[u8; 32], path: &[[u8; 32]], root: &[u8; 32]) -> bool {
+pub fn verify_inclusion(
+    index: u64,
+    size: u64,
+    leaf: &[u8; 32],
+    path: &[[u8; 32]],
+    root: &[u8; 32],
+) -> bool {
     if index >= size {
         return false;
     }
@@ -106,17 +112,24 @@ pub async fn prove(base: &str, seq: u64, expected: &Value) -> Result<Value, Stri
     let client = crate::http::client();
 
     // 1. The head, against the pinned key.
-    let head = get(&client, format!("{base}/log/sth")).await?;
+    let head = get(client, format!("{base}/log/sth")).await?;
     let (sth, sig) = (&head["sth"], &head["signature"]);
     // Stored heads come back with their signature as the JSON text it was
     // saved as; freshly issued ones as an object. Both are the same signature.
     let sig: Value = match sig {
-        Value::String(s) => serde_json::from_str(s).map_err(|e| m!("signature_unreadable", e = e))?,
+        Value::String(s) => {
+            serde_json::from_str(s).map_err(|e| m!("signature_unreadable", e = e))?
+        }
         other => other.clone(),
     };
-    let (jwk, from) = index::pinned_key().map_err(|e| format!("{} — {e}", m!("log_no_pinned_key")))?;
-    jws::verify_detached(&jwk, sth, &sig)
-        .map_err(|e| m!("sth_signature_invalid", e = format!("{e} (key from {from})")))?;
+    let (jwk, from) =
+        index::pinned_key().map_err(|e| format!("{} — {e}", m!("log_no_pinned_key")))?;
+    jws::verify_detached(&jwk, sth, &sig).map_err(|e| {
+        m!(
+            "sth_signature_invalid",
+            e = format!("{e} (key from {from})")
+        )
+    })?;
     let size = sth["tree_size"].as_u64().ok_or_else(|| m!("sth_no_size"))?;
     let root = hex32(sth["root_hash"].as_str().ok_or_else(|| m!("sth_no_root"))?)?;
     if seq >= size {
@@ -129,15 +142,26 @@ pub async fn prove(base: &str, seq: u64, expected: &Value) -> Result<Value, Stri
     let chain = hold_against_last_seen(base, sth).await?;
 
     // 2. The entry, hashed as the log hashed it.
-    let page = get(&client, format!("{base}/log/entries?start={seq}&end={}", seq + 1)).await?;
-    let entry = page["entries"].get(0).and_then(|e| e.get("entry")).ok_or_else(|| m!("entry_missing"))?;
+    let page = get(
+        client,
+        format!("{base}/log/entries?start={seq}&end={}", seq + 1),
+    )
+    .await?;
+    let entry = page["entries"]
+        .get(0)
+        .and_then(|e| e.get("entry"))
+        .ok_or_else(|| m!("entry_missing"))?;
     if entry["seq"].as_u64() != Some(seq) {
         return Err(m!("entry_wrong_seq", seq = seq, got = entry["seq"]));
     }
     let leaf = leaf_hash(&jcs::canonicalize(entry)?);
 
     // 3. The proof, for exactly the head we verified.
-    let proof = get(&client, format!("{base}/log/proof/inclusion?seq={seq}&size={size}")).await?;
+    let proof = get(
+        client,
+        format!("{base}/log/proof/inclusion?seq={seq}&size={size}"),
+    )
+    .await?;
     if proof["tree_size"].as_u64() != Some(size) {
         return Err(m!("proof_wrong_size"));
     }
@@ -155,8 +179,13 @@ pub async fn prove(base: &str, seq: u64, expected: &Value) -> Result<Value, Stri
     for field in ["content_sha256", "commit"] {
         if let Some(want) = expected.get(field).filter(|v| !v.is_null()) {
             if entry.get(field) != Some(want) {
-                return Err(m!("entry_attests_other", seq = seq, field = field,
-                              got = entry.get(field).unwrap_or(&Value::Null), want = want));
+                return Err(m!(
+                    "entry_attests_other",
+                    seq = seq,
+                    field = field,
+                    got = entry.get(field).unwrap_or(&Value::Null),
+                    want = want
+                ));
             }
         }
     }
@@ -177,8 +206,13 @@ pub async fn prove(base: &str, seq: u64, expected: &Value) -> Result<Value, Stri
 /// published, which is the thing it cannot do.
 ///
 /// The arithmetic is `merkle.py`'s `verify_consistency`, RFC 6962 section 2.1.2.
-pub fn verify_consistency(old_size: u64, new_size: u64, old_root: &[u8; 32],
-                          new_root: &[u8; 32], path: &[[u8; 32]]) -> bool {
+pub fn verify_consistency(
+    old_size: u64,
+    new_size: u64,
+    old_root: &[u8; 32],
+    new_root: &[u8; 32],
+    path: &[[u8; 32]],
+) -> bool {
     if old_size > new_size {
         return false;
     }
@@ -201,7 +235,7 @@ pub fn verify_consistency(old_size: u64, new_size: u64, old_root: &[u8; 32],
     }
 
     let (mut old_acc, mut new_acc, rest) = if fnode == 0 {
-        (*old_root, *old_root, &path[..])
+        (*old_root, *old_root, path)
     } else {
         (path[0], path[0], &path[1..])
     };
@@ -284,10 +318,16 @@ pub async fn hold_against_last_seen(base: &str, sth: &Value) -> Result<Value, St
 /// The decision, with the remembered head passed in and the new one handed
 /// back rather than written. Storage is the caller's, so every branch of this
 /// can be exercised without a file on disk deciding what the test sees.
-pub async fn hold_against(base: &str, sth: &Value, prev: Option<Seen>)
-    -> Result<(Value, Seen), String> {
+pub async fn hold_against(
+    base: &str,
+    sth: &Value,
+    prev: Option<Seen>,
+) -> Result<(Value, Seen), String> {
     let size = sth["tree_size"].as_u64().ok_or_else(|| m!("sth_no_size"))?;
-    let root = sth["root_hash"].as_str().ok_or_else(|| m!("sth_no_root"))?.to_string();
+    let root = sth["root_hash"]
+        .as_str()
+        .ok_or_else(|| m!("sth_no_root"))?
+        .to_string();
     let log_id = sth["log_id"].as_str().unwrap_or("").to_string();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -298,7 +338,12 @@ pub async fn hold_against(base: &str, sth: &Value, prev: Option<Seen>)
         return Ok((
             json!({"consistent": true, "first": true, "since": Value::Null,
                    "from_size": Value::Null, "tree_size": size}),
-            Seen { log_id, tree_size: size, root_hash: root, seen_at_ms: now },
+            Seen {
+                log_id,
+                tree_size: size,
+                root_hash: root,
+                seen_at_ms: now,
+            },
         ));
     };
 
@@ -326,9 +371,16 @@ pub async fn hold_against(base: &str, sth: &Value, prev: Option<Seen>)
         ));
     }
 
-    let proof = get(crate::http::client(),
-                    format!("{}/log/proof/consistency?first={}&second={}",
-                            base.trim_end_matches('/'), prev.tree_size, size)).await?;
+    let proof = get(
+        crate::http::client(),
+        format!(
+            "{}/log/proof/consistency?first={}&second={}",
+            base.trim_end_matches('/'),
+            prev.tree_size,
+            size
+        ),
+    )
+    .await?;
     if proof["first"].as_u64() != Some(prev.tree_size) || proof["second"].as_u64() != Some(size) {
         return Err(m!("proof_wrong_size"));
     }
@@ -345,7 +397,12 @@ pub async fn hold_against(base: &str, sth: &Value, prev: Option<Seen>)
     Ok((
         json!({"consistent": true, "first": false, "since": prev.seen_at_ms,
                "from_size": prev.tree_size, "tree_size": size}),
-        Seen { log_id, tree_size: size, root_hash: root, seen_at_ms: prev.seen_at_ms },
+        Seen {
+            log_id,
+            tree_size: size,
+            root_hash: root,
+            seen_at_ms: prev.seen_at_ms,
+        },
     ))
 }
 
@@ -376,7 +433,11 @@ mod tests {
             fn sub(leaves: &[[u8; 32]], m: usize, is_root: bool) -> Vec<[u8; 32]> {
                 let n = leaves.len();
                 if m == n {
-                    return if is_root { vec![] } else { vec![root_of(leaves)] };
+                    return if is_root {
+                        vec![]
+                    } else {
+                        vec![root_of(leaves)]
+                    };
                 }
                 let mut k = 1;
                 while k * 2 < n {
@@ -414,23 +475,37 @@ mod tests {
                 // different one cannot be waved through.
                 let mut lie = old_root;
                 lie[0] ^= 1;
-                assert!(!verify_consistency(m as u64, n as u64, &lie, &new_root, &path),
-                        "a forged old root passed at {m}/{n}");
+                assert!(
+                    !verify_consistency(m as u64, n as u64, &lie, &new_root, &path),
+                    "a forged old root passed at {m}/{n}"
+                );
                 let mut moved = new_root;
                 moved[31] ^= 1;
-                assert!(!verify_consistency(m as u64, n as u64, &old_root, &moved, &path),
-                        "a forged new root passed at {m}/{n}");
+                assert!(
+                    !verify_consistency(m as u64, n as u64, &old_root, &moved, &path),
+                    "a forged new root passed at {m}/{n}"
+                );
                 if !path.is_empty() {
                     let mut bent = path.clone();
                     bent[0][0] ^= 1;
-                    assert!(!verify_consistency(m as u64, n as u64, &old_root, &new_root, &bent),
-                            "a bent path passed at {m}/{n}");
-                    assert!(!verify_consistency(m as u64, n as u64, &old_root, &new_root, &[]),
-                            "an empty path passed at {m}/{n}");
+                    assert!(
+                        !verify_consistency(m as u64, n as u64, &old_root, &new_root, &bent),
+                        "a bent path passed at {m}/{n}"
+                    );
+                    assert!(
+                        !verify_consistency(m as u64, n as u64, &old_root, &new_root, &[]),
+                        "an empty path passed at {m}/{n}"
+                    );
                 }
             }
             // A tree cannot be a prefix of a smaller one.
-            assert!(!verify_consistency(n as u64 + 1, n as u64, &new_root, &new_root, &[]));
+            assert!(!verify_consistency(
+                n as u64 + 1,
+                n as u64,
+                &new_root,
+                &new_root,
+                &[]
+            ));
         }
     }
 
@@ -442,13 +517,14 @@ mod tests {
     /// the disk.
     #[tokio::test]
     async fn a_head_is_held_against_the_last_one_this_client_accepted() {
-        let head = |size: u64, root: &str, id: &str| {
-            json!({"tree_size": size, "root_hash": root, "log_id": id})
-        };
+        let head = |size: u64, root: &str, id: &str| json!({"tree_size": size, "root_hash": root, "log_id": id});
         let a = "a".repeat(64);
         let b = "b".repeat(64);
         let seen = |size: u64, root: &str, id: &str| Seen {
-            log_id: id.into(), tree_size: size, root_hash: root.into(), seen_at_ms: 1_000,
+            log_id: id.into(),
+            tree_size: size,
+            root_hash: root.into(),
+            seen_at_ms: 1_000,
         };
 
         // Nothing remembered: this head becomes the anchor, and says so.
@@ -461,33 +537,47 @@ mod tests {
         assert_eq!(keep.root_hash, a);
 
         // The same size and the same root is the same head, seen twice.
-        let (out, keep) = hold_against("http://127.0.0.1:1", &head(9, &a, "L"),
-                                       Some(seen(9, &a, "L")))
-            .await
-            .expect("the same head twice was refused");
+        let (out, keep) = hold_against(
+            "http://127.0.0.1:1",
+            &head(9, &a, "L"),
+            Some(seen(9, &a, "L")),
+        )
+        .await
+        .expect("the same head twice was refused");
         assert_eq!(out["first"], false);
         assert_eq!(out["since"], 1_000);
         assert_eq!(keep.tree_size, 9);
 
         // The same size and a different root is two logs wearing one number.
-        let e = hold_against("http://127.0.0.1:1", &head(9, &b, "L"), Some(seen(9, &a, "L")))
-            .await
-            .expect_err("a fork at the same size was accepted");
+        let e = hold_against(
+            "http://127.0.0.1:1",
+            &head(9, &b, "L"),
+            Some(seen(9, &a, "L")),
+        )
+        .await
+        .expect_err("a fork at the same size was accepted");
         assert!(crate::msg::is("log_forked", &e), "{e}");
 
         // Fewer entries than before. Nothing legitimate does this.
-        let e = hold_against("http://127.0.0.1:1", &head(8, &b, "L"), Some(seen(9, &a, "L")))
-            .await
-            .expect_err("a shrinking log was accepted");
+        let e = hold_against(
+            "http://127.0.0.1:1",
+            &head(8, &b, "L"),
+            Some(seen(9, &a, "L")),
+        )
+        .await
+        .expect_err("a shrinking log was accepted");
         assert!(crate::msg::is("log_shrank", &e), "{e}");
 
         // Another key is another log, and no arithmetic relates two of them —
         // said as its own refusal, because "rewritten" and "you are pointed
         // somewhere else" are not the same news.
-        let e = hold_against("http://127.0.0.1:1", &head(12, &b, "OTHER"),
-                             Some(seen(9, &a, "L")))
-            .await
-            .expect_err("a different log was accepted as this one grown");
+        let e = hold_against(
+            "http://127.0.0.1:1",
+            &head(12, &b, "OTHER"),
+            Some(seen(9, &a, "L")),
+        )
+        .await
+        .expect_err("a different log was accepted as this one grown");
         assert!(crate::msg::is("log_changed_identity", &e), "{e}");
     }
 
@@ -513,30 +603,49 @@ mod tests {
                 }
             }
         }
-        let base = crate::http::operator_base();
+        let base = crate::index::operator_base();
         let client = crate::http::client();
         let head = get(client, format!("{base}/log/sth")).await
             .expect("the operator is not answering — start it with `mise run server`, or set PODSHL_SERVER_URL to one that is — this test must never pass without a real log");
         let size = head["sth"]["tree_size"].as_u64().expect("no tree size");
-        assert!(size >= 2, "{base} has {size} entries and growth cannot be shown \
+        assert!(
+            size >= 2,
+            "{base} has {size} entries and growth cannot be shown \
                 against a log that has not grown: nothing has been registered there. \
-                Not a client defect — see the index case.");
+                Not a client defect — see the index case."
+        );
         let root = hex32(head["sth"]["root_hash"].as_str().unwrap()).unwrap();
 
         // Paged, because `/log/entries` caps a page and the log outgrows it.
         let mut leaves: Vec<[u8; 32]> = Vec::new();
         while (leaves.len() as u64) < size {
             let from = leaves.len() as u64;
-            let page = get(client, format!("{base}/log/entries?start={from}&end={size}"))
-                .await
-                .unwrap_or_else(|e| panic!("no page from {from}: {e}"));
+            let page = get(
+                client,
+                format!("{base}/log/entries?start={from}&end={size}"),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("no page from {from}: {e}"));
             let got = page["entries"].as_array().expect("no entries");
-            assert!(!got.is_empty(), "the log stopped serving at {from} of {size}");
-            leaves.extend(got.iter().map(|e| leaf_hash(&jcs::canonicalize(&e["entry"]).unwrap())));
+            assert!(
+                !got.is_empty(),
+                "the log stopped serving at {from} of {size}"
+            );
+            leaves.extend(
+                got.iter()
+                    .map(|e| leaf_hash(&jcs::canonicalize(&e["entry"]).unwrap())),
+            );
         }
-        assert_eq!(leaves.len() as u64, size, "the log served fewer entries than its head claims");
-        assert_eq!(root_of(&leaves), root,
-                   "the head's root is not the root of the entries the log serves");
+        assert_eq!(
+            leaves.len() as u64,
+            size,
+            "the log served fewer entries than its head claims"
+        );
+        assert_eq!(
+            root_of(&leaves),
+            root,
+            "the head's root is not the root of the entries the log serves"
+        );
 
         // Not every prefix: the arithmetic is exhausted offline in the case
         // above, and this one is about the two sides agreeing. The sizes that
@@ -545,22 +654,33 @@ mod tests {
         // middle. Asking for a thousand proofs to learn the same thing would
         // make this the slowest case in the suite and no more conclusive.
         let mut sizes: Vec<u64> = (1..=8.min(size - 1)).collect();
-        sizes.extend((1..=4).filter_map(|k| size.checked_sub(k)).filter(|m| *m >= 1));
+        sizes.extend(
+            (1..=4)
+                .filter_map(|k| size.checked_sub(k))
+                .filter(|m| *m >= 1),
+        );
         sizes.extend((1..8).map(|k| (size * k / 8).max(1)));
         sizes.sort_unstable();
         sizes.dedup();
         sizes.retain(|m| *m < size);
         for m in sizes {
             let old_root = root_of(&leaves[..m as usize]);
-            let proof = get(client,
-                            format!("{base}/log/proof/consistency?first={m}&second={size}"))
-                .await
-                .unwrap_or_else(|e| panic!("no proof for {m}/{size}: {e}"));
-            let path: Vec<[u8; 32]> = proof["path"].as_array().unwrap().iter()
+            let proof = get(
+                client,
+                format!("{base}/log/proof/consistency?first={m}&second={size}"),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("no proof for {m}/{size}: {e}"));
+            let path: Vec<[u8; 32]> = proof["path"]
+                .as_array()
+                .unwrap()
+                .iter()
                 .map(|p| hex32(p.as_str().unwrap()).unwrap())
                 .collect();
-            assert!(verify_consistency(m, size, &old_root, &root, &path),
-                    "the operator's own proof that {m} is a prefix of {size} did not verify");
+            assert!(
+                verify_consistency(m, size, &old_root, &root, &path),
+                "the operator's own proof that {m} is a prefix of {size} did not verify"
+            );
         }
     }
 
@@ -602,22 +722,39 @@ mod tests {
             }
         }
         for size in [1usize, 2, 3, 5, 7, 8, 13] {
-            let leaves: Vec<[u8; 32]> = (0..size).map(|i| leaf_hash(format!("entry {i}").as_bytes())).collect();
+            let leaves: Vec<[u8; 32]> = (0..size)
+                .map(|i| leaf_hash(format!("entry {i}").as_bytes()))
+                .collect();
             let root = root_of(&leaves);
             for m in 0..size {
                 let path = path_of(&leaves, m);
-                assert!(verify_inclusion(m as u64, size as u64, &leaves[m], &path, &root),
-                        "leaf {m} of {size} did not verify");
+                assert!(
+                    verify_inclusion(m as u64, size as u64, &leaves[m], &path, &root),
+                    "leaf {m} of {size} did not verify"
+                );
                 let other = leaf_hash(b"not this");
-                assert!(!verify_inclusion(m as u64, size as u64, &other, &path, &root),
-                        "a different leaf verified at {m} of {size}");
+                assert!(
+                    !verify_inclusion(m as u64, size as u64, &other, &path, &root),
+                    "a different leaf verified at {m} of {size}"
+                );
                 if size > 1 {
-                    assert!(!verify_inclusion(((m + 1) % size) as u64, size as u64, &leaves[m], &path, &root),
-                            "leaf {m} verified at the wrong index in {size}");
+                    assert!(
+                        !verify_inclusion(
+                            ((m + 1) % size) as u64,
+                            size as u64,
+                            &leaves[m],
+                            &path,
+                            &root
+                        ),
+                        "leaf {m} verified at the wrong index in {size}"
+                    );
                 }
             }
         }
-        assert!(!verify_inclusion(3, 3, &leaf_hash(b"x"), &[], &[0; 32]), "an index past the tree verified");
+        assert!(
+            !verify_inclusion(3, 3, &leaf_hash(b"x"), &[], &[0; 32]),
+            "an index past the tree verified"
+        );
     }
 
     /// AT2, against the running operator: a real entry proves against its
@@ -632,21 +769,32 @@ mod tests {
         // for a user and the wrong reason for this case to be red. The only
         // test that touches this file.
         let _ = std::fs::remove_file(seen_path());
-        let base = crate::http::operator_base();
+        let base = crate::index::operator_base();
         let head = reqwest::get(format!("{base}/log/sth")).await
             .expect("the operator is not answering — start it with `mise run server`, or set PODSHL_SERVER_URL to one that is — this test must never pass without a real log")
             .json::<Value>().await.unwrap();
         let size = head["sth"]["tree_size"].as_u64().unwrap();
-        assert!(size > 0, "{base} has an empty log — nothing has been registered \
-                there, so there is no entry to prove. Not a client defect.");
+        assert!(
+            size > 0,
+            "{base} has an empty log — nothing has been registered \
+                there, so there is no entry to prove. Not a client defect."
+        );
         for seq in [0, size / 2, size - 1] {
-            let got = prove(&base, seq, &json!({})).await
+            let got = prove(&base, seq, &json!({}))
+                .await
                 .unwrap_or_else(|e| panic!("entry {seq} of {size} did not prove: {e}"));
             assert_eq!(got["verified"], true);
         }
-        let e = prove(&base, 0, &json!({"content_sha256": "0".repeat(64)})).await.unwrap_err();
-        assert!(crate::msg::is("entry_attests_other", &e),
-                "an entry about other files was accepted for these: {e}");
-        assert!(prove(&base, size + 1000, &json!({})).await.is_err(), "an entry past the head proved");
+        let e = prove(&base, 0, &json!({"content_sha256": "0".repeat(64)}))
+            .await
+            .unwrap_err();
+        assert!(
+            crate::msg::is("entry_attests_other", &e),
+            "an entry about other files was accepted for these: {e}"
+        );
+        assert!(
+            prove(&base, size + 1000, &json!({})).await.is_err(),
+            "an entry past the head proved"
+        );
     }
 }
