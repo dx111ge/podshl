@@ -26,7 +26,7 @@ project's own answer, and the notes to take to the project:
 **The record of local fixes on its own** — `podshl-repairs` on a clean Omarchy:
 an agent's change recorded without anybody writing it, undone, overwritten by an
 update and noticed, and a workaround kept with its reason:
-[English, 3:54](examples/repairs/podshl-repairs.mp4)
+[English, 4:36](examples/repairs/podshl-repairs.mp4)
 
 ## Try it
 
