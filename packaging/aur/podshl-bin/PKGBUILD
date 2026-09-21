@@ -16,7 +16,7 @@
 
 pkgname=podshl-bin
 _bin=podshl-client
-pkgver=0.1.8
+pkgver=0.1.9
 pkgrel=1
 pkgdesc="Ask the projects you run what is wrong with your machine; every reading consented, nothing uploaded without asking"
 arch=('x86_64')
@@ -45,7 +45,7 @@ source=(
   "$_bin.desktop"
   "$pkgname.repairs.json"
 )
-sha256sums=('ba0ad25f6cd2218e8f06cb532772996e65c61644d2569044c8cb7b60c95eb027'
+sha256sums=('dd3a23db5aa83321a3e013c57808d5ca846459bc4eef9d4125211c88285cf7cb'
             '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0'
             '4633d1d532bcf4719ce173d420f649d9fc60abe788a329bf51b4f76951b190f8'
             '0ded5f06da14c6700741dc4fa3bcdde8ea53c8b1410c11f4504c023d94955c7a'
