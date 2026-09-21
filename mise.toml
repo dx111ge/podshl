@@ -189,6 +189,13 @@ auditable.
 On Wayland the client sets WEBKIT_DISABLE_DMABUF_RENDERER=1 for itself, or no
 window would be created at all. Set it yourself to override that.
 
+**GLIBC 2.39 or newer**, for both programs — this is built on Debian trixie.
+Debian 13, Ubuntu 24.04, Arch and Omarchy are new enough; Debian 12 and Ubuntu
+22.04 are not, and there the loader says `version GLIBC_2.39 not found`, which
+reads like a broken download and is not one. It is the one requirement
+`podshl-repairs` has at all, having no window and no WebKitGTK, so it is said
+here rather than discovered. install.sh checks it before downloading anything.
+
 ## Which operator
 
 Built with PODSHL_BUILD_SERVER_URL, PODSHL_BUILD_INDEX_URL and

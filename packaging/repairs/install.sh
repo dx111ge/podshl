@@ -36,6 +36,34 @@ for tool in curl sha256sum install; do
   command -v "$tool" >/dev/null || stop "$tool is not installed"
 done
 
+# **The C library, before the download rather than after it.**
+#
+# The published binary is built on Debian trixie and needs GLIBC 2.39. On
+# Debian 12 or Ubuntu 22.04 it installs perfectly, the checksum matches, and
+# the first run says
+#
+#   podshl-repairs: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found
+#
+# which reads like a corrupted download right after a line saying the download
+# was checked. It is not corrupted; it is the wrong machine for this build, and
+# that is a sentence this script can say before spending anything.
+#
+# Unknown is not refused. A libc this cannot read — musl, or an ldd that says
+# something else entirely — is somebody whose own error message will be better
+# than a guess made here.
+NEED=2.39
+have=$(ldd --version 2>/dev/null | head -1 | grep -o '[0-9]\+\.[0-9]\+$') || true
+if [ -n "${have:-}" ]; then
+  older=$( { echo "$NEED"; echo "$have"; } | sort -V | head -1 )
+  if [ "$have" != "$NEED" ] && [ "$older" = "$have" ]; then
+    stop "this build needs GLIBC $NEED and this system has $have.
+  Debian 13, Ubuntu 24.04, Arch and Omarchy are new enough; Debian 12 and
+  Ubuntu 22.04 are not. Nothing was downloaded. Build it yourself from
+  https://github.com/dx111ge/podshl (cargo build --release -p podshl-client
+  --bin podshl-repairs), or run it on a newer system."
+  fi
+fi
+
 # The newest release is where GitHub's /latest redirects to: .../tag/v<version>.
 if [ -n "${PODSHL_VERSION:-}" ]; then
   V=$PODSHL_VERSION

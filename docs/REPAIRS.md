@@ -50,6 +50,13 @@ and a panel in its window); everything here applies to both.
 curl -fsSL https://raw.githubusercontent.com/dx111ge/podshl/main/packaging/repairs/install.sh | bash
 ```
 
+**GLIBC 2.39 or newer** — the published build is made on Debian trixie. Debian
+13, Ubuntu 24.04, Arch and Omarchy are new enough; Debian 12 and Ubuntu 22.04
+are not, and the installer says so and stops rather than letting the loader
+report `version GLIBC_2.39 not found` after a download it just said was checked.
+On an older system, build it: `cargo build --release -p podshl-client --bin
+podshl-repairs`.
+
 [`packaging/repairs/install.sh`](../packaging/repairs/install.sh):
 
 1. finds the newest release;
