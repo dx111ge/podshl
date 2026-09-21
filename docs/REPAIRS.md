@@ -75,10 +75,12 @@ short. Then `man podshl-repairs`.
 
 ```
 cd "$(mktemp -d)"
-curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.8/podshl-repairs-0.1.8-linux-x86_64
-curl -fLO https://github.com/dx111ge/podshl/releases/download/v0.1.8/SHA256SUMS
+R=https://github.com/dx111ge/podshl/releases
+V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest"); V=${V##*/v}
+curl -fLO "$R/download/v$V/podshl-repairs-$V-linux-x86_64"
+curl -fLO "$R/download/v$V/SHA256SUMS"
 sha256sum -c --ignore-missing SHA256SUMS
-install -Dm755 podshl-repairs-0.1.8-linux-x86_64 ~/.local/bin/podshl-repairs
+install -Dm755 "podshl-repairs-$V-linux-x86_64" ~/.local/bin/podshl-repairs
 podshl-repairs install-hook
 podshl-repairs install-agent-hook    # Omarchy: your default agent
 ```
