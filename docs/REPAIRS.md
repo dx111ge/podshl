@@ -223,8 +223,7 @@ the same edit in a git repository left no record (`RR21`, `RR22`).
 ### Another agent
 
 Every agent has its own hook format and its own settings file. Yours is not
-refused, and it is not guessed at either — there are two ways in, and both say
-which one you took.
+refused, and it is not guessed at either.
 
 **Measure it.** Nothing here knows where your agent keeps its hooks, and that
 is half of what is missing:
@@ -240,39 +239,85 @@ as you normally would. While measuring, **nothing is recorded** — the format i
 not known yet — and every call is kept exactly as it arrived in
 `agent-samples/` next to the record. Those files hold the paths and the shell
 commands your agent used, which is your machine written down: nothing sends
-them anywhere, and reading them before you send one to anybody is the point of
-keeping them as files.
+them anywhere, and reading one before you send it is the point of keeping them
+as files.
 
-**Write the format down.** With samples in hand, or with the agent's
-documentation open, put an entry in `agent-formats.json` next to the record
-(see [`examples/agent-formats.json`](../examples/agent-formats.json)). Each
-field is a list of dotted keys, tried in order, in what the agent sends its
-hook:
+**Then let it read the format off them:**
 
-```json
-{"formats": [{
-  "agent": "opencode",
-  "source": "opencode's plugin documentation, read 2026-09-21",
-  "tool": ["tool.name"], "shell": ["bash"],
-  "path": ["args.filePath"], "command": ["args.command"],
-  "cwd": ["directory"], "session": ["sessionID"], "call_id": ["callID"]
-}]}
+```
+podshl-repairs measure-agent-hook --write-format
 ```
 
-Then `podshl-repairs install-agent-hook --agent opencode --guessed`. A format
-that was read rather than walked is never treated as measured, whatever the
-file says:
+That writes a draft entry into `agent-formats.json` beside the record, read off
+the calls your agent actually made. It works on one distinction the samples
+carry by themselves: a field belonging to the *session* is in every call, and a
+field belonging to the *tool* is only in the calls that used it. That is also
+what keeps the agent's own transcript out of it — `transcript_path` is a
+perfectly good-looking path in every single call, and a record claiming you
+repaired your agent's transcript would be a wrong record made confidently.
+
+Use the draft with `podshl-repairs install-agent-hook --agent NAME --guessed`.
+A format that was not walked is never treated as measured, whatever the file
+says:
 
 * the two hook commands are **printed to put in by hand** — a settings file
   whose shape nobody here has seen is not written;
-* **every record it makes says so** in its reason, and keeps saying it:
-  `recorded by the opencode hook, session … (this agent's hook format was read
-  rather than measured, from …)`;
+* **every record it makes says so** in its reason: `recorded by the NAME hook,
+  session … (this agent's hook format was read rather than measured, from read
+  off 7 calls collected on this machine)`;
 * **every call it cannot read is kept** as a sample while measuring is on, so
   the place the reading is wrong shows itself instead of failing quietly.
 
-If it works on your machine, the samples and your `agent-formats.json` are what
-turns it into a measured one for everybody else.
+If it works on your machine, your samples and your `agent-formats.json` are
+what turn it into a measured one for everybody else. You can also write the
+entry by hand — see [`examples/agent-formats.json`](../examples/agent-formats.json)
+for the fields.
+
+### Gemini CLI
+
+Walked on an Omarchy desktop with Gemini CLI 0.60.0 on 2026-09-21, so it is
+measured and needs no `--guessed`:
+
+```
+podshl-repairs install-agent-hook --agent gemini
+```
+
+It prints the two commands and the block to paste, because this program does
+not write another agent's settings file. **Two things are off by default, and
+both cost an afternoon to find:**
+
+* **`tools.enableHooks` is false** unless you set it. Without it your hooks are
+  read, accepted, and never run — the record stays empty and nothing says why.
+* **The folder must be trusted.** Gemini CLI refuses a headless run in an
+  untrusted directory, which is the property that stops a cloned repository
+  from running commands at you. Trust it in interactive mode, or set
+  `GEMINI_CLI_TRUST_WORKSPACE=true`.
+
+Two ways it differs from Claude Code, both found by measuring and neither
+guessable: `file_path` arrives **relative** to the session's `cwd`, and there
+is **no call id** at all, so a shell command's staging falls back to the
+session and the command text.
+
+One gap, named rather than papered over: `run_shell_command` can carry a
+`dir_path` that moves where the command runs, and no call in the walk had one.
+It is not in the format, because a key nobody has seen is a guess. A command
+that uses it will leave no record rather than a record of the wrong file.
+
+### An agent that calls a function instead of a command
+
+Some agents do not run a command before a tool — they call a function inside
+their own process. opencode is one. There is nothing there for `agent-hook` to
+be wired to, so the joint is a small plugin that hands what it was given to the
+same program every other agent's hook calls:
+[`examples/agents/opencode/`](../examples/agents/opencode/). It forwards the
+payload whole rather than picking the file out of it, because what the file is
+called is the thing being measured.
+
+Walked with opencode 1.18.31 against a local Ollama model: the hooks fire, the
+calls are kept, and the draft read off them records and restores. Not walked: a
+shell command, so `command` and `shell` in that draft are empty and **a change
+opencode makes through a shell command leaves no record**. Named here rather
+than filled in from documentation.
 
 ### Packages and plugins
 
@@ -460,7 +505,7 @@ podshl-repairs install-hook [--print]
 podshl-repairs remove-hook [--print]
 podshl-repairs install-agent-hook [--agent NAME] [--print] [--guessed]
 podshl-repairs remove-agent-hook [--agent NAME] [--print]
-podshl-repairs measure-agent-hook [--agent NAME] [--stop]
+podshl-repairs measure-agent-hook [--agent NAME] [--stop] [--write-format]
 podshl-repairs --version
 ```
 
@@ -513,8 +558,8 @@ Was the hook installed before 0.1.8? Then it only sees the file tools: run
 `podshl-repairs install-agent-hook` again. Is the hook installed at all —
 `grep agent-hook ~/.claude/settings.json`?
 
-**`install-agent-hook` says there is no hook format for my agent.** Only Claude
-Code's has been walked. Two ways on, both above under
+**`install-agent-hook` says there is no hook format for my agent.** Claude Code
+and Gemini CLI have been walked; anything else has not. Two ways on, both above under
 [Another agent](#another-agent): `measure-agent-hook --agent NAME` keeps what
 your agent sends so the format can be walked, and an entry in
 `agent-formats.json` plus `--guessed` uses a format read from documentation,

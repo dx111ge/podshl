@@ -30,24 +30,85 @@
     {
       "agent": "claude",
       "source": "walked, and built in: here to show the shape",
-      "tool": ["tool_name"],
-      "shell": ["Bash"],
-      "path": ["tool_input.file_path", "tool_input.notebook_path"],
-      "command": ["tool_input.command"],
-      "cwd": ["cwd"],
-      "session": ["session_id"],
-      "call_id": ["tool_use_id"]
+      "tool": [
+        "tool_name"
+      ],
+      "shell": [
+        "Bash"
+      ],
+      "path": [
+        "tool_input.file_path",
+        "tool_input.notebook_path"
+      ],
+      "command": [
+        "tool_input.command"
+      ],
+      "cwd": [
+        "cwd"
+      ],
+      "session": [
+        "session_id"
+      ],
+      "call_id": [
+        "tool_use_id"
+      ]
+    },
+    {
+      "agent": "opencode",
+      "call_id": [
+        "callID"
+      ],
+      "command": [],
+      "cwd": [
+        "cwd"
+      ],
+      "measured": false,
+      "path": [
+        "args.filePath"
+      ],
+      "session": [
+        "sessionID"
+      ],
+      "shell": [],
+      "source": "read off 2 calls opencode 1.18.31 made on an Omarchy desktop, 2026-09-21; no shell call was seen, so `command` and `shell` are empty and a shell command leaves no record",
+      "tool": [
+        "tool"
+      ]
     },
     {
       "agent": "your-agent",
       "source": "fill this in: where you read it, and when",
-      "tool": ["tool.name", "toolName"],
-      "shell": ["bash", "shell", "run"],
-      "path": ["args.filePath", "args.path", "input.file"],
-      "command": ["args.command", "input.command"],
-      "cwd": ["directory", "cwd", "workspace"],
-      "session": ["sessionID", "session_id"],
-      "call_id": ["callID", "call_id"]
+      "tool": [
+        "tool.name",
+        "toolName"
+      ],
+      "shell": [
+        "bash",
+        "shell",
+        "run"
+      ],
+      "path": [
+        "args.filePath",
+        "args.path",
+        "input.file"
+      ],
+      "command": [
+        "args.command",
+        "input.command"
+      ],
+      "cwd": [
+        "directory",
+        "cwd",
+        "workspace"
+      ],
+      "session": [
+        "sessionID",
+        "session_id"
+      ],
+      "call_id": [
+        "callID",
+        "call_id"
+      ]
     }
   ]
 }

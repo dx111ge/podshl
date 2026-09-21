@@ -129,10 +129,11 @@ podshl-client repairs <command>
         Measured for: claude. Another agent's format can be written into
         agent-formats.json and taken with --guessed, which says in every
         record it makes that it was read rather than measured
-  measure-agent-hook [--agent NAME] [--stop]
+  measure-agent-hook [--agent NAME] [--stop] [--write-format]
         an agent whose format is not known: keep what its hooks send here and
         record nothing, so the format can be walked rather than guessed twice.
-        Without either flag: what is being measured, and where it is kept";
+        --write-format reads a draft entry for agent-formats.json off the calls
+        that were kept. Without a flag: what is being measured, and where";
 
 /// The usage, under the name of the program that is running: `podshl-repairs
 /// help` began with "podshl-client repairs <command>", which is the other
@@ -751,9 +752,54 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
         }
         "measure-agent-hook" => {
             let stop = a.flag("--stop");
+            let write_format = a.flag("--write-format");
             let named = a.value("--agent")?;
             a.done()?;
             let samples = crate::agent_hook::samples_dir(&root);
+            if write_format {
+                let agent = match named {
+                    Some(n) => crate::agent_hook::plain_agent_name(&n)?,
+                    None => crate::agent_hook::measuring(&root)
+                        .map(|m| m.agent)
+                        .ok_or("name the agent with --agent: nothing is being measured")?,
+                };
+                let calls: Vec<serde_json::Value> = crate::agent_hook::samples(&root)
+                    .iter()
+                    .filter(|p| {
+                        p.file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| n.starts_with(&format!("{agent}-")))
+                    })
+                    .filter_map(|p| std::fs::read_to_string(p).ok())
+                    .filter_map(|t| serde_json::from_str(&t).ok())
+                    .collect();
+                let fmt = crate::agent_hook::derive_format(&agent, &calls)?;
+                let path = crate::agent_hook::formats_path(&root);
+                let entry = crate::agent_hook::put_format(&root, &fmt)?;
+                crate::clientlog::line(&format!(
+                    "repairs measure-agent-hook: {agent} format read off {} calls",
+                    calls.len()
+                ));
+                println!("{entry}");
+                println!();
+                println!("written into {}", path.display());
+                println!(
+                    "Read off {} calls {agent} made here. It is a draft: every record it",
+                    calls.len()
+                );
+                println!("makes will say the format was read rather than measured, and a call it");
+                println!("cannot read is kept as a sample while measuring is on.");
+                println!();
+                println!(
+                    "Use it:   {} install-agent-hook --agent {agent} --guessed",
+                    me()
+                );
+                println!(
+                    "Check it: {} list   — after the agent has changed something",
+                    me()
+                );
+                return Ok(0);
+            }
             if stop {
                 let was = crate::agent_hook::measuring(&root).map(|m| m.agent);
                 crate::agent_hook::stop_measuring(&root)?;
@@ -788,9 +834,13 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
                 let known = crate::agent_hook::load_formats(&root);
                 println!();
                 println!("hook formats known here:");
-                println!("  claude (measured, built in)");
+                // Every walked agent, not the one that was walked first: this
+                // line said `claude` alone while gemini was measured too.
+                for agent in crate::agent_hook::MEASURED {
+                    println!("  {agent} (measured, built in)");
+                }
                 for f in &known {
-                    if f.agent != "claude" {
+                    if !crate::agent_hook::MEASURED.contains(&f.agent.as_str()) {
                         println!(
                             "  {} (read, not measured{})",
                             f.agent,
@@ -863,14 +913,41 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
                 let pre = crate::agent_hook::hook_command(&exe, !standalone(), "pre", &agent)?;
                 let post = crate::agent_hook::hook_command(&exe, !standalone(), "post", &agent)?;
                 if install {
-                    println!("{agent}'s hook format is read, not measured: every record it makes says so.");
+                    if fmt.as_ref().is_some_and(|f| f.measured) {
+                        println!("{agent}'s hook format was walked on a machine.");
+                    } else {
+                        println!("{agent}'s hook format is read, not measured: every record it makes says so.");
+                    }
                     println!(
-                        "Where {agent} keeps its hooks is not known here, so put these in by hand:"
+                        "This program does not write {agent}'s settings — put these in by hand:"
                     );
                     println!("  before a file write or a shell command:");
                     println!("    {pre}");
                     println!("  after it:");
                     println!("    {post}");
+                    // For a walked agent: where they go, and what else has to be
+                    // true for them to run at all. That part is not guessable.
+                    if let Some(w) = crate::agent_hook::how_to_wire(&agent) {
+                        // The command carries quotes of its own, so it goes in
+                        // as a JSON string rather than between two more: the
+                        // first version printed `"command": ""C:/…" …"`, which
+                        // fails in the reader's editor.
+                        let q = |c: &str| serde_json::to_string(c).unwrap_or_default();
+                        println!();
+                        println!("{}", w.file);
+                        println!();
+                        for line in w.json {
+                            println!(
+                                "{}",
+                                line.replace("<before>", &q(&pre))
+                                    .replace("<after>", &q(&post))
+                            );
+                        }
+                        println!();
+                        for line in w.notes {
+                            println!("{line}");
+                        }
+                    }
                 } else {
                     println!("take these two out of {agent}'s hook configuration by hand:");
                     println!("    {pre}");

@@ -141,8 +141,12 @@ A shell command is seen through the files it names.
 On Omarchy the default agent is taken unless one is named.
 Measured for
 .B claude
-only, whose settings file is written: everything else in it is kept, and the
-change to it is itself recorded.
+and
+.BR gemini .
+Only Claude Code's settings file is written \(em everything else in it is kept,
+and the change to it is itself recorded; for any other agent the two commands
+are printed to put in by hand, with the file they go in and whatever else has
+to be true for them to run.
 .IP
 Another agent's hook format can be written into
 .I agent\-formats.json
@@ -157,7 +161,7 @@ not measured, and every call it cannot read is kept as a sample while
 is on.
 An agent with no format at all is refused rather than guessed at.
 .TP
-.BR measure\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-stop ]
+.BR measure\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-stop "] [" \-\-write\-format ]
 Measure an agent whose hook format is not known here.
 .BI \-\-agent " NAME"
 prints the two commands that agent's hooks should run and switches measuring
@@ -168,6 +172,15 @@ While it is on, every call from that agent is kept exactly as it arrived in
 beside the record, and nothing is recorded: the format is not known yet.
 The samples hold the paths and the shell commands the agent used; nothing
 sends them anywhere.
+.B \-\-write\-format
+reads a draft entry for
+.I agent\-formats.json
+off the calls that were kept, and writes it there.
+It tells a tool's arguments from the session's fields by how often they appear
+\(em an argument is not in every call \(em which is also what keeps the agent's
+own transcript from being taken for the file it wrote.
+A draft is never measured: use it with
+.BR \-\-guessed .
 .B \-\-stop
 stops, and leaves what was measured where it is.
 With neither: what is being measured, where the samples are, and which hook

@@ -597,6 +597,16 @@ def _():
     cargo("agent_hook::tests::a_format_that_was_read_rather_than_measured_says_so")
 
 
+@case("RR31", "A format is read off the calls the agent really made [rust]")
+def _():
+    cargo("agent_hook::tests::a_format_is_read_off_what_the_agent_really_sent")
+
+
+@case("RR32", "What a walked agent is told to paste is JSON that parses [rust]")
+def _():
+    cargo("agent_hook::tests::the_wiring_a_person_pastes_is_json_that_parses")
+
+
 @case("A12", "The agent fixes it, the fix holds, and the undo puts it back [rust]")
 def _():
     cargo("report::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")

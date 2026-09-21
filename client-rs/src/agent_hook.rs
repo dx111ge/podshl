@@ -53,7 +53,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The agents whose hook format has been measured.
-pub const MEASURED: &[&str] = &["claude"];
+pub const MEASURED: &[&str] = &["claude", "gemini"];
 
 /// The tools whose writes are recorded: the file tools, and the shell.
 pub const MATCHER: &str = "Write|Edit|MultiEdit|NotebookEdit|Bash";
@@ -206,6 +206,85 @@ pub fn claude_format() -> Format {
     }
 }
 
+/// Gemini CLI's, measured.
+///
+/// Walked on an Omarchy desktop with Gemini CLI 0.60.0 on 2026-09-21: the
+/// hooks were wired, seven real calls were kept, this was read off them, and a
+/// change the agent then made was recorded with a copy and put back again.
+///
+/// Two things it does differently from Claude Code, and neither is guessable:
+///
+/// * **`file_path` arrives relative** — `"app.conf"`, not `/home/jdoe/…`. It is
+///   the session's `cwd` that makes it a file.
+/// * **There is no call id.** Nothing in the payload tells one tool call from
+///   another, so a shell command's staging falls back to the session and the
+///   command text.
+///
+/// One gap, named rather than papered over: `run_shell_command` may carry a
+/// `dir_path` that moves where the command runs, and no call in the walk had
+/// one. It is not in `cwd` below, because a key nobody has seen is a guess. A
+/// command that uses it will resolve its relative paths against the session's
+/// directory here, find nothing there, and leave no record — a gap, which is
+/// the failure this would rather have than a confident record of the wrong
+/// file.
+pub fn gemini_format() -> Format {
+    let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect();
+    Format {
+        agent: "gemini".into(),
+        measured: true,
+        source: None,
+        tool: v(&["tool_name"]),
+        shell: v(&["run_shell_command"]),
+        path: v(&["tool_input.file_path"]),
+        command: v(&["tool_input.command"]),
+        cwd: v(&["cwd"]),
+        session: v(&["session_id"]),
+        call_id: vec![],
+    }
+}
+
+/// Where an agent keeps its hooks, what to put there, and what else has to be
+/// true for them to run at all.
+///
+/// Only for agents that were walked. This is the part a person pastes, and a
+/// paste written from documentation is how somebody ends up with a hook that
+/// never fires and a record that is quietly empty — which is this whole
+/// module's one unacceptable outcome.
+pub struct Wiring {
+    /// The file it goes in.
+    pub file: String,
+    /// The lines to put there, with `<before>` and `<after>` to fill in. JSON,
+    /// and a test holds it to being JSON once filled.
+    pub json: Vec<String>,
+    /// What is off by default, and what a headless run needs.
+    pub notes: Vec<String>,
+}
+
+pub fn how_to_wire(agent: &str) -> Option<Wiring> {
+    match agent {
+        "gemini" => Some(Wiring {
+            file: "~/.gemini/settings.json (or .gemini/settings.json in one project)".into(),
+            json: vec![
+                "  \"tools\": { \"enableHooks\": true },".into(),
+                "  \"hooks\": {".into(),
+                "    \"BeforeTool\": [ { \"matcher\": \"*\", \"hooks\": [ { \"type\": \"command\", \"command\": <before> } ] } ],".into(),
+                "    \"AfterTool\":  [ { \"matcher\": \"*\", \"hooks\": [ { \"type\": \"command\", \"command\": <after> } ] } ]".into(),
+                "  }".into(),
+            ],
+            notes: vec![
+                "Two things are off by default, and both cost an afternoon to find:".into(),
+                "  * `tools.enableHooks` is false unless you set it. Without it the hooks".into(),
+                "    are read, accepted, and never run.".into(),
+                "  * The folder must be trusted. Gemini CLI refuses a headless run in an".into(),
+                "    untrusted directory — the property that stops a cloned repository".into(),
+                "    from running commands at you. Trust it in interactive mode, or set".into(),
+                "    GEMINI_CLI_TRUST_WORKSPACE=true.".into(),
+            ],
+        }),
+        _ => None,
+    }
+}
+
 /// Where formats for agents nobody here has walked are kept.
 pub fn formats_path(state_dir: &Path) -> PathBuf {
     state_dir.join("agent-formats.json")
@@ -239,8 +318,10 @@ pub fn load_formats(state_dir: &Path) -> Vec<Format> {
 
 /// How this agent's calls are to be read, if there is a way at all.
 pub fn format_for(state_dir: &Path, agent: &str) -> Option<Format> {
-    if agent == "claude" {
-        return Some(claude_format());
+    match agent {
+        "claude" => return Some(claude_format()),
+        "gemini" => return Some(gemini_format()),
+        _ => {}
     }
     load_formats(state_dir)
         .into_iter()
@@ -807,6 +888,309 @@ fn floor_char(s: &str, n: usize) -> usize {
     i
 }
 
+// ------------------------------------------------------------------ reading a format off the samples
+
+// **The format comes out of what the agent sent, not out of somebody's
+// patience.** Measuring leaves a pile of calls; turning that pile into an
+// entry by hand is a job nobody does twice, and the second agent is where a
+// project quietly stops supporting agents. So the pile is read here.
+//
+// What makes that possible is a distinction the samples carry by themselves: a
+// field belonging to the *session* is in every call, and a field belonging to
+// the *tool* is only in the calls that used it. The file a write names appears
+// in one call out of seven; the working directory appears in all seven.
+//
+// That is also the guard against the worst mistake available here.
+// `transcript_path` is a perfectly good-looking absolute path, present in every
+// single call, and a record saying somebody repaired the agent's own transcript
+// would be a wrong record made confidently. It is in every call, so it is not a
+// tool argument, so it is not the file.
+//
+// What comes out is a draft and says so: it carries the number of calls it was
+// drawn from, and it stays unmeasured until somebody walks it on a machine and
+// `MEASURED` says so. A guess drawn from evidence is still a guess.
+
+/// One key across the samples: how often it appeared, and what it held.
+struct Seen {
+    key: String,
+    calls: usize,
+    values: Vec<String>,
+}
+
+/// Every dotted key in one call with its string value. Objects only: a list in
+/// a hook payload is a list of things, not a field somebody reads by name.
+fn flatten(v: &Value, prefix: &str, depth: usize, out: &mut Vec<(String, String)>) {
+    if depth > 4 {
+        return;
+    }
+    let Some(obj) = v.as_object() else { return };
+    for (k, val) in obj {
+        let key = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{prefix}.{k}")
+        };
+        match val {
+            Value::String(s) => out.push((key, s.clone())),
+            Value::Object(_) => flatten(val, &key, depth + 1, out),
+            _ => {}
+        }
+    }
+}
+
+fn looks_like_a_path(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() < 4096
+        && !s.contains('\n')
+        && (s.contains('/') || s.contains('\\') || Path::new(s).extension().is_some())
+}
+
+fn looks_like_a_directory(s: &str) -> bool {
+    looks_like_a_path(s) && Path::new(s).extension().is_none()
+}
+
+fn looks_like_a_command(s: &str) -> bool {
+    s.contains(' ') || s.contains('|') || s.contains('>')
+}
+
+/// The words in a field's name: `file_path`, `filePath` and `FILE-PATH` all
+/// say "file" and "path".
+fn words_of(name: &str) -> Vec<String> {
+    let mut out = vec![];
+    let mut word = String::new();
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if c == '_' || c == '-' || c == ' ' {
+            if !word.is_empty() {
+                out.push(std::mem::take(&mut word));
+            }
+            prev_lower = false;
+            continue;
+        }
+        if c.is_ascii_uppercase() && prev_lower && !word.is_empty() {
+            out.push(std::mem::take(&mut word));
+        }
+        prev_lower = c.is_ascii_lowercase() || c.is_ascii_digit();
+        word.push(c.to_ascii_lowercase());
+    }
+    if !word.is_empty() {
+        out.push(word);
+    }
+    out
+}
+
+/// Put a format into `agent-formats.json`, replacing any entry for the same
+/// agent, and give back what was written.
+///
+/// Everything else in the file is kept, including the notes somebody wrote in
+/// it: a file a person edits by hand is not a file a program rewrites whole.
+pub fn put_format(state_dir: &Path, fmt: &Format) -> Result<String, String> {
+    let path = formats_path(state_dir);
+    let mut doc: Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| json!({}));
+    if !doc.is_object() {
+        doc = json!({});
+    }
+    let mine = serde_json::to_value(fmt).map_err(|e| e.to_string())?;
+    let obj = doc
+        .as_object_mut()
+        .ok_or("the formats file is not an object")?;
+    let list = obj.entry("formats").or_insert_with(|| json!([]));
+    let list = list
+        .as_array_mut()
+        .ok_or("the `formats` in that file is not a list")?;
+    list.retain(|e| e.get("agent").and_then(|a| a.as_str()) != Some(fmt.agent.as_str()));
+    list.push(mine.clone());
+    std::fs::create_dir_all(state_dir).map_err(|e| e.to_string())?;
+    let body = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    std::fs::write(&path, body).map_err(|e| e.to_string())?;
+    serde_json::to_string_pretty(&mine).map_err(|e| e.to_string())
+}
+
+/// A draft format read off `samples`: calls from one agent, as they arrived.
+pub fn derive_format(agent: &str, samples: &[Value]) -> Result<Format, String> {
+    let agent = plain_agent_name(agent)?;
+    if samples.is_empty() {
+        return Err("no samples to read a format from".into());
+    }
+    let n = samples.len();
+    let mut seen: BTreeMap<String, Seen> = BTreeMap::new();
+    let mut flat_calls: Vec<Vec<(String, String)>> = vec![];
+    for call in samples {
+        let mut flat = vec![];
+        flatten(call, "", 0, &mut flat);
+        for (key, value) in &flat {
+            let e = seen.entry(key.clone()).or_insert_with(|| Seen {
+                key: key.clone(),
+                calls: 0,
+                values: vec![],
+            });
+            e.calls += 1;
+            if !e.values.contains(value) {
+                e.values.push(value.clone());
+            }
+        }
+        flat_calls.push(flat);
+    }
+    let every: Vec<&Seen> = seen.values().filter(|s| s.calls == n).collect();
+    // Whole words, not substrings. `description` contains `script`, and the
+    // first draft read a shell command out of a sentence about one.
+    let named = |s: &Seen, words: &[&str]| {
+        let last = s.key.rsplit('.').next().unwrap_or(&s.key);
+        words_of(last).iter().any(|w| words.contains(&w.as_str()))
+    };
+    // What the tool *answered* is not what it was asked to do. `post` carries
+    // the response, and the file named in there is the same file said twice —
+    // or, when the tool failed, a file that was never written.
+    let an_answer = |s: &Seen| {
+        let w = words_of(&s.key.replace('.', "_"));
+        ["response", "result", "output", "display", "error"]
+            .iter()
+            .any(|x| w.iter().any(|y| y == x))
+    };
+
+    // The tool's name: in every call, a bare short word, and it changes.
+    //
+    // `hook_event_name` is all of those things too — it is in every call and it
+    // alternates between the before and the after event — and the first draft
+    // took it for the tool, which made every shell command look like an event
+    // name. So the whole key has to speak of a tool, and nothing in it may
+    // speak of the hook or the event.
+    let tool: Vec<String> = {
+        let mut found: Vec<&&Seen> = every
+            .iter()
+            .filter(|s| {
+                let w = words_of(&s.key.replace('.', "_"));
+                let says = |x: &str| w.iter().any(|y| y == x);
+                // Either the key says "tool" outright, or it is a `name`
+                // that changes from call to call. One agent, one walk, one
+                // tool used is an ordinary way to end up here — opencode
+                // wrote a file and nothing else — and a format that needs
+                // two tools to be found would refuse that person for no
+                // reason. `hook_event_name` is still out: it says neither.
+                (says("tool") || (says("name") && s.values.len() > 1))
+                    && !says("hook")
+                    && !says("event")
+                    && !says("session")
+                    && !says("file")
+                    && !an_answer(s)
+                    && s.values
+                        .iter()
+                        .all(|v| v.len() <= 64 && !v.contains(' ') && !v.contains('/'))
+            })
+            .collect();
+        // The one that says "tool" outright first, then the shortest name.
+        found.sort_by_key(|s| {
+            let w = words_of(&s.key.replace('.', "_"));
+            (!w.iter().any(|y| y == "tool"), s.key.len())
+        });
+        found.iter().map(|s| s.key.clone()).collect()
+    };
+
+    // What tells a tool's argument from the session's own fields, and so keeps
+    // `transcript_path` out of `path`. Two signs, either one enough:
+    //
+    //  * **it is not in every call** — the file a write names is in the write,
+    //    the transcript is in all of them; and
+    //  * **it is nested** — every agent walked so far puts a tool's arguments
+    //    in an object of their own (`tool_input.…`, `args.…`) and the
+    //    session's fields at the top (`cwd`, `session_id`, `transcript_path`).
+    //
+    // The first sign alone was not enough, and a walk said so: somebody who
+    // catches one call catches its `pre` and its `post`, the argument is in
+    // both, and a rule that only knew "not in every call" found nothing and
+    // refused samples that were perfectly good.
+    let argument = |s: &Seen| s.calls < n || s.key.contains('.');
+    let path: Vec<String> = seen
+        .values()
+        .filter(|s| {
+            named(s, &["path", "file"])
+                && argument(s)
+                && !an_answer(s)
+                && s.values.iter().all(|v| looks_like_a_path(v))
+        })
+        .map(|s| s.key.clone())
+        .collect();
+    let command: Vec<String> = seen
+        .values()
+        .filter(|s| {
+            named(s, &["command", "cmd", "script"])
+                && argument(s)
+                && !an_answer(s)
+                && s.values.iter().any(|v| looks_like_a_command(v))
+        })
+        .map(|s| s.key.clone())
+        .collect();
+
+    // Where a command runs: the tool's own override first, the session's next.
+    let directory = ["dir", "cwd", "workspace", "directory", "folder", "root"];
+    let mut cwd: Vec<String> = seen
+        .values()
+        .filter(|s| {
+            named(s, &directory)
+                && s.key.contains('.')
+                && !an_answer(s)
+                && s.values.iter().all(|v| looks_like_a_directory(v))
+        })
+        .map(|s| s.key.clone())
+        .collect();
+    cwd.extend(
+        every
+            .iter()
+            .filter(|s| named(s, &directory) && s.values.iter().all(|v| looks_like_a_directory(v)))
+            .map(|s| s.key.clone()),
+    );
+
+    // The session: in every call, and it barely changes.
+    let conversation = ["session", "conversation", "thread"];
+    let session: Vec<String> = every
+        .iter()
+        .filter(|s| named(s, &conversation) && s.values.len() <= 3)
+        .map(|s| s.key.clone())
+        .collect();
+
+    // One call from another: an id, in every call, different nearly every time.
+    let call_id: Vec<String> = every
+        .iter()
+        .filter(|s| named(s, &["id"]) && !named(s, &conversation) && s.values.len() * 2 >= n)
+        .map(|s| s.key.clone())
+        .collect();
+
+    // Which tool names meant a shell command: the calls that carried one.
+    let mut shell: Vec<String> = vec![];
+    if let (Some(tool_key), Some(command_key)) = (tool.first(), command.first()) {
+        for flat in &flat_calls {
+            let carries_a_command = flat.iter().any(|(k, _)| k == command_key);
+            if let Some((_, name)) = flat.iter().find(|(k, _)| k == tool_key) {
+                if carries_a_command && !shell.contains(name) {
+                    shell.push(name.clone());
+                }
+            }
+        }
+    }
+
+    if tool.is_empty() || (path.is_empty() && command.is_empty()) {
+        return Err(format!(
+            "{n} calls did not say enough: no tool name, or nothing naming a file or a command. \
+             The samples are the evidence — read them, and write the entry by hand."
+        ));
+    }
+    Ok(Format {
+        agent,
+        measured: false,
+        source: Some(format!("read off {n} calls collected on this machine")),
+        tool,
+        shell,
+        path,
+        command,
+        cwd,
+        session,
+        call_id,
+    })
+}
+
 /// The command a hook runs, spelled for a shell on every system: the program
 /// in double quotes with forward slashes, which `bash` and `cmd` both read.
 pub fn hook_command(exe: &Path, client: bool, event: &str, agent: &str) -> Result<String, String> {
@@ -933,6 +1317,200 @@ mod tests {
             serde_json::to_string_pretty(&body).unwrap(),
         )
         .unwrap();
+    }
+
+    /// RR32: what a walked agent is told to paste is JSON that parses.
+    ///
+    /// The hook command carries quotes of its own — the program's path is in
+    /// them — so pasting it between two more gives `"command": ""C:/…" …"`,
+    /// which fails in the reader's editor with a message about the file they
+    /// were editing rather than about us. It goes in as a JSON string.
+    #[test]
+    fn the_wiring_a_person_pastes_is_json_that_parses() {
+        for agent in MEASURED {
+            let Some(w) = how_to_wire(agent) else {
+                continue;
+            };
+            let exe = Path::new("/home/jdoe/.local/bin/podshl-repairs");
+            let pre = hook_command(exe, false, "pre", agent).unwrap();
+            let post = hook_command(exe, false, "post", agent).unwrap();
+            assert!(pre.contains('"'), "the command has quotes of its own");
+            let q = |c: &str| serde_json::to_string(c).unwrap();
+            let body: Vec<String> = w
+                .json
+                .iter()
+                .map(|l| {
+                    l.replace("<before>", &q(&pre))
+                        .replace("<after>", &q(&post))
+                })
+                .collect();
+            let whole = format!(
+                "{{{}}}",
+                body.join(
+                    "
+"
+                )
+                .trim()
+                .trim_end_matches(',')
+            );
+            let parsed: Value = serde_json::from_str(&whole).unwrap_or_else(|e| {
+                panic!(
+                    "what {agent} users are told to paste is not JSON: {e}
+{whole}"
+                )
+            });
+            let command = parsed
+                .pointer("/hooks/BeforeTool/0/hooks/0/command")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "no before-command in the {agent} wiring:
+{whole}"
+                    )
+                });
+            assert_eq!(command, pre, "the pasted command is not the one we print");
+            assert!(
+                !w.file.is_empty() && !w.notes.is_empty(),
+                "{agent} is walked but nothing says where the wiring goes"
+            );
+        }
+    }
+
+    /// RR31: a format is read off the calls the agent really made, not out of
+    /// somebody's patience — and the one field that would poison it is kept
+    /// out by the only rule that can: a tool's argument is not in every call,
+    /// and `transcript_path` is.
+    ///
+    /// The calls below are Gemini CLI 0.60.0's own, walked on an Omarchy
+    /// desktop on 2026-09-21: a bookkeeping tool, a file write and a shell
+    /// command, with the paths shortened and the machine taken out.
+    #[test]
+    fn a_format_is_read_off_what_the_agent_really_sent() {
+        let call = |tool: &str, input: Value| {
+            json!({
+                "cwd": "/home/jdoe/podshl-measure",
+                "hook_event_name": "BeforeTool",
+                "session_id": "acc7a71c-a7ff-496d-9376-2d771f74cde0",
+                "timestamp": "2026-09-21T10:56:04.164Z",
+                "transcript_path": "/home/jdoe/.gemini/tmp/acc7a71c/logs.json",
+                "tool_name": tool,
+                "tool_input": input
+            })
+        };
+        let samples = vec![
+            call(
+                "update_topic",
+                json!({"title": "Update app.conf Mode", "summary": "starting the task"}),
+            ),
+            call(
+                "write_file",
+                json!({"file_path": "app.conf", "content": "mode=new\n"}),
+            ),
+            call(
+                "update_topic",
+                json!({"title": "Completed", "summary": "the file contains mode=new"}),
+            ),
+            call(
+                "run_shell_command",
+                json!({
+                    "description": "Append note=measured to app.conf",
+                    "command": "cat app.conf && echo \"note=measured\" >> app.conf"
+                }),
+            ),
+            // The `after` call, which the first draft of this fell over twice:
+            // `hook_event_name` alternates and ends in "name", so it looked
+            // like the tool, and the response names the file a second time.
+            json!({
+                "cwd": "/home/jdoe/podshl-measure",
+                "hook_event_name": "AfterTool",
+                "session_id": "acc7a71c-a7ff-496d-9376-2d771f74cde0",
+                "transcript_path": "/home/jdoe/.gemini/tmp/acc7a71c/logs.json",
+                "tool_name": "write_file",
+                "tool_input": {"file_path": "app.conf", "content": "mode=new
+            "},
+                "tool_response": {
+                    "returnDisplay": {"fileName": "app.conf", "filePath": "/home/jdoe/podshl-measure/app.conf"},
+                    "llmContent": "written"
+                }
+            }),
+        ];
+
+        let f = derive_format("gemini", &samples).expect("nothing was read");
+        assert_eq!(
+            f.tool,
+            vec!["tool_name"],
+            "the tool's name — not hook_event_name, which also ends in `name`,              is in every call, and alternates"
+        );
+        assert_eq!(f.path, vec!["tool_input.file_path"], "the file written");
+        assert_eq!(f.command, vec!["tool_input.command"], "the command run");
+        assert_eq!(f.shell, vec!["run_shell_command"], "which tool is a shell");
+        assert_eq!(f.session, vec!["session_id"], "the session");
+        assert_eq!(f.cwd, vec!["cwd"], "where it runs");
+        assert!(
+            f.call_id.is_empty(),
+            "gemini gives no call id: {:?}",
+            f.call_id
+        );
+        assert!(!f.measured, "a draft is not a measurement");
+
+        // The two that would have been wrong records made confidently: the
+        // agent's own transcript, and the file the answer names back.
+        assert!(
+            !f.path.iter().any(|k| k.contains("transcript")),
+            "the agent's own transcript was taken for the file it wrote: {:?}",
+            f.path
+        );
+        assert!(
+            !f.path.iter().any(|k| k.contains("response")),
+            "a field from the tool's answer was taken for its argument: {:?}",
+            f.path
+        );
+
+        // And it reads what it wrote: the draft, used, finds the real file.
+        //
+        // Under a fork's name, because `gemini` itself is measured and built in
+        // now — and a fork of a walked agent is exactly who a drafted format is
+        // for, since nobody has walked *that* one.
+        let base = tmp("rr31");
+        let at = places(&base);
+        let mut draft = f.clone();
+        draft.agent = "qwen".into();
+        write_format(&at, json!({ "formats": [draft] }));
+        let conf = base.join("home/.config/app/app.conf");
+        std::fs::create_dir_all(conf.parent().unwrap()).unwrap();
+        std::fs::write(&conf, "mode=old\n").unwrap();
+        let sent = json!({
+            "cwd": conf.parent().unwrap().display().to_string(),
+            "session_id": "s1",
+            "tool_name": "write_file",
+            "tool_input": { "file_path": "app.conf" }
+        })
+        .to_string();
+        let Ok(Done::Began(id)) = handle("pre", "qwen", &sent, &at) else {
+            panic!("the read format did not find the file");
+        };
+        std::fs::write(&conf, "mode=new\n").unwrap();
+        assert_eq!(
+            handle("post", "qwen", &sent, &at),
+            Ok(Done::Finished(id.clone()))
+        );
+        let rec = repair::load(&at.state_dir)
+            .into_iter()
+            .find(|r| r.id == id)
+            .expect("no record");
+        let recorded = PathBuf::from(rec.target.clone().expect("no file on the record"));
+        assert_eq!(
+            std::fs::canonicalize(&recorded).unwrap(),
+            std::fs::canonicalize(&conf).unwrap(),
+            "the read format recorded a different file"
+        );
+        assert!(
+            rec.note
+                .clone()
+                .unwrap_or_default()
+                .contains("read rather than measured"),
+            "a drafted format must say so in the record"
+        );
     }
 
     /// RR29: an agent whose hook format nobody has walked records nothing at
