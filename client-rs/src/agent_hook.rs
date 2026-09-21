@@ -34,10 +34,18 @@
 //! name: a file reached through a variable, a glob or a script it calls is a
 //! gap, and one this says rather than guesses at.
 //!
-//! Only Claude Code for now. Each agent has its own hook format and its own
-//! input, and a format written from documentation rather than measured is the
-//! kind of hole that opens without a sound — the same rule `omarchy.rs` keeps
-//! for calling an agent headless.
+//! **Measured for Claude Code, and honest about the rest.** Each agent has its
+//! own hook format and its own settings file, and a format written from
+//! documentation rather than measured is the kind of hole that opens without a
+//! sound — the same rule `omarchy.rs` keeps for calling an agent headless. An
+//! agent refused by name was the whole of it until somebody with another agent
+//! was asked to test this and got a refusal instead, and nothing came back from
+//! them. So there are two ways on, and both say which one was taken: measuring
+//! keeps what the agent really sends and records nothing until it is known
+//! (below), and a format in `agent-formats.json` may be read off a page rather
+//! than walked — taken with `--guessed`, never counted as measured, saying so
+//! in every record it makes, and keeping a sample of every call it could not
+//! read.
 
 use crate::repair::{self, External, Lookups, Upstream};
 use serde_json::{json, Value};
@@ -143,18 +151,124 @@ pub fn worth_recording(path: &Path, at: &Places) -> Result<(), Skip> {
     Ok(())
 }
 
-/// The file a hook call is about, from Claude Code's input.
-fn target_of(input: &Value) -> Option<PathBuf> {
-    let t = input.get("tool_input")?;
-    let p = t
-        .get("file_path")
-        .or_else(|| t.get("notebook_path"))
-        .and_then(|v| v.as_str())?;
-    let p = PathBuf::from(p);
+// ------------------------------------------------------------------ what an agent sends
+
+/// Where an agent's hook input keeps the things a record needs: dotted keys,
+/// tried in order, the first one that is there wins.
+///
+/// Claude Code's is below and built in, because it was walked. Another agent's
+/// can be put in `agent-formats.json` next to the record — **read from that
+/// agent's documentation is allowed here, and says so**: `measured` is false,
+/// the install says it out loud, every record it makes carries it, and every
+/// call it cannot read is kept as a sample. A guess that tells you where it is
+/// wrong is a different thing from a guess that fails quietly.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Format {
+    pub agent: String,
+    /// True only for a format walked on a machine, never for one read off a
+    /// page.
+    #[serde(default)]
+    pub measured: bool,
+    /// Where an unmeasured one was read from, for whoever measures it later.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// The key holding the name of the tool the agent is about to use.
+    pub tool: Vec<String>,
+    /// Tool names that mean a shell command rather than a file write.
+    pub shell: Vec<String>,
+    /// The file a write is about.
+    pub path: Vec<String>,
+    /// The command a shell call will run.
+    pub command: Vec<String>,
+    /// The directory it runs in, for the relative paths in it.
+    pub cwd: Vec<String>,
+    /// What tells one of the agent's sessions from another.
+    pub session: Vec<String>,
+    /// What tells one tool call from another, when the agent gives it.
+    #[serde(default)]
+    pub call_id: Vec<String>,
+}
+
+/// Claude Code's, measured.
+pub fn claude_format() -> Format {
+    let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect();
+    Format {
+        agent: "claude".into(),
+        measured: true,
+        source: None,
+        tool: v(&["tool_name"]),
+        shell: v(&["Bash"]),
+        path: v(&["tool_input.file_path", "tool_input.notebook_path"]),
+        command: v(&["tool_input.command"]),
+        cwd: v(&["cwd"]),
+        session: v(&["session_id"]),
+        call_id: v(&["tool_use_id"]),
+    }
+}
+
+/// Where formats for agents nobody here has walked are kept.
+pub fn formats_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("agent-formats.json")
+}
+
+/// The formats in that file. A file that is not there, not JSON, or holds
+/// something else is no formats: the hook is called with an agent waiting.
+pub fn load_formats(state_dir: &Path) -> Vec<Format> {
+    let Ok(text) = std::fs::read_to_string(formats_path(state_dir)) else {
+        return vec![];
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&text) else {
+        return vec![];
+    };
+    let list = match v.get("formats") {
+        Some(l) => l.clone(),
+        None => v,
+    };
+    serde_json::from_value::<Vec<Format>>(list)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|f| plain_agent_name(&f.agent).is_ok() && !f.tool.is_empty())
+        .map(|mut f| {
+            // A file cannot promote itself to measured: measuring happens on
+            // a machine, and `MEASURED` is the only place that says so.
+            f.measured = MEASURED.contains(&f.agent.as_str());
+            f
+        })
+        .collect()
+}
+
+/// How this agent's calls are to be read, if there is a way at all.
+pub fn format_for(state_dir: &Path, agent: &str) -> Option<Format> {
+    if agent == "claude" {
+        return Some(claude_format());
+    }
+    load_formats(state_dir)
+        .into_iter()
+        .find(|f| f.agent == agent)
+}
+
+/// A value under a dotted key: `tool_input.file_path`.
+fn at_key<'a>(input: &'a Value, dotted: &str) -> Option<&'a Value> {
+    let mut here = input;
+    for part in dotted.split('.') {
+        here = here.get(part)?;
+    }
+    Some(here)
+}
+
+/// The first of these keys that holds a string.
+fn first_str<'a>(input: &'a Value, keys: &[String]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|k| at_key(input, k).and_then(|v| v.as_str()))
+}
+
+/// The file a hook call is about.
+fn target_of(input: &Value, fmt: &Format) -> Option<PathBuf> {
+    let p = PathBuf::from(first_str(input, &fmt.path)?);
     if p.is_absolute() {
         return Some(p);
     }
-    let cwd = input.get("cwd").and_then(|v| v.as_str())?;
+    let cwd = first_str(input, &fmt.cwd)?;
     Some(Path::new(cwd).join(p))
 }
 
@@ -198,6 +312,13 @@ pub enum Done {
     ShellWatching(usize),
     /// After a shell command: the records it made or brought up to date.
     ShellRecorded(Vec<String>),
+    /// An agent whose format is not known: what it sent was kept, and nothing
+    /// was recorded.
+    Measured(PathBuf),
+    /// Enough samples of it are kept; this one was not.
+    EnoughSamples(usize),
+    /// An agent whose format is not known, and nobody is measuring it.
+    NotMeasured,
 }
 
 /// One call of the hook: `event` is `pre` or `post`, `input` what the agent
@@ -206,20 +327,30 @@ pub fn handle(event: &str, agent: &str, input: &str, at: &Places) -> Result<Done
     if event != "pre" && event != "post" {
         return Err(format!("unknown hook event {event:?}: pre or post"));
     }
-    let input: Value = serde_json::from_str(input).map_err(|e| format!("not JSON: {e}"))?;
-    if input.get("tool_name").and_then(|v| v.as_str()) == Some("Bash") {
-        return shell(event, agent, &input, at);
+    // An agent with no format is not read at all: one agent's fields looked
+    // for in another's call is the wrong record, quietly made.
+    let Some(fmt) = format_for(&at.state_dir, agent) else {
+        return unread(event, agent, input, at);
+    };
+    let raw = input;
+    let input: Value = serde_json::from_str(raw).map_err(|e| format!("not JSON: {e}"))?;
+    let tool = first_str(&input, &fmt.tool).unwrap_or("");
+    if fmt.shell.iter().any(|s| s == tool) {
+        return shell(event, agent, &fmt, &input, at);
     }
-    let Some(path) = target_of(&input) else {
+    let Some(path) = target_of(&input, &fmt) else {
+        // A format read off a page keeps what it could not read, so the place
+        // it is wrong can be seen rather than guessed at a second time.
+        if !fmt.measured {
+            return unread(event, agent, raw, at);
+        }
         return Ok(Done::Skipped(Skip::NoPath));
     };
     if let Err(skip) = worth_recording(&path, at) {
         return Ok(Done::Skipped(skip));
     }
     let state_dir = at.state_dir.as_path();
-    let session = input
-        .get("session_id")
-        .and_then(|v| v.as_str())
+    let session = first_str(&input, &fmt.session)
         .unwrap_or("no-session")
         .to_string();
     let k = key(&session, &path);
@@ -232,7 +363,10 @@ pub fn handle(event: &str, agent: &str, input: &str, at: &Places) -> Result<Done
         original_path: None,
         original_package: None,
         watch_issue: false,
-        note: Some(format!("recorded by the {agent} hook, session {session}")),
+        note: Some(format!(
+            "recorded by the {agent} hook, session {session}{}",
+            howsure(&fmt)
+        )),
     };
     let look = Lookups::offline();
     if event == "pre" {
@@ -359,8 +493,14 @@ fn staging_root(state_dir: &Path) -> PathBuf {
 
 /// One command's staging place: by the id the agent gives the tool call, or
 /// by the session and the command when it gives none.
-fn staging_dir(state_dir: &Path, input: &Value, session: &str, command: &str) -> PathBuf {
-    let id = match input.get("tool_use_id").and_then(|v| v.as_str()) {
+fn staging_dir(
+    state_dir: &Path,
+    fmt: &Format,
+    input: &Value,
+    session: &str,
+    command: &str,
+) -> PathBuf {
+    let id = match first_str(input, &fmt.call_id) {
         Some(id) if !id.is_empty() => id.to_string(),
         _ => format!("{session}\n{command}"),
     };
@@ -369,23 +509,23 @@ fn staging_dir(state_dir: &Path, input: &Value, session: &str, command: &str) ->
 }
 
 /// A shell command, before and after it runs.
-fn shell(event: &str, agent: &str, input: &Value, at: &Places) -> Result<Done, String> {
-    let command = input
-        .get("tool_input")
-        .and_then(|t| t.get("command"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let session = input
-        .get("session_id")
-        .and_then(|v| v.as_str())
+fn shell(
+    event: &str,
+    agent: &str,
+    fmt: &Format,
+    input: &Value,
+    at: &Places,
+) -> Result<Done, String> {
+    let command = first_str(input, &fmt.command).unwrap_or("");
+    let session = first_str(input, &fmt.session)
         .unwrap_or("no-session")
         .to_string();
     let state_dir = at.state_dir.as_path();
-    let dir = staging_dir(state_dir, input, &session, command);
+    let dir = staging_dir(state_dir, fmt, input, &session, command);
     let manifest = dir.join("staged.json");
     if event == "pre" {
         forget_stale_staging(state_dir);
-        let cwd = input.get("cwd").and_then(|v| v.as_str()).map(Path::new);
+        let cwd = first_str(input, &fmt.cwd).map(Path::new);
         let sessions = load_sessions(state_dir);
         let mut staged = vec![];
         for (n, path) in named_paths(command, cwd, &at.home).into_iter().enumerate() {
@@ -455,7 +595,8 @@ fn shell(event: &str, agent: &str, input: &Value, at: &Places) -> Result<Done, S
             original_package: None,
             watch_issue: false,
             note: Some(format!(
-                "recorded by the {agent} hook from a shell command, session {session}"
+                "recorded by the {agent} hook from a shell command, session {session}{}",
+                howsure(fmt)
             )),
         };
         let made = match &s.copy {
@@ -497,6 +638,173 @@ fn forget_stale_staging(state_dir: &Path) {
             let _ = std::fs::remove_dir_all(e.path());
         }
     }
+}
+
+// ------------------------------------------------------------------ measuring an agent
+
+// **An agent whose hook format nobody has walked is not guessed at in the
+// dark.** The record knows Claude Code's input because it was measured on a
+// machine; another agent's is either written down in `agent-formats.json` —
+// from that agent's documentation, which is allowed and is marked as such —
+// or it is nothing at all, and a call that is nothing at all records nothing.
+//
+// What such a call can do instead is be kept. While measuring is switched on,
+// every call from an unknown agent, and every call a documented-but-unwalked
+// format could not read, is written to `agent-samples/` exactly as it
+// arrived. Somebody who knows where their agent's hook configuration lives —
+// this program does not, and that is half of what is being measured — points
+// it here, works as usual, and afterwards has the agent's real format on disk
+// instead of a second guess about it.
+//
+// **The samples stay here.** They hold the paths and shell commands the agent
+// used, which is somebody's machine written down. Nothing sends them, and the
+// command that switches measuring on says so before the first one exists.
+
+/// A sample longer than this is cut: a hook's input is a few hundred bytes,
+/// and a file pasted into a command should not land here whole.
+const SAMPLE_MAX: usize = 64 * 1024;
+
+/// Measuring stops growing here. Twenty calls show a format; two hundred is
+/// already generous, and a switch left on should not fill a disk.
+const SAMPLES_MAX: usize = 200;
+
+/// The agent being measured, and since when.
+pub struct Measuring {
+    pub agent: String,
+    pub since: u64,
+}
+
+fn measure_marker(state_dir: &Path) -> PathBuf {
+    state_dir.join("agent-measure.json")
+}
+
+/// Where the samples land. Every command that touches them names it: a
+/// directory somebody is asked to read before sending has to be nameable.
+pub fn samples_dir(state_dir: &Path) -> PathBuf {
+    state_dir.join("agent-samples")
+}
+
+/// Which agent is being measured, if any.
+pub fn measuring(state_dir: &Path) -> Option<Measuring> {
+    let text = std::fs::read_to_string(measure_marker(state_dir)).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    Some(Measuring {
+        agent: v.get("agent")?.as_str()?.to_string(),
+        since: v.get("since").and_then(|n| n.as_u64()).unwrap_or(0),
+    })
+}
+
+/// A name that can go into a file name and a hook command line, or none: the
+/// rule an agent called headless is held to, kept here too.
+pub fn plain_agent_name(name: &str) -> Result<String, String> {
+    let n = name.trim();
+    let ok = !n.is_empty()
+        && n.len() <= 64
+        && n.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    ok.then(|| n.to_string())
+        .ok_or_else(|| format!("{name:?} is not an agent's name: letters, digits, - and _"))
+}
+
+/// What a record says about the format that made it. Nothing, when it was
+/// measured; when it was not, the record carries that as long as it exists.
+fn howsure(fmt: &Format) -> String {
+    if fmt.measured {
+        return String::new();
+    }
+    let from = match &fmt.source {
+        Some(src) => format!(", from {src}"),
+        None => String::new(),
+    };
+    format!(" (this agent's hook format was read rather than measured{from})")
+}
+
+/// Begin measuring `agent`. Replaces an earlier one: two at once would leave
+/// samples nobody can tell apart.
+pub fn start_measuring(state_dir: &Path, agent: &str) -> Result<String, String> {
+    let agent = plain_agent_name(agent)?;
+    std::fs::create_dir_all(state_dir).map_err(|e| e.to_string())?;
+    let body = serde_json::to_string_pretty(&json!({ "agent": agent, "since": now() }))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(measure_marker(state_dir), body).map_err(|e| e.to_string())?;
+    Ok(agent)
+}
+
+/// Stop. The samples already taken stay where they are: stopping is not
+/// throwing away what was measured.
+pub fn stop_measuring(state_dir: &Path) -> Result<bool, String> {
+    let marker = measure_marker(state_dir);
+    if !marker.is_file() {
+        return Ok(false);
+    }
+    std::fs::remove_file(&marker)
+        .map(|_| true)
+        .map_err(|e| e.to_string())
+}
+
+/// The samples taken so far, oldest first: their names carry the time.
+pub fn samples(state_dir: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::fs::read_dir(samples_dir(state_dir))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    out.sort();
+    out
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// A call nothing here can read: kept if it is being measured, dropped if not.
+fn unread(event: &str, agent: &str, input: &str, at: &Places) -> Result<Done, String> {
+    match measuring(&at.state_dir) {
+        Some(m) if m.agent == agent => keep_sample(&at.state_dir, agent, event, input),
+        _ => Ok(Done::NotMeasured),
+    }
+}
+
+/// Keep one call, as the agent sent it.
+fn keep_sample(state_dir: &Path, agent: &str, event: &str, input: &str) -> Result<Done, String> {
+    let taken = samples(state_dir).len();
+    if taken >= SAMPLES_MAX {
+        return Ok(Done::EnoughSamples(taken));
+    }
+    let agent = plain_agent_name(agent)?;
+    let dir = samples_dir(state_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("{agent}-{at_ms:013}-{event}.json"));
+    let body = if input.len() > SAMPLE_MAX {
+        let cut = floor_char(input, SAMPLE_MAX);
+        format!(
+            "{}\n\n[cut here: the call was {} bytes]",
+            &input[..cut],
+            input.len()
+        )
+    } else {
+        input.to_string()
+    };
+    std::fs::write(&path, body).map_err(|e| e.to_string())?;
+    Ok(Done::Measured(path))
+}
+
+/// The largest cut at or below `n` that does not land inside a character.
+fn floor_char(s: &str, n: usize) -> usize {
+    let mut i = n.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
 }
 
 /// The command a hook runs, spelled for a shell on every system: the program
@@ -604,6 +912,141 @@ mod tests {
             "tool_input": { "file_path": path.display().to_string() }
         })
         .to_string()
+    }
+
+    /// What an agent nobody here has walked might pass: other names, other
+    /// nesting. Nothing in it is Claude Code's.
+    fn other_call(path: &Path, session: &str) -> String {
+        json!({
+            "sessionID": session,
+            "directory": "/",
+            "tool": { "name": "edit" },
+            "args": { "filePath": path.display().to_string() }
+        })
+        .to_string()
+    }
+
+    fn write_format(at: &Places, body: Value) {
+        std::fs::create_dir_all(&at.state_dir).unwrap();
+        std::fs::write(
+            formats_path(&at.state_dir),
+            serde_json::to_string_pretty(&body).unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// RR29: an agent whose hook format nobody has walked records nothing at
+    /// all — not a guess at Claude Code's fields in somebody else's call —
+    /// and while it is being measured, every call is kept instead, up to the
+    /// cap, with nothing recorded and nothing sent.
+    #[test]
+    fn an_unknown_agent_records_nothing_and_can_be_measured_instead() {
+        let base = tmp("rr29");
+        let at = places(&base);
+        let conf = base.join("home/.config/app/app.conf");
+        std::fs::create_dir_all(conf.parent().unwrap()).unwrap();
+        std::fs::write(&conf, "mode=old\n").unwrap();
+
+        // Not measured, not written down: nothing happens, and nothing is
+        // kept. Claude Code's own shape from another agent changes nothing.
+        assert_eq!(
+            handle("pre", "opencode", &other_call(&conf, "s1"), &at),
+            Ok(Done::NotMeasured)
+        );
+        assert_eq!(
+            handle("pre", "opencode", &call(&conf, "s1"), &at),
+            Ok(Done::NotMeasured)
+        );
+        assert!(repair::load(&at.state_dir).is_empty());
+        assert!(samples(&at.state_dir).is_empty());
+
+        // Measuring: the call is kept exactly as it arrived, and still
+        // nothing is recorded.
+        start_measuring(&at.state_dir, "opencode").unwrap();
+        let sent = other_call(&conf, "s1");
+        let Ok(Done::Measured(kept)) = handle("pre", "opencode", &sent, &at) else {
+            panic!("the call was not kept");
+        };
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), sent);
+        assert!(repair::load(&at.state_dir).is_empty(), "measuring records");
+
+        // Another agent's calls are not this measurement's.
+        assert_eq!(
+            handle("pre", "cursor-agent", &other_call(&conf, "s1"), &at),
+            Ok(Done::NotMeasured)
+        );
+        assert_eq!(samples(&at.state_dir).len(), 1);
+
+        // Stopping keeps what was measured; a name that is not one is refused
+        // before it reaches a file name.
+        assert!(stop_measuring(&at.state_dir).unwrap());
+        assert!(!stop_measuring(&at.state_dir).unwrap());
+        assert_eq!(samples(&at.state_dir).len(), 1);
+        assert!(start_measuring(&at.state_dir, "../sh").is_err());
+        assert_eq!(
+            handle("pre", "opencode", &sent, &at),
+            Ok(Done::NotMeasured),
+            "stopped means stopped"
+        );
+    }
+
+    /// RR30: a format read from an agent's documentation rather than walked
+    /// is taken, and says so in every record it makes; a call it cannot read
+    /// is kept while measuring rather than passed over, so the place the
+    /// reading is wrong can be seen. A file cannot call itself measured.
+    #[test]
+    fn a_format_that_was_read_rather_than_measured_says_so() {
+        let base = tmp("rr30");
+        let at = places(&base);
+        let conf = base.join("home/.config/app/app.conf");
+        std::fs::create_dir_all(conf.parent().unwrap()).unwrap();
+        std::fs::write(&conf, "mode=old\n").unwrap();
+        write_format(
+            &at,
+            json!({ "formats": [{
+                "agent": "opencode",
+                "measured": true,
+                "source": "opencode's plugin page",
+                "tool": ["tool.name"],
+                "shell": ["bash"],
+                "path": ["args.filePath"],
+                "command": ["args.command"],
+                "cwd": ["directory"],
+                "session": ["sessionID"],
+                "call_id": ["callID"]
+            }]}),
+        );
+
+        let fmt = format_for(&at.state_dir, "opencode").expect("the format was not read");
+        assert!(!fmt.measured, "a file said of itself that it was measured");
+
+        let Ok(Done::Began(id)) = handle("pre", "opencode", &other_call(&conf, "s1"), &at) else {
+            panic!("the edit was not begun");
+        };
+        std::fs::write(&conf, "mode=new\n").unwrap();
+        assert_eq!(
+            handle("post", "opencode", &other_call(&conf, "s1"), &at),
+            Ok(Done::Finished(id.clone()))
+        );
+        let rec = repair::load(&at.state_dir)
+            .into_iter()
+            .find(|r| r.id == id)
+            .expect("no record");
+        let why = rec.note.clone().unwrap_or_default();
+        assert!(
+            why.contains("read rather than measured") && why.contains("plugin page"),
+            "the record does not say the format was not measured: {why}"
+        );
+
+        // A call this reading cannot make sense of: kept while measuring, so
+        // the next version of the format comes from the machine.
+        start_measuring(&at.state_dir, "opencode").unwrap();
+        let strange = json!({ "event": "write", "file": "/etc/hosts" }).to_string();
+        assert!(matches!(
+            handle("pre", "opencode", &strange, &at),
+            Ok(Done::Measured(_))
+        ));
+        assert_eq!(samples(&at.state_dir).len(), 1);
     }
 
     /// RR21: an agent's edit to a file outside any repository is recorded,

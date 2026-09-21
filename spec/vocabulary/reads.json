@@ -121,6 +121,30 @@
   {
    "tool": "uname",
    "args": "-[rsmv]{1,4}"
+  },
+  {
+   "tool": "omarchy-default-agent",
+   "args": "[^\\s\\S]"
+  },
+  {
+   "tool": "claude",
+   "args": "--version"
+  },
+  {
+   "tool": "opencode",
+   "args": "--version"
+  },
+  {
+   "tool": "codex",
+   "args": "--version"
+  },
+  {
+   "tool": "gemini",
+   "args": "--version"
+  },
+  {
+   "tool": "cursor-agent",
+   "args": "--version"
   }
  ],
  "roots": [
@@ -360,6 +384,64 @@
     "tool": "uname",
     "args": [
      "-r"
+    ]
+   }
+  },
+  {
+   "id": "agent.default",
+   "read": {
+    "op": "run_tool",
+    "tool": "omarchy-default-agent",
+    "args": []
+   }
+  },
+  {
+   "id": "agent.claude_version",
+   "read": {
+    "op": "run_tool",
+    "tool": "claude",
+    "args": [
+     "--version"
+    ]
+   }
+  },
+  {
+   "id": "agent.opencode_version",
+   "read": {
+    "op": "run_tool",
+    "tool": "opencode",
+    "args": [
+     "--version"
+    ]
+   }
+  },
+  {
+   "id": "agent.codex_version",
+   "read": {
+    "op": "run_tool",
+    "tool": "codex",
+    "args": [
+     "--version"
+    ]
+   }
+  },
+  {
+   "id": "agent.gemini_version",
+   "read": {
+    "op": "run_tool",
+    "tool": "gemini",
+    "args": [
+     "--version"
+    ]
+   }
+  },
+  {
+   "id": "agent.cursor_agent_version",
+   "read": {
+    "op": "run_tool",
+    "tool": "cursor-agent",
+    "args": [
+     "--version"
     ]
    }
   }

@@ -131,7 +131,7 @@ systemd user timer, a launchd agent, a scheduled task).
 .B \-\-print
 says what would be done and does nothing.
 .TP
-.BR install\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-print ]
+.BR install\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-print "] [" \-\-guessed ]
 .TQ
 .BR remove\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-print ]
 Record what a coding agent writes outside git repositories, through the
@@ -141,9 +141,37 @@ A shell command is seen through the files it names.
 On Omarchy the default agent is taken unless one is named.
 Measured for
 .B claude
-only; other agents are refused by name.
-Everything else in the agent's settings is kept, and the change to them is
-itself recorded.
+only, whose settings file is written: everything else in it is kept, and the
+change to it is itself recorded.
+.IP
+Another agent's hook format can be written into
+.I agent\-formats.json
+beside the record \(em read from that agent's documentation rather than walked
+\(em and taken with
+.BR \-\-guessed .
+Such a format is never treated as measured: the two hook commands are printed
+to be put in by hand rather than written into a settings file nobody here has
+seen, every record it makes says in its reason that the format was read and
+not measured, and every call it cannot read is kept as a sample while
+.B measure\-agent\-hook
+is on.
+An agent with no format at all is refused rather than guessed at.
+.TP
+.BR measure\-agent\-hook " [" \-\-agent " " \fINAME\fR "] [" \-\-stop ]
+Measure an agent whose hook format is not known here.
+.BI \-\-agent " NAME"
+prints the two commands that agent's hooks should run and switches measuring
+on; where they go is the agent's own configuration, which this program does
+not know, and which is half of what is being measured.
+While it is on, every call from that agent is kept exactly as it arrived in
+.I agent\-samples
+beside the record, and nothing is recorded: the format is not known yet.
+The samples hold the paths and the shell commands the agent used; nothing
+sends them anywhere.
+.B \-\-stop
+stops, and leaves what was measured where it is.
+With neither: what is being measured, where the samples are, and which hook
+formats are known here.
 .TP
 .BR agent\-hook " " pre | post " [" \-\-agent " " \fINAME\fR ]
 What the agent's hooks call, with the agent's own JSON on standard input.

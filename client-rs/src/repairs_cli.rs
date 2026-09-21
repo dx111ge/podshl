@@ -122,11 +122,17 @@ podshl-client repairs <command>
   install-hook [--print]
   remove-hook [--print]
         run `review --notify` after updates (Omarchy) or daily
-  install-agent-hook [--agent NAME] [--print]
+  install-agent-hook [--agent NAME] [--print] [--guessed]
   remove-agent-hook [--agent NAME] [--print]
         record what a coding agent writes outside git repositories, through
         the agent's own hooks; on Omarchy the default agent unless named.
-        Measured for: claude";
+        Measured for: claude. Another agent's format can be written into
+        agent-formats.json and taken with --guessed, which says in every
+        record it makes that it was read rather than measured
+  measure-agent-hook [--agent NAME] [--stop]
+        an agent whose format is not known: keep what its hooks send here and
+        record nothing, so the format can be walked rather than guessed twice.
+        Without either flag: what is being measured, and where it is kept";
 
 /// The usage, under the name of the program that is running: `podshl-repairs
 /// help` began with "podshl-client repairs <command>", which is the other
@@ -734,13 +740,100 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
                         ids.join(" ")
                     ))
                 }
+                Ok(crate::agent_hook::Done::Measured(p)) => crate::clientlog::line(&format!(
+                    "repairs agent-hook {agent}: kept a sample, {}",
+                    p.display()
+                )),
                 Ok(_) => {}
                 Err(e) => eprintln!("podshl agent hook: {e}"),
             }
             Ok(0)
         }
+        "measure-agent-hook" => {
+            let stop = a.flag("--stop");
+            let named = a.value("--agent")?;
+            a.done()?;
+            let samples = crate::agent_hook::samples_dir(&root);
+            if stop {
+                let was = crate::agent_hook::measuring(&root).map(|m| m.agent);
+                crate::agent_hook::stop_measuring(&root)?;
+                match was {
+                    Some(agent) => {
+                        crate::clientlog::line(&format!(
+                            "repairs measure-agent-hook: stopped {agent}"
+                        ));
+                        println!("no longer measuring {agent}");
+                    }
+                    None => println!("nothing was being measured"),
+                }
+                println!("{} kept in {}", calls(&root), samples.display());
+                println!("take out the hook entries you added to the agent yourself");
+                return Ok(0);
+            }
+            let Some(named) = named else {
+                match crate::agent_hook::measuring(&root) {
+                    Some(m) => println!(
+                        "measuring {} since {}; {} kept in {}",
+                        m.agent,
+                        epoch_date(m.since),
+                        calls(&root),
+                        samples.display()
+                    ),
+                    None => {
+                        println!("not measuring any agent");
+                        println!();
+                        println!("start:  {} measure-agent-hook --agent NAME", me());
+                    }
+                }
+                let known = crate::agent_hook::load_formats(&root);
+                println!();
+                println!("hook formats known here:");
+                println!("  claude (measured, built in)");
+                for f in &known {
+                    if f.agent != "claude" {
+                        println!(
+                            "  {} (read, not measured{})",
+                            f.agent,
+                            f.source
+                                .as_deref()
+                                .map(|s| format!(", from {s}"))
+                                .unwrap_or_default()
+                        );
+                    }
+                }
+                println!(
+                    "  from {}",
+                    crate::agent_hook::formats_path(&root).display()
+                );
+                return Ok(0);
+            };
+            let agent = crate::agent_hook::start_measuring(&root, &named)?;
+            crate::clientlog::line(&format!("repairs measure-agent-hook: measuring {agent}"));
+            let exe = installed_exe()?;
+            let pre = crate::agent_hook::hook_command(&exe, !standalone(), "pre", &agent)?;
+            let post = crate::agent_hook::hook_command(&exe, !standalone(), "post", &agent)?;
+            println!("measuring {agent}. The two commands its hooks should run:");
+            println!("  before a file write or a shell command:");
+            println!("    {pre}");
+            println!("  after it:");
+            println!("    {post}");
+            println!();
+            println!("Put those into {agent}'s own hook configuration. This program does not");
+            println!("know where that is — which is half of what is being measured. Then use");
+            println!("the agent as you normally would.");
+            println!();
+            println!("Nothing is recorded while measuring: the format is not known yet, and");
+            println!("guessing at it is what this avoids. Each call is kept as it arrived in");
+            println!("  {}", samples.display());
+            println!("Those files hold the paths and the shell commands your agent used.");
+            println!("Nothing sends them anywhere. Read them before you send them to anybody.");
+            println!();
+            println!("Stop: {} measure-agent-hook --stop", me());
+            Ok(0)
+        }
         "install-agent-hook" | "remove-agent-hook" => {
             let print_only = a.flag("--print");
+            let guessed = a.flag("--guessed");
             let named = a.value("--agent")?;
             a.done()?;
             let install = cmd == "install-agent-hook";
@@ -750,11 +843,40 @@ pub fn run(words: Vec<String>) -> Result<i32, String> {
                     "name the agent with --agent: only on Omarchy is there a default to take",
                 )?,
             };
-            if !crate::agent_hook::MEASURED.contains(&agent.as_str()) {
-                return Err(format!(
-                    "no measured hook for {agent:?}; measured so far: {}",
-                    crate::agent_hook::MEASURED.join(", ")
-                ));
+            let fmt = crate::agent_hook::format_for(&root, &agent);
+            match &fmt {
+                // Written down but not walked: taken only when the person
+                // says so in the command, because every record it makes will
+                // carry that it was read rather than measured.
+                Some(f) if !f.measured && !guessed => {
+                    return Err(unmeasured_advice(&agent, true));
+                }
+                Some(_) => {}
+                None => return Err(unmeasured_advice(&agent, false)),
+            }
+            // Only Claude Code's settings file is a place this program knows.
+            // For any other agent the two commands are printed and put in by
+            // hand: writing a file whose shape nobody here has seen is how a
+            // tool destroys somebody's configuration.
+            if agent != "claude" {
+                let exe = installed_exe()?;
+                let pre = crate::agent_hook::hook_command(&exe, !standalone(), "pre", &agent)?;
+                let post = crate::agent_hook::hook_command(&exe, !standalone(), "post", &agent)?;
+                if install {
+                    println!("{agent}'s hook format is read, not measured: every record it makes says so.");
+                    println!(
+                        "Where {agent} keeps its hooks is not known here, so put these in by hand:"
+                    );
+                    println!("  before a file write or a shell command:");
+                    println!("    {pre}");
+                    println!("  after it:");
+                    println!("    {post}");
+                } else {
+                    println!("take these two out of {agent}'s hook configuration by hand:");
+                    println!("    {pre}");
+                    println!("    {post}");
+                }
+                return Ok(0);
             }
             let home = dirs::home_dir().ok_or("no home directory")?;
             let settings = crate::agent_hook::claude_dir(&home).join("settings.json");
@@ -911,6 +1033,57 @@ impl Step {
 /// The agent Omarchy is set to use, from Omarchy itself. `None` anywhere
 /// else, and on an Omarchy where nobody chose one — there is no default to
 /// guess at, which is also what Omarchy's own invitation hook concludes.
+/// What to say to somebody whose agent is not Claude Code. Not a dead end:
+/// the record itself never needed the hook, and the one thing that would make
+/// the hook possible for their agent is a thing they can do.
+/// How to type this program's name in a sentence it prints. The record has two
+/// programs on the same commands, and a line telling somebody to run
+/// `podshl-repairs …` when they have `podshl-client` names a command they do
+/// not have — the notice above already kept the two apart.
+fn me() -> &'static str {
+    if standalone() {
+        "podshl-repairs"
+    } else {
+        "podshl-client repairs"
+    }
+}
+
+/// "1 call", "4 calls": a count somebody reads, not a field.
+fn calls(root: &Path) -> String {
+    match crate::agent_hook::samples(root).len() {
+        1 => "1 call".to_string(),
+        n => format!("{n} calls"),
+    }
+}
+
+fn unmeasured_advice(agent: &str, written_down: bool) -> String {
+    let mut lines = vec![];
+    if written_down {
+        lines.push(format!(
+            "{agent}'s hook format is written down here but was not measured on a machine."
+        ));
+        lines.push("Take it anyway with --guessed: every record it makes says so.".into());
+    } else {
+        lines.push(format!(
+            "no hook format for {agent:?}; measured: {}.",
+            crate::agent_hook::MEASURED.join(", ")
+        ));
+        lines.push("The record itself does not need the hook: `begin`/`done`, `add`,".into());
+        lines.push("`list`, `review` and `restore` work with any agent, or none.".into());
+    }
+    lines.push(format!(
+        "Help it along: {} measure-agent-hook --agent {agent}",
+        me()
+    ));
+    lines.push(format!(
+        "keeps what {agent}'s hooks send, records nothing, and sends nothing."
+    ));
+    lines.join(
+        "
+",
+    )
+}
+
 fn omarchy_default_agent() -> Option<String> {
     let exe = which("omarchy-default-agent")?;
     let (ok, out) = crate::reads::run_bounded(&exe, &[])?;

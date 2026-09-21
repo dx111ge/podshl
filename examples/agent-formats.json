@@ -1,0 +1,53 @@
+{
+  "_": [
+    "Hook formats for coding agents this build has not walked itself. Copy",
+    "this file next to the record -- the directory podshl-repairs keeps its",
+    "state in, printed by `podshl-repairs measure-agent-hook` -- and keep",
+    "only the entries you have something to say about.",
+    "",
+    "Every field is a list of dotted keys, tried in order, in the JSON the",
+    "agent sends its hook on standard input. Where you do not know a key,",
+    "leave the list empty rather than inventing one: an empty list is a gap",
+    "the record can name, a wrong key is a record about the wrong file.",
+    "",
+    "  tool     the name of the tool the agent is about to use",
+    "  shell    those tool names that mean a shell command, not a file write",
+    "  path     the file a write is about",
+    "  command  the command a shell call will run",
+    "  cwd      the directory it runs in, for the relative paths in it",
+    "  session  what tells one of the agent's sessions from another",
+    "  call_id  what tells one tool call from another, when there is one",
+    "",
+    "`source` is where you read it. A format from this file is never treated",
+    "as measured, whatever it says: the hook commands are printed to put in",
+    "by hand, every record it makes says the format was read and not walked,",
+    "and every call it cannot read is kept while `measure-agent-hook` is on.",
+    "",
+    "The entries below are shapes to start from, not walked formats. Measure",
+    "yours: podshl-repairs measure-agent-hook --agent NAME"
+  ],
+  "formats": [
+    {
+      "agent": "claude",
+      "source": "walked, and built in: here to show the shape",
+      "tool": ["tool_name"],
+      "shell": ["Bash"],
+      "path": ["tool_input.file_path", "tool_input.notebook_path"],
+      "command": ["tool_input.command"],
+      "cwd": ["cwd"],
+      "session": ["session_id"],
+      "call_id": ["tool_use_id"]
+    },
+    {
+      "agent": "your-agent",
+      "source": "fill this in: where you read it, and when",
+      "tool": ["tool.name", "toolName"],
+      "shell": ["bash", "shell", "run"],
+      "path": ["args.filePath", "args.path", "input.file"],
+      "command": ["args.command", "input.command"],
+      "cwd": ["directory", "cwd", "workspace"],
+      "session": ["sessionID", "session_id"],
+      "call_id": ["callID", "call_id"]
+    }
+  ]
+}

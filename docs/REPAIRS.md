@@ -209,11 +209,63 @@ under the agent's name. Nobody types anything for the record.
   undone like any other.
 
 **Measured for Claude Code only** (`~/.claude/settings.json`, or
-`CLAUDE_CONFIG_DIR`). Every agent has its own hook format; another agent is
-refused by name until its format has been walked, rather than written from
-documentation. Walked on Omarchy with Claude Code 2.1.278 as the default
+`CLAUDE_CONFIG_DIR`). Walked on Omarchy with Claude Code 2.1.278 as the default
 agent: a real edit to a file in `~/.config` was recorded and then restored, and
 the same edit in a git repository left no record (`RR21`, `RR22`).
+
+### Another agent
+
+Every agent has its own hook format and its own settings file. Yours is not
+refused, and it is not guessed at either — there are two ways in, and both say
+which one you took.
+
+**Measure it.** Nothing here knows where your agent keeps its hooks, and that
+is half of what is missing:
+
+```
+podshl-repairs measure-agent-hook --agent opencode   # prints the two commands
+podshl-repairs measure-agent-hook                    # what is being measured
+podshl-repairs measure-agent-hook --stop
+```
+
+Put the two printed commands into your agent's own hook configuration and work
+as you normally would. While measuring, **nothing is recorded** — the format is
+not known yet — and every call is kept exactly as it arrived in
+`agent-samples/` next to the record. Those files hold the paths and the shell
+commands your agent used, which is your machine written down: nothing sends
+them anywhere, and reading them before you send one to anybody is the point of
+keeping them as files.
+
+**Write the format down.** With samples in hand, or with the agent's
+documentation open, put an entry in `agent-formats.json` next to the record
+(see [`examples/agent-formats.json`](../examples/agent-formats.json)). Each
+field is a list of dotted keys, tried in order, in what the agent sends its
+hook:
+
+```json
+{"formats": [{
+  "agent": "opencode",
+  "source": "opencode's plugin documentation, read 2026-09-21",
+  "tool": ["tool.name"], "shell": ["bash"],
+  "path": ["args.filePath"], "command": ["args.command"],
+  "cwd": ["directory"], "session": ["sessionID"], "call_id": ["callID"]
+}]}
+```
+
+Then `podshl-repairs install-agent-hook --agent opencode --guessed`. A format
+that was read rather than walked is never treated as measured, whatever the
+file says:
+
+* the two hook commands are **printed to put in by hand** — a settings file
+  whose shape nobody here has seen is not written;
+* **every record it makes says so** in its reason, and keeps saying it:
+  `recorded by the opencode hook, session … (this agent's hook format was read
+  rather than measured, from …)`;
+* **every call it cannot read is kept** as a sample while measuring is on, so
+  the place the reading is wrong shows itself instead of failing quietly.
+
+If it works on your machine, the samples and your `agent-formats.json` are what
+turns it into a measured one for everybody else.
 
 ### Packages and plugins
 
@@ -399,8 +451,9 @@ podshl-repairs restore ID
 podshl-repairs forget ID
 podshl-repairs install-hook [--print]
 podshl-repairs remove-hook [--print]
-podshl-repairs install-agent-hook [--agent NAME] [--print]
+podshl-repairs install-agent-hook [--agent NAME] [--print] [--guessed]
 podshl-repairs remove-agent-hook [--agent NAME] [--print]
+podshl-repairs measure-agent-hook [--agent NAME] [--stop]
 podshl-repairs --version
 ```
 
@@ -453,9 +506,14 @@ Was the hook installed before 0.1.8? Then it only sees the file tools: run
 `podshl-repairs install-agent-hook` again. Is the hook installed at all —
 `grep agent-hook ~/.claude/settings.json`?
 
-**`install-agent-hook` says there is no measured hook for my agent.** Only
-Claude Code's hook format has been walked; other agents are refused rather than
-guessed at.
+**`install-agent-hook` says there is no hook format for my agent.** Only Claude
+Code's has been walked. Two ways on, both above under
+[Another agent](#another-agent): `measure-agent-hook --agent NAME` keeps what
+your agent sends so the format can be walked, and an entry in
+`agent-formats.json` plus `--guessed` uses a format read from documentation,
+saying so in every record it makes. Either way the record itself never needed
+the hook: `begin`/`done`, `add`, `list`, `review` and `restore` work with any
+agent, or none.
 
 **The update ran and no notice appeared.** Is do-not-disturb on? A silenced
 notice goes to Omarchy's notification history. Is the hook there —

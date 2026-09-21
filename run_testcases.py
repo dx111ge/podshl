@@ -587,6 +587,16 @@ def _():
     cargo("agent_hook::tests::the_agents_settings_keep_everything_that_is_not_ours")
 
 
+@case("RR29", "An agent nobody has walked records nothing, and can be measured instead [rust]")
+def _():
+    cargo("agent_hook::tests::an_unknown_agent_records_nothing_and_can_be_measured_instead")
+
+
+@case("RR30", "A hook format read rather than walked says so in every record it makes [rust]")
+def _():
+    cargo("agent_hook::tests::a_format_that_was_read_rather_than_measured_says_so")
+
+
 @case("A12", "The agent fixes it, the fix holds, and the undo puts it back [rust]")
 def _():
     cargo("report::tests::the_agent_fixes_it_the_fix_holds_and_the_undo_puts_it_back")

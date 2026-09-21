@@ -91,6 +91,26 @@ const TOOLS: &[(&str, &str)] = &[
     ("pip", r"--version"),
     ("node", r"(--version|-v)"),
     ("uname", r"-[rsmv]{1,4}"),
+    // Which coding agent is on the machine, and which version of it.
+    //
+    // A bug report from a desktop where an agent does the changing is a report
+    // about two programs, and the second one was missing from every report
+    // this has ever produced: the record's own hook works for Claude Code and
+    // is refused for the rest, and nothing said which one the person in front
+    // of it actually runs. `omarchy-default-agent` is the desktop's own answer
+    // to that question and takes no arguments at all; the agents themselves
+    // are here on the same terms as `node` and `python3` — the version flag,
+    // and nothing else. An agent absent from the machine is absent from the
+    // catalogue, which is how somebody reading the report can tell that it was
+    // asked and answered rather than never asked.
+    // A pattern no string matches at all, not even an empty one: this
+    // program takes no arguments, and the answer is the whole of its output.
+    ("omarchy-default-agent", r"[^\s\S]"),
+    ("claude", r"--version"),
+    ("opencode", r"--version"),
+    ("codex", r"--version"),
+    ("gemini", r"--version"),
+    ("cursor-agent", r"--version"),
 ];
 
 /// What a `read_registry` path and value name may contain. Held to
@@ -2134,7 +2154,19 @@ pub fn catalogue_all() -> Value {
       { "id": "node.version", "describes": m!("cat_node_version"),
         "read": {"op":"run_tool","tool":"node","args":["--version"]} },
       { "id": "os.kernel", "describes": m!("cat_os_kernel"),
-        "read": {"op":"run_tool","tool":"uname","args":["-r"]} }
+        "read": {"op":"run_tool","tool":"uname","args":["-r"]} },
+      { "id": "agent.default", "describes": m!("cat_agent_default"),
+        "read": {"op":"run_tool","tool":"omarchy-default-agent","args":[]} },
+      { "id": "agent.claude_version", "describes": m!("cat_agent_claude_version"),
+        "read": {"op":"run_tool","tool":"claude","args":["--version"]} },
+      { "id": "agent.opencode_version", "describes": m!("cat_agent_opencode_version"),
+        "read": {"op":"run_tool","tool":"opencode","args":["--version"]} },
+      { "id": "agent.codex_version", "describes": m!("cat_agent_codex_version"),
+        "read": {"op":"run_tool","tool":"codex","args":["--version"]} },
+      { "id": "agent.gemini_version", "describes": m!("cat_agent_gemini_version"),
+        "read": {"op":"run_tool","tool":"gemini","args":["--version"]} },
+      { "id": "agent.cursor_agent_version", "describes": m!("cat_agent_cursor_agent_version"),
+        "read": {"op":"run_tool","tool":"cursor-agent","args":["--version"]} }
     ])
 }
 
@@ -2944,6 +2976,30 @@ version = 3.11.9
             "the specified catalogue differs from this client's"
         );
 
+        // Every tool's argument pattern compiles, and the catalogue's own
+        // arguments pass it. The gate only reaches the pattern once the tool
+        // is on the machine, so a pattern that does not compile — or a
+        // catalogue entry that its own tool would refuse — is invisible on
+        // every machine without that program, which is every machine here.
+        for (tool, pat) in TOOLS {
+            let re = regex::Regex::new(&format!("^(?:{pat})$")).unwrap_or_else(|e| {
+                panic!("the argument pattern for {tool} does not compile: {e}")
+            });
+            for entry in catalogue_all().as_array().unwrap() {
+                let read = &entry["read"];
+                if read["tool"].as_str() != Some(tool) {
+                    continue;
+                }
+                for a in read["args"].as_array().into_iter().flatten() {
+                    let a = a.as_str().unwrap_or("");
+                    assert!(
+                        re.is_match(a),
+                        "{tool} would refuse {a:?}, which its own catalogue entry asks for"
+                    );
+                }
+            }
+        }
+
         // Every documented op is one this client knows. `precheck` may still
         // refuse a particular instruction — a tool absent from this machine, a
         // path outside the roots — but it must never answer "unknown".
@@ -3711,5 +3767,19 @@ Graphics/Displays:
             body.contains("cfg!(debug_assertions)"),
             "the development root is not gated on the build"
         );
+    }
+
+    /// Not a case in `TESTCASES.md`: a look at what this machine answers for
+    /// the agent readings, run by hand with `--ignored`, so they are seen
+    /// working on a real desktop rather than asserted from a table.
+    #[test]
+    #[ignore]
+    fn what_this_machine_says_about_its_agent() {
+        for c in catalogue().as_array().cloned().unwrap_or_default() {
+            let id = c["id"].as_str().unwrap_or("");
+            if id.starts_with("agent.") {
+                println!("{id}: {:?}", perform(&c["read"]));
+            }
+        }
     }
 }

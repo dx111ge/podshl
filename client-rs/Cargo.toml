@@ -1,6 +1,6 @@
 [package]
 name = "podshl-client"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 # Three programs: the client; the helper that does what needs administrator
 # rights (`src/bin/podshl-elevate.rs`); and `podshl-repairs`, the record of

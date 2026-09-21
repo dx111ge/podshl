@@ -89,7 +89,10 @@ if [ "${PODSHL_NO_HOOKS:-}" != 1 ]; then
     if out=$("$R" install-agent-hook 2>&1); then
       say "what your default agent writes is recorded: podshl-repairs install-agent-hook"
     else
-      say "the agent hook is not set up: ${out%%$'\n'*}"
+      # Every line of it: only Claude Code's hook format has been walked, and
+      # what somebody with another agent can do instead is the rest of them.
+      say "the agent hook is not set up:"
+      echo "$out" | while IFS= read -r line; do say "  $line"; done
     fi
   fi
 fi
